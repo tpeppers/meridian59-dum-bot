@@ -1,0 +1,151 @@
+{
+  // THE FLEET EXACTLY AS THE KEEPER IS ALREADY RUNNING IT — the boring doctrine, and the
+  // only one worth running first.
+  //
+  // Every other doctrine here proposes something. This one proposes NOTHING: every value
+  // in it was read off a live fleet's keepers and written down. Point DUM at it and the
+  // characters should do what they were already doing, decided from a different place.
+  //
+  // That is the whole point. The carve-out's claim is "the same results, differently
+  // owned", and a claim like that is only worth anything if it is falsifiable. If the
+  // fleet changes behaviour under this doctrine, the carve-out is wrong somewhere and the
+  // difference is the bug report. If it does not, the seam is real and every later
+  // doctrine is a change of ONE thing against a known baseline rather than a change of
+  // everything at once against a memory.
+  //
+  // HOW THE VALUES WERE OBTAINED, because it matters that they were not invented: the
+  // broker's `fleet` board now carries each keeper's `policy` (harness recommendation 7),
+  // so all twenty-one were read in a single call and compared. Nineteen of the
+  // twenty-three policy fields were IDENTICAL across the whole fleet, which is what makes
+  // one doctrine sufficient. Three varied and are handled below.
+  //
+  // NO FLEET NAME HERE, deliberately. `tools/dum-guard.mjs` refuses one: a fleet name
+  // identifies a roster on one machine, so a public doctrine naming it is either useless
+  // to a stranger or a description of us. Extend this from `doctrines/local/`, which is
+  // gitignored, and put the name there.
+
+  "extends": "survive.jsonc",
+
+  "name": "keeper parity",
+  "why": "reproduce, from a doctrine, exactly what the keeper's own defaults are already doing — so that the carve-out can be tested as 'no change' before it is used to make one",
+
+  "claim": {
+    // The carve-out, and nothing above it. The keeper keeps identity, mortality, survival
+    // and recovery — the four decided on a one-second clock, where a bot ticking every
+    // thirty seconds would be acting on information fifteen seconds old against a keeper
+    // that has better information and is already acting.
+    //
+    // The harness refuses a claim on survival or mortality unless the OPERATOR has
+    // consented on that machine (substrate/may-yield-<fleet>.json). So this is not merely
+    // a promise made here — asking for them would be refused.
+    "work": "bot",
+    "movement": "bot",
+    "economy": "bot"
+  },
+
+  "goals": {
+    "ladder": [
+      {
+        // ONE RUNG, DELIBERATELY UNREACHABLE. A ladder is a plan to change something, and
+        // this doctrine's entire purpose is to change nothing — so it has a single rung
+        // that never completes and therefore never re-tasks anybody.
+        //
+        // The orders below are the fleet's own, verbatim. Read them as a photograph, not
+        // as a recommendation: `fight_above_vigor: 180` is high, `max_carry: 14` is low
+        // against a 1700-unit carry allowance, and both are what the fleet is running.
+        // Arguing with either belongs in a doctrine that says so in its name.
+        "id": "hold-the-current-line",
+        "until": { "kind": "max_health", "at_least": 9999 },
+        "orders": {
+          "mode": "farm",
+          "strategy": "wellfed",
+          "hunt": "fungus beast",
+          "rest_below": 0.75,
+          "flee_below": 0.35,
+          "use_safe_spots": true,
+          "hold_resume_above": 0.9,
+          "fight_above_vigor": 180,
+          "roam": false,
+          "max_carry": 14,
+          "bank_above": 500
+        },
+        "why": "these are the twenty-one keepers' own settings, read off the live board rather than chosen — the rung exists to hold them steady, not to reach anything"
+      }
+    ],
+    "on_complete": "report"
+  },
+
+  "prey": {
+    // Unchanged from survive.jsonc and stated here because it is the field most likely to
+    // be assumed. DUM does not choose prey: what a character hunts is a decision about
+    // what it is FOR, and the whole fleet is on one quarry by an operator's choice.
+    //
+    // `graduate_margin: 0` keeps the graduation CHECK — a kill only advances a character
+    // when the creature is at or above its level — without letting it re-task anybody
+    // while this doctrine is meant to be inert. It reports; it does not act.
+    "choose": false,
+    "graduate_margin": 0,
+    "max_threat_over": 6
+  },
+
+  "placement": {
+    // OFF, because the fleet's placement is already correct and re-deriving it would be a
+    // change. The live fleet sits in three rooms; the per-character assignment is in the
+    // local doctrine that extends this, where it can name rooms without claiming they are
+    // right for anybody else's fleet.
+    //
+    // This is the one field where "reproduce what exists" and "decide it here" genuinely
+    // differ, and the safe reading is to leave the keeper's assignedRoom alone until
+    // parity has been demonstrated on everything else.
+    "spread": false,
+    "rooms": [],
+    "per_room": 2
+  },
+
+  "economy": {
+    "bank_above": 500,
+    "max_carry": 14,
+    "concentration_report_at": 0.33
+  },
+
+  "party": {
+    // Solo. The fleet was deliberately un-paired and has run that way since; a doctrine
+    // claiming parity must not quietly re-pair it.
+    "pair": false,
+    "keep_working_pairs": true
+  },
+
+  "escalate": {
+    // Report only. The harness now publishes structured refusals (`status.refusals`,
+    // `status.waiting_on`), so a deliberate refusal is finally distinguishable from a
+    // stall without parsing prose — but DUM restarting keepers while the external
+    // supervisor also restarts them is two movers on one character, which is the
+    // configuration error this whole exercise exists to avoid.
+    "unstick": true,
+    "stall_ticks": 4
+  },
+
+  // THE FIELDS SOMETHING ELSE ALREADY WRITES.
+  //
+  // A supervisor outside the harness repository restarts stalled keepers roughly every
+  // 60s and reapplies its own rest_below, max_carry and roam. Two writers on different
+  // cadences make a character's orders oscillate while BOTH logs look correct — the worst
+  // possible combination for noticing. Until the harness has versioned orders with
+  // if_version (recommendation 4), yielding is the only coexistence mechanism, and it is
+  // a convention rather than an enforcement.
+  //
+  // These three are yielded because the supervisor demonstrably writes them. They are
+  // ALSO in the rung above, which looks contradictory and is not: the rung records what
+  // the fleet is running so that parity is checkable, and the yield stops DUM asserting
+  // it. Delete the yield the day the supervisor stops.
+  "yield_to": ["rest_below", "max_carry", "roam"],
+
+  "cadence": {
+    // Slower than survive.jsonc's default. This doctrine changes nothing, so a fast tick
+    // buys nothing and costs calls against a broker that is also serving twenty-one
+    // keepers.
+    "character_ms": 60000,
+    "fleet_ms": 600000,
+    "backoff_ms": 60000
+  }
+}

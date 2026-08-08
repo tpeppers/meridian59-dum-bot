@@ -98,14 +98,53 @@ export function normalizeFleetRow(r = {}) {
     piloted: r.piloted ?? null,
     // `stalled` is either false, a string, or an object with a `why`. All three occur.
     stalled: (r.stalled && r.stalled !== false) ? r.stalled : null,
-    // NOT ON THE BOARD, and it is the reason an orders diff cannot be made from the
-    // free read alone. See docs/harness-contract.md §Gap 5.
-    keeper: { mode: str(r.autopilot?.mode), running: r.autopilot?.running !== false,
-              policy: null, tally: { kills: num(r.autopilot?.kills) ?? 0 }, journal: [] },
-    refusals: [],
-    waiting_on: null,
-    // Where this observation came from, so a rule that needs the policy can tell that
-    // it has not been paid for yet rather than concluding the policy is empty.
+    // THE KEEPER'S OWN ORDERS, NOW FREE.
+    //
+    // This was the one field whose absence forced the expensive call. Any order has to be
+    // diffed against the current policy or it is written every tick, and the only place to
+    // read the policy was `status` — four server requests per character, 84 a tick for
+    // twenty-one of them, to discover there was nothing to do. Harness recommendation 7
+    // put it on the row; the row is built from the keeper's in-memory status and simply
+    // dropped it.
+    //
+    // Absent on an older broker, and that is the case to keep working: `null` here means
+    // "not answered", the deepen() path still exists, and a fleet on a broker that
+    // predates the field behaves exactly as it did. It must never read as "no policy",
+    // which would diff as "every field differs" and write orders to all of them.
+    policy: r.policy ?? null,
+    // Hoisted the same way the harness hoists it, because placement is asked about far
+    // more often than the rest of the policy.
+    assigned_room: num(r.assigned_room ?? r.policy?.assignedRoom),
+    // WHY THIS CHARACTER IS NOT WORKING, AS DATA RATHER THAN AS PROSE.
+    //
+    // The reason `escalate.mjs` refuses to act on `doing`: matching sentences the harness
+    // owns is a coupling that breaks silently when one is reworded, and the harness's own
+    // supervisor had two such regexes, both written after a churn loop. These carry a
+    // stable code instead. Empty array, never undefined — "this keeper reports no
+    // refusals" and "this broker does not answer that question" must stay distinguishable.
+    refusals: Array.isArray(r.refusals) ? r.refusals : [],
+    waiting_on: r.waiting_on ?? null,
+    // Who owns which half of this character. With nothing attached every entry is the
+    // string 'keeper'.
+    faculties: r.faculties ?? null,
+    // ON THE BOARD NOW — harness recommendation 7 landed, and this is what it bought.
+    //
+    // `policy` used to be null here unconditionally, with a comment saying the diff could
+    // not be made from the free read. That was true and is the thing that changed: the
+    // fleet row carries the keeper's whole policy, so planOrders can diff without paying
+    // four server requests per character to discover there is nothing to do.
+    //
+    // It stays NULL when the broker does not send it, and that is deliberate rather than
+    // defensive: planOrders REFUSES to diff against a missing policy instead of treating
+    // it as `{}`, because `{}` makes every field read as different and writes every
+    // setting on every tick while reporting success. So an older broker degrades to the
+    // deepen() path exactly as before, and a newer one skips it.
+    keeper: { mode: str(r.autopilot?.mode ?? r.mode), running: r.autopilot?.running !== false,
+              policy: r.policy ?? null,
+              tally: { kills: num(r.autopilot?.kills) ?? 0 }, journal: [] },
+    // Where this observation came from. `board` still means board — the depth is about
+    // which CALL produced it, not about which fields happen to be present, and a rule
+    // that declares it needs `progress` or `inventory` must still deepen for those.
     depth: 'board',
   };
 }
@@ -149,7 +188,23 @@ export function normalizeStatus(base, s = {}, { now = Date.now() } = {}) {
       parked: keeper.parked ?? null,
       // THE FIELD THE WHOLE EXPENSIVE READ IS FOR. Without it there is nothing to diff
       // an order against, so every write would be sent every tick.
-      policy: keeper.policy ?? {},
+      //
+      // NEVER `?? {}` — AND THIS DEFAULTED TO `{}` AND CAUSED EXACTLY THAT.
+      //
+      // planOrders refuses to diff against a missing policy and says why: an empty object
+      // makes every field read as different, so the bot writes every setting on every tick
+      // and reports success each time. This line handed it an empty object instead of
+      // nothing, which turned the refusal into the silent failure it exists to prevent.
+      //
+      // It showed up the moment the board began carrying the policy: `planOrders` called
+      // directly on a board row returned `send: null` — correctly, nothing to do — while
+      // the full tick sent all eight fields for all twenty-one characters, because
+      // deepen() ran afterwards and replaced a good policy with `{}`. Both halves looked
+      // right in isolation, which is why it survived the unit tests.
+      //
+      // So: the status's policy, else the one the board already gave us, else NOTHING and
+      // let planOrders refuse.
+      policy: keeper.policy ?? base.keeper?.policy ?? null,
       tally: keeper.did ?? keeper.tally ?? base.keeper.tally,
       // The journal tail, as the harness returns it. Carried so a human can read it;
       // never matched against.

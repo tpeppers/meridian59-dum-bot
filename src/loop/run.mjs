@@ -33,6 +33,58 @@ export async function run(ctx, { onPass = () => {} } = {}) {
                   claim: config.claim, commit: ctx.commit,
                   why: 'a run begins. Everything below this line is attributable to this doctrine' });
 
+  // ---------------------------------------------------------------- the claim, for real
+  //
+  // Until the harness grew per-faculty claims this was a promise the doctrine made and
+  // nothing enforced: DUM wrote orders and no one could see who owned the character. It
+  // is now a lease, and the three properties that matter are the harness's, not ours —
+  // survival and mortality are REFUSED unless that machine's operator has consented, an
+  // expired lease reverts to the keeper, and the keeper never stops executing.
+  //
+  // A claim is per character, because ownership is. `mine` records what was actually
+  // granted rather than what was asked for, so the release at the end hands back exactly
+  // what we hold and the journal records any refusal instead of assuming success.
+  const wanted = Object.entries(config.claim ?? {})
+    .filter(([f, owner]) => owner === 'bot' &&
+            !['i_accept_the_character_may_die', 'lease_ms'].includes(f))
+    .map(([f]) => f);
+  const holder = `dum/${config.name}@pid-${process.pid}`;
+  const leaseMs = config.claim?.lease_ms ?? 120_000;
+  const mine = new Map();
+
+  async function claimFor(agents) {
+    if (!ctx.commit || !wanted.length) return;
+    for (const agent of agents) {
+      if (mine.has(agent)) continue;
+      const r = await ctx.broker.call('autopilot', {
+        agent, action: 'claim', faculties: wanted, by: holder,
+        lease_ms: leaseMs, why: `doctrine "${config.name}" is directing this character`,
+      }).catch(e => ({ error: e.message }));
+      if (r?.error) { journal.write({ kind: 'claim-failed', agent, why: r.error }); continue; }
+      mine.set(agent, r.granted ?? []);
+      // A REFUSAL IS NOT AN ERROR AND MUST NOT BE SILENT. The harness refuses survival
+      // and mortality unless the operator consented on that machine; recording it is how
+      // a doctrine that quietly did not get what it asked for becomes visible.
+      if (r?.refused?.length)
+        journal.write({ kind: 'claim-refused', agent, refused: r.refused,
+                        why: 'the harness declined part of the claim' });
+    }
+  }
+
+  async function heartbeat() {
+    if (!ctx.commit) return;
+    for (const agent of mine.keys())
+      await ctx.broker.call('autopilot', { agent, action: 'heartbeat', by: holder, lease_ms: leaseMs })
+        .catch(e => journal.write({ kind: 'heartbeat-failed', agent, why: e.message }));
+  }
+
+  async function releaseAll() {
+    if (!ctx.commit) return;
+    for (const agent of mine.keys())
+      await ctx.broker.call('autopilot', { agent, action: 'yield', by: holder })
+        .catch(() => {});   // the lease expires on its own; a failed release is not fatal
+  }
+
   let lastFleetAt = 0;
   let consecutiveErrors = 0;
 
@@ -41,6 +93,11 @@ export async function run(ctx, { onPass = () => {} } = {}) {
     const doFleet = began - lastFleetAt >= config.cadence.fleet_ms;
     try {
       const result = await pass(ctx, { only: ctx.only ?? null, decideFleet: doFleet });
+      // Claim whoever we just decided about, then push the lease out. Claiming AFTER the
+      // pass rather than before it means a character that turned out to be committed to
+      // something else is never claimed at all.
+      await claimFor((result.characters ?? []).map(l => l.agent).filter(Boolean));
+      await heartbeat();
       if (doFleet) lastFleetAt = began;
       consecutiveErrors = 0;
       onPass(result);
@@ -60,7 +117,12 @@ export async function run(ctx, { onPass = () => {} } = {}) {
     for (let left = wait; left > 0 && !stopping; left -= 500) await sleep(Math.min(500, left));
   }
 
-  journal.write({ kind: 'shutdown', why: 'asked to stop; the claim lapses and the keeper ' +
-                                         'takes its faculties back' });
+  // Hand back what we hold rather than waiting for the lease to lapse. The lease is the
+  // SAFETY net for a process that dies badly; a process that stops on purpose should not
+  // leave a character owned by a pid that no longer exists for two more minutes.
+  await releaseAll();
+  journal.write({ kind: 'shutdown', held: [...mine.keys()],
+                  why: 'asked to stop; the claim was released and the keeper has its ' +
+                       'faculties back. Anything not released lapses on its own' });
   return { stopped: true };
 }

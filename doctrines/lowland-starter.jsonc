@@ -1,0 +1,52 @@
+{
+  // A FRAGILE CHARACTER, AND THE SMALLEST USEFUL DOCTRINE.
+  //
+  // Extends the null doctrine and adds exactly two things: a first rung, and the one
+  // economy threshold that matters when everything a character owns fits in a pocket.
+  //
+  // The point of the file is that it is SHORT. A doctrine does not have to have an
+  // opinion about everything, and the layering means an omitted section is "leave the
+  // keeper's own value alone" rather than "assert a default over the top of it".
+
+  "extends": "survive.jsonc",
+
+  "name": "lowland starter",
+  "why": "a character under 30 max health has no room to be wrong, so the only directional decision worth making for it is 'do not carry anything you would mind losing'",
+
+  "claim": {
+    "work": "bot",
+    "economy": "bot"
+  },
+
+  "goals": {
+    "ladder": [
+      {
+        "id": "get-out-of-the-lowlands",
+        "until": { "kind": "max_health", "at_least": 30 },
+        "orders": {
+          "mode": "farm",
+          "strategy": "wellfed",
+          // The wall is worth more to something this fragile than to anything else in
+          // the fleet, and breaking off early costs almost nothing when stopping in a
+          // safe spot is free.
+          "use_safe_spots": true,
+          "hold_resume_above": 0.9,
+          "flee_below": 0.45,
+          "rest_below": 0.8
+        },
+        "why": "25 max health gives no room to be wrong: fight from a wall, top up before every swing, and leave the fight earlier than an established character would"
+      }
+    ],
+    "on_complete": "report"
+  },
+
+  "economy": {
+    // Low, on purpose. A starter character's whole purse is small enough that the
+    // expected loss from carrying it is larger than the inconvenience of the walk — and
+    // a town is a sanctuary, so the trip is the safest walking it will do all day.
+    "bank_above": 200
+  }
+
+  // Nothing about placement, prey, or pairing. Those are decisions this doctrine
+  // deliberately does not make, and the keeper's own answers to them are fine.
+}

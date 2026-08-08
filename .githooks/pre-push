@@ -1,0 +1,25 @@
+#!/bin/sh
+# REFUSE THE PUSH, NOT THE COMMIT.
+#
+# Install with:   git config core.hooksPath .githooks
+#
+# A hook is not tracked by git, which is why this lives in .githooks/ and has to be
+# turned on once per clone. That is a real gap and it is the reason CLAUDE.md states
+# the rule as well: a hook nobody installed is a hook nobody has.
+#
+# WHY PRE-PUSH RATHER THAN PRE-COMMIT. A local commit naming a character is a mistake
+# that can still be rewritten; a push is the moment it becomes somebody else's. Gating
+# the commit would also make ordinary work-in-progress annoying enough that people
+# start passing --no-verify, and a guard that is routinely bypassed is worse than none
+# because it is still believed in.
+set -e
+
+echo "pre-push: offline tests"
+node tests/run.mjs >/dev/null
+
+echo "pre-push: publication guard"
+# Checks everything TRACKED, not merely what is staged — a name committed three
+# commits ago is about to be published by this push just the same.
+node tools/dum-guard.mjs
+
+echo "pre-push: ok"

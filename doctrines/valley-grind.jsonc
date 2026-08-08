@@ -1,0 +1,147 @@
+{
+  // A WORKED ADVANCEMENT LADDER — what DUM is actually for.
+  //
+  // The claim this doctrine makes, and that it can be held to: a character's whole
+  // direction — what it is trying to become, what it should be killing, where it should
+  // stand, and how much money it is allowed to carry — is four numbers and an ordered
+  // list, and does not need a language model to produce.
+  //
+  // It is NOT tuned. Every threshold here is a starting position chosen to be legible,
+  // and the point of the file is that changing one is a diff and a measurement rather
+  // than a conversation.
+
+  "extends": "survive.jsonc",
+
+  "name": "valley grind",
+  "why": "test whether an ordered ladder plus a graduation check beats a keeper left on its own defaults, on max health gained per hour",
+
+  // REQUIRED BEFORE THIS CAN BE COMMITTED, and there is no default. Uncomment, name
+  // your own fleet, and mean it. The broker's /health must report that exact fleet or
+  // `--commit` refuses.
+  //
+  // A real fleet name is not written here on purpose. It identifies a roster on one
+  // machine, so a stranger cloning this repository has no such fleet — a doctrine
+  // naming ours would be useless to them and a description of us. `tools/dum-guard.mjs`
+  // enforces that rather than trusting it.
+  // "fleet": "<your-fleet>",
+
+  "claim": {
+    // The carve-out, stated. DUM takes the directional decisions; the keeper keeps
+    // everything that runs at one second.
+    //
+    // Note what stays with the keeper and why it stays there rather than being
+    // "temporarily" borrowed: DUM ticks every thirty seconds, so a survival decision
+    // made here would be acting on information that is on average fifteen seconds old,
+    // against a keeper that has better information and is already acting on it.
+    "work": "bot",
+    "movement": "bot",
+    "economy": "bot"
+  },
+
+  "goals": {
+    "ladder": [
+      {
+        "id": "reach-30-max-health",
+        "until": { "kind": "max_health", "at_least": 30 },
+        "orders": {
+          "mode": "farm",
+          "strategy": "wellfed",
+          "use_safe_spots": true,
+          "hold_resume_above": 0.9,
+          "flee_below": 0.45
+        },
+        "why": "below 30 max health there is no room to be wrong in a fight, so this rung buys margin rather than speed: eat to the ceiling, fight from a wall, and break off early"
+      },
+      {
+        "id": "graduate-to-the-valley",
+        "until": { "kind": "max_health", "at_least": 60 },
+        "orders": {
+          "mode": "farm",
+          "strategy": "trader",
+          "use_safe_spots": true,
+          "roam": false,
+          "max_carry": 40
+        },
+        "why": "past 30 the starter prey stops paying — a kill only advances a character when the creature is at or above its level — so this rung is about moving up in prey and funding the food that funds the uptime"
+      },
+      {
+        "id": "hold",
+        "until": { "kind": "max_health", "at_least": 999 },
+        "orders": { "mode": "farm", "strategy": "trader" },
+        "why": "a deliberately unreachable rung, so the ladder never reports complete and never quietly stands a working character down. Replace it with a real target when there is one"
+      }
+    ],
+    "on_complete": "report"
+  },
+
+  "prey": {
+    // DUM STILL DOES NOT CHOOSE PREY. `hunt` is set per character or by an operator, and
+    // the reason is the harness's: the trade-off between money, items and advancement is
+    // a decision about what a character is FOR.
+    //
+    // What this buys is the check a single keeper structurally cannot make — whether the
+    // thing already being killed still pays for the thing the ladder said it was farming.
+    // A keeper grinding worthless prey looks EXACTLY like a healthy one: it kills
+    // something every pass, so nothing stalls, and the board reads `hunting: giant rat`
+    // for as long as you leave it.
+    "choose": false,
+    "graduate_margin": 0,
+    "max_threat_over": 6
+  },
+
+  "placement": {
+    // OFF until the fleet-level version of this rule exists. The per-character rule
+    // assigns the first allowed room, which is right for one character and wrong for a
+    // fleet — and getting it wrong is how twenty-one characters end up in two rooms.
+    "spread": false,
+    "rooms": [],
+    "per_room": 2
+  },
+
+  "economy": {
+    // Everything carried drops where a character dies and a bank balance does not.
+    // 500 is a little over the walking float, so a character still has enough to shop
+    // with; it is set here rather than left null because this doctrine wants a stated
+    // position that can be argued with.
+    "bank_above": 500,
+    "max_carry": 40,
+    // Report when one character is holding a third of everything the fleet has in its
+    // pockets. Reporting only — DUM does not send anyone to a bank.
+    "concentration_report_at": 0.33
+  },
+
+  "party": {
+    // OFF, and contested. Pairing makes both characters advance from one kill, and it is
+    // also the most thrash-prone decision in the fleet. The harness's supervisor carries
+    // a measurement suggesting solo ran better over one hour. That is one hour, and it is
+    // exactly the kind of claim this repository is meant to make settleable — turn it on
+    // deliberately, in its own run, and let m59-bard judge.
+    "pair": false,
+    "keep_working_pairs": true
+  },
+
+  "escalate": {
+    // Still report-only. See src/decide/rules/escalate.mjs: DUM will not restart a keeper
+    // it cannot distinguish from one that is deliberately waiting.
+    "unstick": true,
+    "stall_ticks": 4
+  },
+
+  // ORDER FIELDS SOMETHING ELSE ALREADY OWNS.
+  //
+  // A supervisor outside the harness repository restarts stalled keepers roughly every
+  // 60s and reapplies its own rest_below, max_carry and roam. Two writers on different
+  // cadences make a character's orders oscillate while BOTH logs look correct, which is
+  // the worst possible combination for noticing.
+  //
+  // Uncomment before running DUM alongside it. Field names are checked against the
+  // order-field list at load, because a typo here fails in the dangerous direction —
+  // the field is not yielded and DUM writes it anyway.
+  // "yield_to": ["rest_below", "max_carry", "roam"],
+
+  "cadence": {
+    "character_ms": 30000,
+    "fleet_ms": 300000,
+    "backoff_ms": 60000
+  }
+}

@@ -1,0 +1,24 @@
+# Everything a running bot writes. The journal names characters, and a character
+# name plus this repository's doctrine files is enough to identify an account on a
+# shared server. Same rule as the harness: a running fleet's output never lands in
+# git.
+/var/
+/substrate/
+*.log
+*.ndjson
+
+# A doctrine may name characters. The examples in doctrines/ deliberately do not,
+# and anything local that does belongs beside them under this name.
+/doctrines/local/
+/doctrines/*.local.jsonc
+
+# Per-machine agent configuration. This IS excluded by a global gitignore on the
+# machine this repository was written on — which is exactly why it is repeated here.
+# A public repository must not depend on a collaborator having the same global file,
+# and the failure mode of assuming they do is that their local settings arrive in a
+# pull request.
+.claude/settings.local.json
+
+node_modules/
+.DS_Store
+Thumbs.db

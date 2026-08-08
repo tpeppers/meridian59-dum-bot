@@ -1,0 +1,53 @@
+{
+  // THE NULL DOCTRINE, and the one to run first.
+  //
+  // DUM claims nothing, changes nothing, and reports. Every rule in the table declines
+  // with a reason, which makes this the fastest way to see the decision table against a
+  // real fleet without the fleet noticing.
+  //
+  // It is also the CONTROL. Any claim that a doctrine improved something has to be
+  // measured against the fleet running exactly as the keeper would have run it — which
+  // is this file. `m59-bard` is where that comparison is settled.
+
+  "name": "survive — the null doctrine",
+  "why": "the keeper already keeps a character alive. This asserts that DUM adds nothing, so that anything a later doctrine adds is measurable against it",
+
+  // NO FLEET. Deliberate: this doctrine can be planned against anything and can never
+  // be committed. Copy it and add a fleet before it can act.
+  "fleet": null,
+
+  "claim": {
+    // Everything stays with the keeper. This is the unattended baseline: identity,
+    // mortality, survival, recovery, work, movement, economy and social all run in the
+    // keeper's own loop at one second, exactly as they do when no bot exists.
+    "identity": "keeper",
+    "mortality": "keeper",
+    "survival": "keeper",
+    "recovery": "keeper",
+    "work": "keeper",
+    "movement": "keeper",
+    "economy": "keeper",
+    "social": "keeper"
+  },
+
+  "goals": {
+    // No ladder: DUM has no opinion about what any character is for.
+    "ladder": []
+  },
+
+  "escalate": {
+    // Report stalls; never restart. See src/decide/rules/escalate.mjs for why the
+    // reporting half is the honest half until the harness distinguishes a refusal from
+    // a stall in a machine-readable way.
+    "unstick": false,
+    "stall_ticks": 4
+  },
+
+  "cadence": {
+    // Slow. Nothing here acts, so ticking often only costs the broker reads — and a
+    // read is not passive: it counts as an action and wakes the room.
+    "character_ms": 60000,
+    "fleet_ms": 300000,
+    "backoff_ms": 60000
+  }
+}

@@ -1,0 +1,20 @@
+{
+  "name": "meridian59-dum-bot",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "description": "DUM — a Deterministic Unattended Mover for Meridian 59. The half of a character's mind that is if-then-else: goal selection, target choice, placement, economy and escalation, expressed as drop-in doctrine files and driven against a running m59-harness broker. No language model anywhere in it.",
+  "bin": {
+    "dum": "./bin/dum.mjs"
+  },
+  "scripts": {
+    "test": "node tests/run.mjs",
+    "guard": "node tools/dum-guard.mjs",
+    "preflight": "node tests/run.mjs && node tools/dum-guard.mjs",
+    "plan": "node bin/dum.mjs plan --dry-run",
+    "doctor": "node bin/dum.mjs doctor"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

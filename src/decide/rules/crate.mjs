@@ -107,7 +107,7 @@ export function crateWindow(crate = {}, now, probeEveryMs) {
   // opened, which is a character in the basement more or less permanently.
   if (sinceCheck !== null && sinceCheck < probeEveryMs)
     return { ready: false, state: 'just-checked',
-             why: `checked ${mins(sinceCheck)} ago; not probing again for ` +
+             why: `checked ${mins(sinceCheck)} ago; not checking again for ` +
                   `${mins(probeEveryMs - sinceCheck)}` };
 
   // NOTHING REMEMBERED MEANS GO AND LOOK, and that is the safe direction: the cost of
@@ -146,7 +146,7 @@ export function crateWindow(crate = {}, now, probeEveryMs) {
  *   * hurt characters are not sent, because one find in nine spawns a monster adjacent
  *     and getting out of that is the keeper's job.
  *
- * The ORDER is round-robin by when each last went, which rotates the fleet through the
+ * The ORDER is by turns: whoever went longest ago, which rotates the fleet through the
  * lockout on its own without anybody needing to model it — and never-been is first.
  */
 export function eligibleCheckers(rows, crate = {}, {
@@ -226,7 +226,7 @@ export function readCrateTranscript(messages = []) {
  * `was` is the topic as it stood before this check. It is a parameter rather than
  * something the writer merges, because `checked_by` is a per-character map and
  * Memory.patch is deliberately shallow: handing it `{[agent]: at}` would REPLACE every
- * other character's timestamp, and the round-robin would collapse to whoever went last.
+ * other character's timestamp, and the rotation would collapse to whoever went last.
  * Keeping the merge here also keeps this function total — the patch it returns is the
  * whole truth about the topic afterwards, which is what makes it journalable.
  */
@@ -309,17 +309,19 @@ export const crateFleetRules = [
             // have the character walk while we told it to stand on a square.
             { tool: 'travel', args: { agent: who.agent, to: room },
               expect: 'arrived', timeout_ms: c.travel_timeout_ms ?? 180_000,
-              why: 'to the Underbasement of Victoria' },
+              // One hop from the castle, and the walk inside room 41 is most of its length.
+              estimate_ms: 90_000, why: 'to the Underbasement of Victoria' },
             // walk_to takes col,row — the kod's square is row 10, col 6.
             { tool: 'walk_to', args: { agent: who.agent, col: square.col, row: square.row },
               expect: 'arrived', timeout_ms: c.walk_timeout_ms ?? 90_000,
-              why: 'onto the crate square itself' },
+              // Fourteen rows up an open floor at roughly a second a square.
+              estimate_ms: 30_000, why: 'onto the crate square itself' },
             // `act verb:'go'` IS THE MECHANIC. Not walking — `UserGo` sends the
             // character's CURRENT square (`user.kod:5656`) and the room answers on that.
             // It must not run unless the walk arrived: a `go` on an exit square takes
             // the exit, and room 41's exit to the castle is at (25,2).
             { tool: 'act', args: { agent: who.agent, verb: 'go' },
-              timeout_ms: 30_000, collect: 'messages',
+              timeout_ms: 30_000, collect: 'messages', estimate_ms: 5_000,
               why: 'rummage in the crate and read what the room says back' },
             ...(c.return_after === false ? [] : [
               // ALWAYS, INCLUDING AFTER A FAILURE. Leaving a character standing in the
@@ -327,7 +329,7 @@ export const crateFleetRules = [
               // its keeper will make its own decision about a room the doctrine never
               // sent it to. A travel to the room it is already in returns at once.
               { tool: 'travel', args: { agent: who.agent, to: back },
-                timeout_ms: c.travel_timeout_ms ?? 180_000, always: true,
+                timeout_ms: c.travel_timeout_ms ?? 180_000, always: true, estimate_ms: 90_000,
                 why: 'back to the room it was hunting in' },
             ]),
           ],

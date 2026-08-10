@@ -24,7 +24,7 @@ import { decide } from '../src/decide/engine.mjs';
 import { fleetRules } from '../src/decide/index.mjs';
 import { deny } from '../src/link/surface.mjs';
 import { loadDoctrine } from '../src/config/load.mjs';
-import { runErrand, readErrand } from '../src/act/errands.mjs';
+import { runErrand, readErrand, estimateFor } from '../src/act/errands.mjs';
 
 const eq = (a, b, m) => { if (a !== b) throw new Error(`${m}: expected ${JSON.stringify(b)}, got ${JSON.stringify(a)}`); };
 const ok = (v, m) => { if (!v) throw new Error(m); };
@@ -134,7 +134,7 @@ test('crate: a row with no health reading is not eligible, because the floor mea
   eq(eligibleCheckers(rows, {}).length, 0, 'null is not "fine"');
 });
 
-test('crate: the order is round-robin, so the fleet rotates through the lockout on its own', () => {
+test('crate: the order is by turns, so the fleet rotates through the lockout on its own', () => {
   const rows = [inCastle('been-recently'), inCastle('been-a-while'), inCastle('never-been')];
   const got = eligibleCheckers(rows, {
     checked_by: { 'been-recently': NOW - 60_000, 'been-a-while': NOW - 86_400_000 },
@@ -152,16 +152,27 @@ test('crate: one character in the castle is not enough, and it says so rather th
   ok(/refuses whoever found last/.test(v.why), `the reason survives: ${v.why}`);
 });
 
-test('crate: off by default, and the reason is in the table rather than in a comment', () => {
+test('crate: ON by default, because the trip is nearly free from inside the castle', () => {
+  // Changed deliberately: this used to assert the opposite. The expected value is poor
+  // and unchanged — what makes it worth having is that it fires ONLY when the fleet is
+  // already at Castle Victoria, and does nothing at all to a fleet hunting elsewhere.
   const plain = loadDoctrine({ file: null, overrides: { 'fleet': 'f', 'claim.work': 'bot' } }).config;
+  eq(plain.crate.check, true, 'on in the defaults');
+  eq(plain.crate.quorum, 3, 'and three is the working number, not the mechanic floor of two');
+  ok(plain.crate.zone.includes(2), 'Outside Castle Victoria counts');
   const { considered } = decide(fleetRules, fleetObs([inCastle('a'), inCastle('b')]), plain);
   const v = considered.find(x => x.rule === 'crate-check');
-  eq(v.verdict, 'off', 'not enabled');
-  ok(/one find in nine/.test(v.why), 'the cost is stated where somebody turning it on will read it');
+  eq(v.verdict, 'no', 'and it runs — declining here only because two is short of the quorum');
+});
+
+test('crate: the null doctrine turns it back off, because a control that acts is not a control', () => {
+  const { config } = loadDoctrine({ file: 'doctrines/survive.jsonc' });
+  eq(config.crate.check, false, 'survive.jsonc overrides the default');
 });
 
 test('crate: a quorum in the castle and an open window produces the errand, in order', () => {
-  const obs = fleetObs([inCastle('role-a'), inCastle('role-b')], { crate: { last_finder: 'role-a' } });
+  const obs = fleetObs([inCastle('role-a'), inCastle('role-b'), inCastle('role-c')],
+                       { crate: { last_finder: 'role-a' } });
   const { intent } = decide(fleetRules, obs, doctrineWith());
   ok(intent, 'fired');
   eq(intent.kind, 'errand', 'not a policy write');
@@ -183,7 +194,8 @@ test('crate: a quorum in the castle and an open window produces the errand, in o
 
 test('crate: a quorum with nobody eligible reports why instead of looking like success', () => {
   // Both in the castle, one is the last finder and one is too small. The window is open.
-  const obs = fleetObs([inCastle('role-a'), inCastle('tiny', { level: 20, max_health: 20 })],
+  const obs = fleetObs([inCastle('role-a'), inCastle('tiny', { level: 20, max_health: 20 }),
+                        inCastle('alsotiny', { level: 21, max_health: 21 })],
                        { crate: { last_finder: 'role-a' } });
   const { intent, considered } = decide(fleetRules, obs, doctrineWith());
   eq(intent, null, 'nobody goes');
@@ -194,7 +206,7 @@ test('crate: a quorum with nobody eligible reports why instead of looking like s
 test('crate: declining does not consume the fleet tick — the rules below it still run', () => {
   // `kind: 'pass'` exists for exactly this. A `none` intent would have stopped the table
   // and quietly disabled pairing for as long as the crate was cooling.
-  const obs = fleetObs([inCastle('role-a'), inCastle('role-b')],
+  const obs = fleetObs([inCastle('role-a'), inCastle('role-b'), inCastle('role-c')],
                        { crate: { last_find: NOW - 1000 } });
   const d = doctrineWith();
   d.party.pair = true;
@@ -263,7 +275,44 @@ test('crate: an errand announces itself busy before walking, and frees the chara
       { tool: 'act', args: { agent: 'role-b', verb: 'go' }, collect: 'messages' },
     ] } };
   await runErrand(broker, intent, { commit: true, holder: 'dum/test@pid-1' });
-  eq(seen.join(','), 'busy,free', 'busy first, free last');
+  // busy, then an EXTENSION before the second step, then free. See estimateFor().
+  eq(seen.join(','), 'busy,busy,free', 'announced, extended as it went, then handed back');
+});
+
+test('crate: the busy window is an ESTIMATE, padded, and it shrinks as the errand runs', async () => {
+  // THE FIX FOR "THE SUPERVISOR BUTTS IN MID-ERRAND". A flat lease is wrong in both
+  // directions: too short and a supervisor round walks in halfway through a trip across
+  // the world, too long and a thirty-second errand blocks the unstick round for ten
+  // minutes. So the errand asks for what its REMAINING steps expect, doubled.
+  const leases = [];
+  const broker = {
+    call: async (tool, args) => {
+      if (tool === 'autopilot' && args.action === 'busy') leases.push(args.lease_ms);
+      return tool === 'act' ? { messages: [] } : { arrived: true };
+    },
+    write: async () => ({ dry_run: true }),
+  };
+  const steps = [
+    { tool: 'travel', args: { agent: 'a', to: 41 }, estimate_ms: 90_000, expect: 'arrived' },
+    { tool: 'walk_to', args: { agent: 'a', col: 6, row: 10 }, estimate_ms: 30_000, expect: 'arrived' },
+    { tool: 'act', args: { agent: 'a', verb: 'go' }, estimate_ms: 5_000, collect: 'messages' },
+    { tool: 'travel', args: { agent: 'a', to: 38 }, estimate_ms: 90_000, always: true },
+  ];
+  eq(estimateFor(steps), 430_000, 'the whole errand, doubled');
+  eq(estimateFor([{ tool: 'act', estimate_ms: 1_000 }]), 90_000,
+     'and floored, because a leg that goes SLIGHTLY wrong is the ordinary case and is ' +
+     'exactly when being interrupted costs the errand');
+
+  await runErrand(broker, { rule: 'crate-check', kind: 'errand', why: 'x',
+                            orders: { errand: 'crate-check', agent: 'a', steps } },
+                  { commit: true, holder: 'dum/test@pid-1' });
+
+  ok(leases.length >= 2, `asked more than once: ${leases.join(',')}`);
+  eq(leases[0], 430_000, 'the first ask covers the whole errand');
+  // EACH LATER ASK IS SMALLER, which is what releases the character early instead of
+  // holding a window it stopped needing.
+  ok(leases.every((v, i) => i === 0 || v <= leases[i - 1]),
+     `each extension asks for less than the last: ${leases.join(',')}`);
 });
 
 test('crate: the character is freed even when a step failed', async () => {

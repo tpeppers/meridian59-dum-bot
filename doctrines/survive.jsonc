@@ -35,6 +35,18 @@
     "ladder": []
   },
 
+  "crate": {
+    // OFF HERE AND ON IN THE DEFAULTS — the one place this file overrides rather than
+    // inherits, and the reason is exactly what this doctrine is FOR.
+    //
+    // `crate.check` defaults on because the trip is nearly free when the fleet is already
+    // at Castle Victoria. It is still a character walking out of the room it was hunting
+    // in, which is an act — and this doctrine's whole value is being the CONTROL every
+    // other doctrine's claim is measured against. A null doctrine that quietly walks
+    // somebody to a basement measures nothing.
+    "check": false
+  },
+
   "escalate": {
     // Report stalls; never restart. See src/decide/rules/escalate.mjs for why the
     // reporting half is the honest half until the harness distinguishes a refusal from

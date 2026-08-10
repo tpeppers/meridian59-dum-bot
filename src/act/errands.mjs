@@ -74,8 +74,39 @@ export const ERRANDS = {
  * @param {boolean} [opts.commit]
  * @returns {Promise<object>} the applied record, with the transcript the caller reads
  */
+// HOW LONG AN ERRAND EXPECTS TO TAKE, AND WHY IT IS ASKED RATHER THAN ASSUMED.
+//
+// The supervisor stands off from a character that is `busy`, and `busy` is LEASED — a bot
+// that dies must not leave a character nobody supervises. So the lease is the whole
+// interface, and a flat number gets it wrong in both directions: too short and the
+// supervisor walks in halfway through a walk across the world, too long and a thirty-second
+// errand blocks the unstick round for ten minutes.
+//
+// PADDING IS NOT OPTIMISM, IT IS THE POINT. A leg that goes SLIGHTLY wrong — a replan
+// around a blocked square, a step refused and retried, a monster in the doorway — is the
+// ordinary case, and it is exactly the case where being interrupted costs the whole
+// errand. So the estimate is doubled and floored, and the errand extends as it goes
+// besides. Being wrong long costs a supervisor round; being wrong short costs the errand.
+const PAD = 2;
+const FLOOR_MS = 90_000;
+// A CEILING TOO, because the lease exists to protect the fleet from a bot that stopped
+// answering. Anything that genuinely needs longer than this should be several errands.
+const CEILING_MS = 15 * 60_000;
+
+// What each tool costs when a step does not say. `travel` is a character WALKING at
+// roughly a second a square and a route can be twenty-five hops; the rest are one action
+// through the pacer.
+const DEFAULT_ESTIMATE_MS = { travel: 120_000, walk_to: 45_000, act: 5_000, autopilot: 2_000 };
+
+/** The padded window this errand wants, from the steps it is about to run. */
+export function estimateFor(steps = []) {
+  const raw = steps.reduce((n, s) =>
+    n + (Number(s.estimate_ms) || DEFAULT_ESTIMATE_MS[s.tool] || 10_000), 0);
+  return Math.min(CEILING_MS, Math.max(FLOOR_MS, Math.round(raw * PAD)));
+}
+
 export async function runErrand(broker, intent, { commit = false, holder = null,
-                                                  busyLeaseMs = 600_000 } = {}) {
+                                                  busyLeaseMs = null } = {}) {
   const { errand, agent, steps = [] } = intent.orders ?? {};
   if (!ERRANDS[errand])
     // Loud rather than executed. An errand kind nothing can interpret would run, walk a
@@ -105,17 +136,38 @@ export async function runErrand(broker, intent, { commit = false, holder = null,
   // refuses to run because it could not announce itself is worse than one that runs
   // unannounced: the announcement protects against a supervisor that may not be running
   // at all. It is recorded and the errand proceeds.
-  if (commit && holder) {
+  // ASK FOR THE TIME THIS ERRAND EXPECTS TO NEED, not a constant. See estimateFor().
+  let lease = busyLeaseMs ?? estimateFor(steps);
+  const claimBusy = async (ms, note) => {
+    if (!commit || !holder) return null;
     const said = await broker.call('autopilot', {
       agent, action: 'busy', by: holder, kind: errand,
       label: intent.orders.label ?? errand,
-      why: intent.why, lease_ms: busyLeaseMs,
+      why: note ?? intent.why, lease_ms: Math.round(ms),
     }).catch(e => ({ error: e.message }));
-    if (said?.error) results.push({ tool: 'autopilot', args: { action: 'busy' }, result: said,
+    if (said?.error) results.push({ tool: 'autopilot', args: { action: 'busy', lease_ms: Math.round(ms) },
+      result: said,
       why: 'could not mark the character busy — a stall detector may restart its keeper mid-errand' });
-  }
+    return said;
+  };
+  await claimBusy(lease, `${intent.why} (expects about ${Math.round(lease / 1000)}s)`);
 
-  for (const step of steps) {
+  for (let i = 0; i < steps.length; i++) {
+    const step = steps[i];
+    // EXTEND AS IT GOES, rather than asking for the worst case once.
+    //
+    // A single up-front lease has to cover the whole errand, so it is either generous
+    // enough to block the unstick round long after the errand finished, or tight enough
+    // to lapse in the middle of the one leg that went slowly. Re-declaring before each
+    // remaining step asks only for what is LEFT, padded — so a fast errand releases the
+    // character early and a slow one keeps extending instead of being cut off.
+    //
+    // It costs one call per step, which is nothing against a leg that is a character
+    // walking a hundred squares.
+    if (i > 0 && !stopped) {
+      const left = estimateFor(steps.slice(i));
+      if (left > 15_000) await claimBusy(left, `${intent.why} (${steps.length - i} step(s) left)`);
+    }
     if (stopped && !step.always) {
       results.push({ tool: step.tool, skipped: true, why: `after ${stopped}` });
       continue;

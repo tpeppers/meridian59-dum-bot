@@ -190,17 +190,34 @@ export const DEFAULTS = {
   // a level-120 narthyl worm that nothing in this fleet may fight. It is worth doing at
   // all only because the fleet is standing in the castle anyway.
   crate: {
-    check: false,
-    // Which rooms count as "hunting in Castle Victoria": 38 the castle itself, 39
-    // upstairs, 40 the throne room. Room 2, Outside Castle Victoria, is deliberately
-    // absent — it is the approach rather than the castle, and somebody passing through
-    // is not somebody the trip is nearly free for.
-    zone: [38, 39, 40],
-    // How many must be in the castle before anyone is sent. TWO IS THE MECHANIC, NOT A
-    // PREFERENCE: `poLastFinder` refuses whoever found last, in silence, so a fleet that
-    // can only ever field ONE eligible character down there collects exactly one item
-    // and then nothing, for ever.
-    quorum: 2,
+    // ON BY DEFAULT, WHICH IS THE ONE PLACE THIS BLOCK DIFFERS FROM EVERY OTHER OPT-IN
+    // HERE, AND IT IS A DECISION RATHER THAN AN OVERSIGHT.
+    //
+    // The expected value is poor and stated below; what makes it worth having anyway is
+    // that the trip is nearly free WHEN THE FLEET IS ALREADY IN THE CASTLE, which is the
+    // only condition under which it fires. It changes nobody's orders, it walks one
+    // character one hop and back, and it does nothing at all to a fleet that is hunting
+    // anywhere else — which is most of them, most of the time.
+    //
+    // `survive.jsonc` turns it back off, because that doctrine's whole value is being a
+    // CONTROL: a null doctrine that quietly walks a character to a basement is not one.
+    check: true,
+    // Which rooms count as being at Castle Victoria: 2 Outside, 38 the castle itself,
+    // 39 upstairs, 40 the throne room. All four are a hop or two from the basement, which
+    // is the whole justification for the behaviour — the trip is nearly free from here
+    // and absurd from anywhere else.
+    zone: [2, 38, 39, 40],
+    // HOW MANY MUST BE THERE, AND WHY THREE RATHER THAN THE TWO THE MECHANIC NEEDS.
+    //
+    // `poLastFinder` refuses whoever found last, in silence and before the timer is even
+    // consulted (dungeon.kod:138), so a rotation needs at least two. That part is the
+    // game's rather than a preference, and the loader refuses anything below it.
+    //
+    // Two is the floor; three is the working number. With exactly two present and one of
+    // them the last finder there is exactly ONE eligible character, so the next find locks
+    // the fleet out entirely until somebody else wanders in. Three always leaves two.
+    // Set it to 2 to take the trip whenever it is possible at all.
+    quorum: 3,
     // The Underbasement of Victoria, and the square the rummage happens on. The kod says
     // row 10, col 6; `walk_to` takes col, row.
     room: 41,

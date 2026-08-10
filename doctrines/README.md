@@ -10,6 +10,7 @@ is gitignored.
 | [`survive.jsonc`](survive.jsonc) | the null doctrine. DUM watches, reports, and changes nothing. The thing to run first, and the control every other doctrine is measured against |
 | [`valley-grind.jsonc`](valley-grind.jsonc) | a worked advancement ladder for a character strong enough to be out of the starter rooms |
 | [`lowland-starter.jsonc`](lowland-starter.jsonc) | extends `survive` for a fragile character: report-only, plus the one economy threshold that matters when everything you own fits in a pocket |
+| [`castle-crate.jsonc`](castle-crate.jsonc) | the first **errand** doctrine. Changes nobody's orders; occasionally walks one character one room down and back, to a crate whose timer, lockout and history are all invisible. The narrowest claim in this directory |
 
 ## The shape
 

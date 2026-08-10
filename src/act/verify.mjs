@@ -30,6 +30,23 @@ import { ORDER_FIELDS } from './orders.mjs';
 export async function verify(broker, applied) {
   if (!applied?.acted || !applied.sent) return { verified: null, fields: {}, why: 'nothing was sent' };
 
+  // AN ERRAND HAS NOTHING TO RE-READ, AND THAT IS NOT A HOLE IN THE EVIDENCE.
+  //
+  // Everything else in this file is a policy: a value was written, so a fresh read can be
+  // asked whether the keeper holds it. An errand is a sequence that already happened, and
+  // its outcome is not a state anyone can look up afterwards — "we rummaged in a crate
+  // and it gave us nothing" leaves no trace on the character, in the room, or on the
+  // board. The transcript IS the evidence, and it is captured at the instant it exists
+  // (`collect: 'messages'` in src/act/errands.mjs) rather than reconstructed later.
+  //
+  // Saying so out loud matters because a bare `verified: null` reads as "nobody checked",
+  // which is exactly the impression this file exists to make impossible.
+  if (applied.kind === 'errand' || applied.kind === 'dry-run-errand')
+    return { verified: null, fields: {},
+             why: `${applied.errand} is a sequence, not a policy — no later read could ` +
+                  `confirm it. Its evidence is the transcript, captured as it happened ` +
+                  `and journalled under memory_patch` };
+
   if (applied.kind === 'batch') {
     // Each half of a pairing is verified independently, because the interesting failure
     // is exactly the asymmetric one: side A believes it has a partner and side B has

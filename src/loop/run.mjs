@@ -7,12 +7,19 @@
 //    case is a fleet that reverts to keeper defaults, which is the fleet's normal
 //    unattended state and not an incident.
 //
-// 2. IT MUST NOT FIGHT THE SUPERVISOR. A fleet may already have `sup.mjs` restarting
-//    stalled keepers and reapplying its own `rest_below`, `max_carry` and `roam`. Two
-//    things writing the same policy fields on different cadences produces a character
-//    whose orders oscillate, and each writer's logs look correct. `yield_to` in the
-//    doctrine (or `--yield-to`) names the fields DUM must not touch; running both
-//    without it is a configuration error rather than a race to be won.
+// 2. IT MUST NOT FIGHT THE SUPERVISOR. The harness's own `m59-supervise.mjs` restarts
+//    stalled keepers and, on every deploy, rewrites a character's whole policy block:
+//    `rest_below`, `max_carry`, `roam`, `flee_below`, `fight_above_vigor`. Two things
+//    writing the same fields on different cadences produces a character whose orders
+//    oscillate, and each writer's logs look correct. `yield_to` in the doctrine (or
+//    `--yield-to`) names the fields DUM must not touch; running both without it is a
+//    configuration error rather than a race to be won.
+//
+//    Until 2026-08-10 this named a `sup.mjs` living outside every repository. That file
+//    exists nowhere and no such process runs — its job is `m59-supervise.mjs`, which is
+//    IN the harness and starts only when asked. The dead claim had reached four
+//    documents and was still being designed against, which is the specific way a stale
+//    fact costs something: it does not read as wrong, it reads as context.
 //
 // 3. IT MUST STOP CLEANLY. On SIGINT the current tick finishes, the claim is released,
 //    and the journal is flushed. A bot killed mid-write leaves a character half
@@ -48,7 +55,10 @@ export async function run(ctx, { onPass = () => {} } = {}) {
     .filter(([f, owner]) => owner === 'bot' &&
             !['i_accept_the_character_may_die', 'lease_ms'].includes(f))
     .map(([f]) => f);
-  const holder = `dum/${config.name}@pid-${process.pid}`;
+  // From the context, not recomputed. The identity has to be the SAME STRING everywhere:
+  // the harness lets only a claim's holder declare that character busy or free it, so two
+  // spellings would be two processes — one that can claim and one that can never release.
+  const holder = ctx.holder ?? `dum/${config.name}@pid-${process.pid}`;
   const leaseMs = config.claim?.lease_ms ?? 120_000;
   const mine = new Map();
 

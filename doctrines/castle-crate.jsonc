@@ -1,0 +1,91 @@
+{
+  // THE CRATE UNDER CASTLE VICTORIA — the first errand doctrine, and the smallest
+  // possible claim: DUM changes nobody's orders, and occasionally walks one character
+  // one room down and back.
+  //
+  // WHAT THIS IS FOR. There is a crate in room 41, the Underbasement of Victoria, that
+  // hands out one item every few hours to whoever is standing on (row 10, col 6) and
+  // sends the GO action. It is worth doing only because a fleet hunting in Castle
+  // Victoria is already one hop away, and it is interesting because NONE of the three
+  // facts a decision about it needs are on the wire:
+  //
+  //   * whether the room's counter is below zero — no packet, no message, no read;
+  //   * who the room will silently refuse — `poLastFinder` is server-side state that
+  //     produces no error and no difference in behaviour, only a missing item;
+  //   * when we last looked — our own past.
+  //
+  // So this doctrine is the honest test of whether a deterministic bot can hold a
+  // decision whose entire input is a memory. See `src/decide/rules/crate.mjs` for the
+  // arithmetic and every kod citation behind it.
+  //
+  // WHAT IT IS NOT FOR. It is not income. The median item is worth about forty
+  // shillings, and 2 of the 11 things the crate can produce are MONSTERS spawned on the
+  // square immediately south of the character that found them — one of them a level-120
+  // narthyl worm, which is outside the band any character in this fleet may fight. The
+  // expected value of the whole behaviour is small and its variance is a death. Turning
+  // it on is a decision to accept that for a lute worth 2500 about one find in eleven.
+
+  "extends": "survive.jsonc",
+
+  "name": "castle crate",
+  "why": "test whether a bot can hold a decision whose only inputs are its own memory and a clock it cannot read — the crate timer, the silent lockout, and nothing observable either way",
+
+  // REQUIRED BEFORE THIS CAN BE COMMITTED, and there is no default. A real fleet name is
+  // not written here on purpose: it identifies a roster on one machine, so a doctrine
+  // naming ours would be useless to a stranger and a description of us.
+  // `tools/dum-guard.mjs` enforces that rather than trusting it.
+  // "fleet": "<your-fleet>",
+
+  "claim": {
+    // The narrowest claim in this directory. `work` is what an errand is; nothing else
+    // is taken, so a character's orders, placement and economy stay exactly where the
+    // keeper and whatever supervisor is running left them.
+    "work": "bot"
+  },
+
+  "crate": {
+    "check": true,
+
+    // Rooms that count as "hunting in Castle Victoria". 38 the castle, 39 upstairs, 40
+    // the throne room. Room 2, Outside Castle Victoria, is deliberately absent: it is
+    // the approach rather than the castle, and somebody passing through is not somebody
+    // this trip is nearly free for.
+    "zone": [38, 39, 40],
+
+    // TWO IS THE MECHANIC, NOT A PREFERENCE, and the loader refuses anything lower.
+    // `poLastFinder` (dungeon.kod:138) refuses whoever found last — before the timer is
+    // even consulted, and without a message — so a fleet that can only ever field one
+    // eligible character down there collects exactly one item and then nothing, for
+    // ever, while every later check goes on looking like an ordinary miss.
+    "quorum": 2,
+
+    // Half an hour. The counter cannot be read, so every check is a guess and this is
+    // the trade: shorter collects sooner after the window opens and keeps a character in
+    // a basement instead of in a fight; longer leaves an item sitting for another player
+    // on a shared server to take. Seventeen probes across the eight-hour window.
+    "probe_every_ms": 1800000,
+
+    // Do not send a hurt character. One find in nine puts a monster next to it, and
+    // getting out of that is the keeper's job — which it does better at full health.
+    "min_health": 0.8,
+
+    // Below 30 base max health both squares are gated off by PFLAG_PKILL_ENABLE
+    // (dungeon.kod:134) and the room says NOTHING back, so a lower floor would send
+    // characters on a walk that cannot succeed and cannot report why. The loader
+    // refuses it.
+    "min_level": 30,
+
+    // Walk back to the room it came from. Turning this off leaves the character in the
+    // basement for its keeper to make its own perfectly reasonable decisions about a
+    // room nobody meant it to be in.
+    "return_after": true
+  },
+
+  // EVERYTHING ELSE IS INHERITED FROM survive.jsonc AND STAYS OFF. No ladder, no prey
+  // choice, no placement, no pairing. That is what makes this doctrine measurable: the
+  // only difference between running it and not running it is a character occasionally
+  // walking downstairs, so anything that changes in the fleet's numbers is attributable
+  // to the crate or to noise, and to nothing else DUM did.
+  "party": { "pair": false },
+  "placement": { "spread": false }
+}

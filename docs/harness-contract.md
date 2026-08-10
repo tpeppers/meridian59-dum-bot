@@ -22,9 +22,20 @@ something new. A dependency nobody wrote down is how two repositories drift.
 | `progress`, `prey`, `inventory`, `bank` | fetched only when a loaded rule declared it needs them |
 | `autopilot` (`action: start`) | the single write surface for orders |
 | `commitment` on the board | which characters the fleet is already using |
+| `travel`, `walk_to` | the two halves of an errand's movement. Both are a character *walking* at roughly a second a square, so a step may raise its own timeout — see `Broker.call` |
+| `act` **with `verb: "go"` only** | the only way to work a place-triggered square. `UserGo` (`user.kod:5656`) answers on whatever square the character is standing on, which is the mechanism behind stairs, doors, ladders and the Castle Victoria crate. Every other verb `act` carries reaches into the pack and is refused at the surface |
 
 DUM never calls `leave`, `join`, `reroll`, `godmode`, or `autopilot hard:true`, and
 `src/link/surface.mjs` refuses them rather than trusting itself.
+
+### The thing `act verb:"go"` needs that is not in its signature
+
+`go` on an *exit* square takes the exit. So it is only safe where the caller knows
+which square it is standing on, which is why the crate errand will not send one
+unless its `walk_to` reported `arrived` — rather than sending it hopefully and
+reading the silence afterwards as a miss. That is a discipline on DUM's side and not
+something the harness enforces: a `go` that landed somewhere unintended is
+indistinguishable on the wire from one that landed correctly and found nothing.
 
 ---
 
@@ -125,7 +136,21 @@ Three properties matter more than the shape:
 
 ---
 
-## Gap 3 — a bot cannot be seen in `commitment`
+## ~~Gap 3~~ — CLOSED 2026-08-10. A bot can be seen in `commitment`
+
+The harness now carries `held_by` on every commitment (including the null one) and an
+`autopilot action: busy | free` that only the claim's holder may use. Both are leased and
+fail back to the keeper. `isTakeable(committed)` is the question consumers ask, and
+`m59-supervise.mjs` and `m59-reclaim.mjs` both honour it — the supervisor leaves
+bot-held characters to their bot for the pair/graduate/deploy rounds while still
+unsticking them, and stands off entirely from one mid-operation.
+
+The original text is kept below because the *reasoning* is what made the shape right,
+and because the "two facts, not one" distinction is the part that is easy to undo.
+
+---
+
+## Gap 3 (original) — a bot cannot be seen in `commitment`
 
 `describeCommitment()` reports `errand | driven | parked | partner`. A bot holding a
 character lands in `driven`, whose label is whatever string was passed, so two bots
@@ -137,6 +162,33 @@ character at a time" is the requirement the whole file exists for.
 A `bot` kind with an explicit `held_by`, and a read-only *who owns this character
 right now* answer — the control-plane equivalent of `m59-which.mjs`, which exists
 because the absence of exactly that check was expensive.
+
+### What it looked like before it was closed — errands walked characters nothing could see
+
+`crate-check` walks a character out of the room it was hunting in, stands it on a
+square, and walks it back. For the two or three minutes that takes, the harness's
+`commitment` says nothing about it: DUM composed the errand from `travel`,
+`walk_to` and `act`, none of which registers a claim on the character's behalf.
+
+Inside DUM that is safe by construction — `pass()` runs the fleet tick to
+completion before any character tick, so nothing here redirects a character
+mid-errand. **The exposure is `m59-supervise.mjs`**, the harness's own supervisor:
+it restarts stalled keepers, and a character mid-errand looks stalled by exactly the
+measure the harness's notes warn about — `ms_since_moved` is about the *keeper*,
+which is inert by design while an errand walks, so it climbs while the character is
+moving perfectly well.
+
+The cost of losing that race was small — one abandoned check, and a character left in
+a basement its keeper walks out of — which is precisely why the crate was the right
+place to find it out rather than a loot run with money on it.
+
+**How it was closed, and the one thing not to undo.** `busy` is a *second* fact, not a
+richer version of the claim. The tempting shape is one flag meaning "a bot has this",
+and it deadlocks immediately: DUM claims work and movement on every character it
+manages, so a single flag greys the whole fleet, refuses every character DUM just
+claimed to its own `respect-commitment` rule, and stops the unstick round — which is
+the harness's job — on keepers that have genuinely stopped. Ownership is `held_by` and
+stays takeable; being mid-operation is `busy` and is not.
 
 ---
 

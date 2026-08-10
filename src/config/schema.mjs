@@ -126,6 +126,37 @@ export function validate(c) {
   if (!Number.isInteger(c.placement?.per_room) || c.placement.per_room < 1)
     say('placement.per_room', 'must be at least 1');
 
+  // ---- the crate
+  //
+  // Only the settings whose wrongness is SILENT, which is the rule this whole file is
+  // built on. Four of them are, and every one produces a fleet that looks like it works.
+  if (c.crate?.check) {
+    if (!Array.isArray(c.crate.zone) || !c.crate.zone.length ||
+        c.crate.zone.some(r => !Number.isInteger(r)))
+      say('crate.zone', 'must be a non-empty list of room numbers. An empty zone means no ' +
+          'character is ever counted as being in the castle, so the rule declines for ever ' +
+          'with a reason that is true and useless');
+    if (!Number.isInteger(c.crate.quorum) || c.crate.quorum < 2)
+      // The one that would look perfectly reasonable in a file. It is a mechanic, not a taste.
+      say('crate.quorum', 'must be at least 2. The room refuses whoever found last, in ' +
+          'silence, so a fleet that can only ever field one eligible character down there ' +
+          'gets exactly one item and then nothing — while every later check goes on ' +
+          'reporting a normal miss');
+    if (!num(c.crate.probe_every_ms) || c.crate.probe_every_ms < 60_000)
+      say('crate.probe_every_ms', 'must be at least 60000. Searching does not make the crate ' +
+          'pay any sooner — the counter runs on its own clock — so a short interval buys ' +
+          'nothing and keeps a character in a basement instead of in a fight');
+    if (!num(c.crate.min_level) || c.crate.min_level < 30)
+      say('crate.min_level', 'must be at least 30. Below that both crate squares are gated ' +
+          'off by PFLAG_PKILL_ENABLE (dungeon.kod:134) and the room says NOTHING back, so a ' +
+          'lower floor sends characters on a walk that cannot succeed and cannot report why');
+    if (!num(c.crate.min_health) || c.crate.min_health < 0 || c.crate.min_health > 1)
+      say('crate.min_health', 'must be a fraction between 0 and 1');
+    if (!Number.isInteger(c.crate.square?.col) || !Number.isInteger(c.crate.square?.row))
+      say('crate.square', 'must be {col, row}. walk_to takes col first and the kod states the ' +
+          'crate as row 10, col 6 — transposing them walks to a real square that does nothing');
+  }
+
   // ---- economy: nulls are meaningful and are not defaults
   for (const k of ['bank_above', 'walking_money', 'max_carry']) {
     const v = c.economy?.[k];

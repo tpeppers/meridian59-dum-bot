@@ -15,6 +15,7 @@ import { observeFleet, observeFromBoard, deepen } from '../sense/observe.mjs';
 import { characterRules, fleetRules, decide } from '../decide/index.mjs';
 import { apply } from '../act/orders.mjs';
 import { verify } from '../act/verify.mjs';
+import { readErrand } from '../act/errands.mjs';
 
 /**
  * One character.
@@ -63,7 +64,7 @@ export async function tickCharacter(ctx, row) {
     line.intent = intent;
     if (!intent) { journal.write(line); return line; }
 
-    const applied = await apply(broker, intent, obs, { commit, yieldTo: config.yield_to ?? [] });
+    const applied = await apply(broker, intent, obs, { commit, yieldTo: config.yield_to ?? [], holder: ctx.holder });
     line.applied = applied;
 
     if (applied.acted) {
@@ -97,7 +98,15 @@ export async function tickFleet(ctx, { decide: runRules = true } = {}) {
   const line = { kind: 'fleet-tick', at: now, decided: runRules };
 
   try {
-    const obs = await observeFleet(broker, { now });
+    // WHAT DUM REMEMBERS ARRIVES IN THE OBSERVATION, EXACTLY AS THE CLOCK DOES.
+    //
+    // `src/decide/` is pure by law — no clock, no randomness, no I/O — and a rule that
+    // read the memory file directly would break that for the same reason `Date.now()`
+    // would: the decision would stop being reproducible from its own journal line. So it
+    // is read ONCE here, put on the observation, and journalled with it. A rule that
+    // needs the past gets it as data.
+    const memory = ctx.memory?.read() ?? null;
+    const obs = { ...await observeFleet(broker, { now }), memory };
     line.observation = obs;
 
     // STAND DOWN WHILE THE FLEET IS PARKING. A parked keeper is running and
@@ -122,8 +131,38 @@ export async function tickFleet(ctx, { decide: runRules = true } = {}) {
     line.intent = intent;
     if (!intent) { journal.write(line); return line; }
 
-    const applied = await apply(broker, intent, obs, { commit, yieldTo: config.yield_to ?? [] });
+    const applied = await apply(broker, intent, obs, { commit, yieldTo: config.yield_to ?? [], holder: ctx.holder });
     line.applied = applied;
+
+    // WHAT AN ERRAND LEARNED, WRITTEN DOWN BEFORE ANYTHING ELSE CAN FAIL.
+    //
+    // An errand's whole product is what the world said back to it, and that answer exists
+    // in exactly one place for a few milliseconds. If this pass throws afterwards — or
+    // the broker goes away, or the process is killed — the walk still happened, the
+    // window may still have been consumed, and nothing would remember. So the memory is
+    // patched here, immediately, and the patch is journalled as data.
+    if (applied.errand) {
+      // `memory` is the PRE-errand snapshot read at the top of this tick, which is what
+      // the interpreter needs: `checked_by` is a per-character map and Memory.patch is
+      // deliberately shallow, so the merge has to happen against what was there before.
+      const learned = readErrand(applied, { at: now, memory });
+      if (learned) {
+        line.memory_patch = learned;
+        ctx.memory?.patch(learned.topic, learned.patch);
+        // A CHECK THAT REACHED NOTHING IS A FINDING, NOT A MISS. On the wire the two are
+        // identical — no message either way — so without this a fleet under 30 max health
+        // would walk to a basement every half hour for ever and the board would show it
+        // working. See readCrateTranscript in src/decide/rules/crate.mjs.
+        if (learned.read.reached === false)
+          journal.finding(applied.agent, learned.read.why,
+                          { errand: applied.errand, transcript: applied.transcript,
+                            stopped: applied.stopped ?? null });
+      }
+      if (applied.stopped)
+        journal.finding(applied.agent, `the ${applied.errand} errand stopped early: ${applied.stopped}`,
+                        { sent: applied.sent });
+    }
+
     if (applied.acted) line.verified = await verify(broker, applied);
     if (applied.partial)
       journal.finding(null, 'a batch was half applied — see verified.fields for which side is missing',

@@ -100,10 +100,27 @@ export function decide(ruleSet, obs, doctrine) {
       considered.push({ rule: rule.id, verdict: 'no', why: null });
       continue;
     }
+    // A DECLINE THAT KNOWS WHY IT DECLINED.
+    //
+    // `return null` is the ordinary "not me", and it is right for a rule whose condition
+    // simply is not met. It is wrong for one whose whole job is a clock nobody can read:
+    // "the crate is not being checked" and "the crate was checked eleven minutes ago and
+    // the next probe is in nineteen" are the same silence on a board and completely
+    // different facts. `kind: 'pass'` carries the reason into `considered` WITHOUT
+    // stopping the table, so every rule below it still runs — which is the difference
+    // between explaining yourself and taking the turn.
+    if (out.kind === 'pass') {
+      considered.push({ rule: rule.id, verdict: 'no', why: out.why ?? null });
+      continue;
+    }
     const intent = {
       rule: rule.id,
       faculty: rule.faculty,
-      agent: obs.agent ?? null,
+      // A FLEET RULE HAS NO `obs.agent`, AND SOME OF THEM PICK ONE. Pairing writes a
+      // batch and names each side inside it; an errand picks a single character out of
+      // the board and that character is who the journal, the backoff and the verifier
+      // are about. Character rules never set `orders.agent`, so they are unaffected.
+      agent: out.orders?.agent ?? obs.agent ?? null,
       kind: out.kind ?? 'orders',
       orders: out.orders ?? {},
       why: out.why ?? rule.why,

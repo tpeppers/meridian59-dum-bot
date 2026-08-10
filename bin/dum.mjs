@@ -19,6 +19,7 @@ import { checkFleet } from '../src/link/guard.mjs';
 import { ALLOWED, READ, WRITE, NOT_YET } from '../src/link/surface.mjs';
 import { characterRules, fleetRules } from '../src/decide/index.mjs';
 import { Journal } from '../src/record/journal.mjs';
+import { Memory } from '../src/record/memory.mjs';
 import { pass } from '../src/loop/tick.mjs';
 import { run } from '../src/loop/run.mjs';
 
@@ -73,6 +74,13 @@ function context({ config, commit }) {
     full: config.record.full_observations,
     enabled: commit,           // planning prints; only a committed run writes to disk
   });
+  // READ IN BOTH MODES, WRITTEN IN ONE. A plan that could not see what DUM remembers
+  // would report "the crate may be up" every time it was run, which is a plan of a
+  // different fleet. Writing is a different question: a plan changes nothing in the
+  // world, so it must not change what DUM believes about it either.
+  const memory = new Memory({
+    dir: config.record.memory_dir, fleet: config.fleet, enabled: commit,
+  });
   const broker = new Broker({
     controlUrl: config.link.control_url,
     timeoutMs: config.link.timeout_ms,
@@ -80,7 +88,12 @@ function context({ config, commit }) {
     dryRun: !commit,
     onCall: e => journal.write({ kind: 'call', ...e }),
   });
-  return { broker, config, journal, commit, only: agentFlag() };
+  // WHO DUM IS, ON THE WIRE. One string, computed once, because it is an identity the
+  // harness checks rather than a label: only the holder of a claim may declare that
+  // character busy or free it again, so a second spelling of this would be a second
+  // process as far as the broker is concerned — able to claim, unable to release.
+  const holder = `dum/${config.name}@pid-${process.pid}`;
+  return { broker, config, journal, memory, commit, holder, only: agentFlag() };
 }
 
 // ---------------------------------------------------------------- doctor
@@ -190,9 +203,17 @@ function printPass(result) {
   if (f?.error) console.log(c.bad('fleet    ') + f.error);
   else {
     const o = f?.observation ?? {};
+    // A FLEET RULE THAT DECLINED AND SAID WHY IS THE MOST USEFUL LINE ON THIS BOARD.
+    // "(no fleet decision)" is true of a bot that is working and of one that is wedged,
+    // and the clock-gated rules — the crate is the first — are precisely the ones whose
+    // silence a human cannot tell apart from a bug. See `kind: 'pass'` in decide/engine.
+    const spoke = (f?.considered ?? []).filter(v => v.why && v.verdict !== 'fired');
     console.log(c.b('fleet    ') + `${o.in_game ?? 0} in game, ${o.stalled ?? 0} stalled` +
                 (f.intent ? `  ->  ${c.ok(f.intent.rule)}: ${f.intent.why}` : c.dim('  (no fleet decision)')));
+    for (const v of spoke) console.log('         ' + c.dim(`${v.rule}: ${v.why}`));
     if (f?.applied?.sent) console.log('         ' + c.dim(JSON.stringify(f.applied.sent)));
+    if (f?.memory_patch)
+      console.log('         ' + c.warn(`remembered: ${f.memory_patch.read.why}`));
   }
   for (const line of result.characters ?? []) {
     if (line.error) { console.log(`${c.bad(pad(line.agent))} ${line.error}`); continue; }

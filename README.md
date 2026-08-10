@@ -101,11 +101,32 @@ a wrong answer can be attributed to one of them:
 | **decide** | `src/decide/` | the ordered rule table. Each rule is a pure function of the observation and the doctrine, and returns an `Intent` or nothing |
 | **act** | `src/act/` | turns intents into harness orders, **diffed against what is already set** so an unchanged doctrine sends nothing |
 | **verify** | `src/act/verify.mjs` | re-reads and confirms the order took. An order that did not take is a finding, not a retry |
-| **record** | `src/record/` | append-only journal: the observation, the rule, its reason, the order, and whether it verified |
+| **record** | `src/record/` | append-only journal: the observation, the rule, its reason, the order, and whether it verified — plus the small keyed **memory** holding the handful of facts a *later* decision reads |
 
 The rule table is ordered and the first match wins, exactly like the keeper's own
 `pass()`. What differs is that DUM's table starts *below* the keeper's: it has no
 opinion about being attacked.
+
+### Errands, and the one thing they change about all of the above
+
+Almost everything DUM writes is **desired state**: an intent says what the keeper's
+policy should be, `act` diffs it against what it already is, and sends the
+difference. That is why DUM is safe to run every thirty seconds — re-deciding the
+same thing produces no traffic at all.
+
+An **errand** is the exception. It is a sequence that happens once — walk there,
+stand on that square, do the thing, come back — and there is nothing to diff it
+against. So the property that keeps the policy path honest is replaced by a
+different one: *an errand is only ever emitted by a rule that knows when it last
+ran*. That is what `src/record/memory.mjs` is for, and it is not optional. A rule
+that emits an errand off a condition alone re-emits it on every tick.
+
+The first one is [`crate-check`](src/decide/rules/crate.mjs), and it is the honest
+test of the idea, because **not one of its three inputs is observable**. Whether the
+crate under Castle Victoria is ready is a server-side counter with no packet; who it
+will silently refuse is server-side state that produces no error, only a missing
+item; and when we last looked is our own past. A bot that cannot hold that decision
+cannot hold any decision about a world that does not narrate itself.
 
 ## Doctrine files
 

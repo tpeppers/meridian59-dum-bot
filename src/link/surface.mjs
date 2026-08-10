@@ -51,12 +51,19 @@ export const WRITE = new Set([
   'bank', 'sell', 'sell_all', 'shop', 'supply', 'quartermaster',
   // Errands the harness already knows how to run end to end.
   'loot_run', 'rest_up', 'equip_best', 'wear_best', 'escape_underworld',
+  // `act`, AND ONLY ITS `go` VERB — enforced in deny() below, because the tool name is
+  // not enough. This is the narrowest widening that makes a PLACE-TRIGGERED room
+  // reachable at all, and it is here for one of them: the crate under Castle Victoria
+  // answers to BP_REQ_GO on a square and to nothing else. Every other verb `act` carries
+  // (use, unuse, get, drop, activate, eat) reaches into the character's pack, which is a
+  // different kind of decision and is not one DUM claims.
+  'act',
 ]);
 
 // Tools that exist and DUM has no business calling, listed so that adding one later is
 // a deliberate act with a comment attached rather than a silent widening.
 export const NOT_YET = new Set([
-  'attack', 'fight', 'cast', 'act', 'approach', 'face', 'attack_intent', 'move_intent',
+  'attack', 'fight', 'cast', 'approach', 'face', 'attack_intent', 'move_intent',
   'context_intent', 'pilot', 'recording', 'rescue', 'leave_raza', 'split', 'trade',
   'loot', 'say', 'chat', 'converse', 'inbox', 'describe', 'look_at', 'go_through',
   'movement_mode', 'cancel_action', 'wait_for_event',
@@ -71,7 +78,23 @@ export const NOT_YET = new Set([
 export function deny(tool, args = {}) {
   if (NEVER[tool]) return `refused — ${NEVER[tool]}`;
   if (READ.has(tool) || WRITE.has(tool)) {
-    // ONE ARGUMENT-LEVEL CHECK, because the tool name is not enough for this one.
+    // ARGUMENT-LEVEL CHECK, because the tool name is not enough for this one either.
+    //
+    // `act verb:"go"` IS A PLACE INTERACTION AND EVERY OTHER VERB IS AN OBJECT ONE. `go`
+    // sends BP_REQ_GO, and the server answers on whatever square the character is
+    // standing on — that is the whole mechanism behind stairs, doors, ladders and the
+    // Castle Victoria crate. The rest (use, unuse, get, drop, activate, eat) reach into
+    // the pack: they are how a bot ends up wearing the wrong armour or dropping a stack
+    // of reagents, and none of those decisions is one DUM claims.
+    //
+    // It is worth knowing that `go` is not harmless either. On an EXIT square it takes
+    // the exit, so a `go` is only safe where the caller knows which square it is on —
+    // which is why the crate errand refuses to send one unless its `walk_to` reported
+    // `arrived`, rather than sending it hopefully.
+    if (tool === 'act' && args.verb !== 'go')
+      return `refused — act verb:"${args.verb ?? '?'}" reaches into the character's pack. ` +
+             `DUM only claims verb:"go", which acts on the square underfoot. See ` +
+             `src/link/surface.mjs`;
     // `autopilot` is on the write list and `autopilot --hard` ENDS the keeper rather
     // than making it inert: no frames, no observe(), no death record, no post-mortem.
     // The harness's own note is that deaths kept happening in exactly the windows it

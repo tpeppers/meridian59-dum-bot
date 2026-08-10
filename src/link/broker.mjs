@@ -67,7 +67,7 @@ export class Broker {
    * Call a harness tool. Writes are refused in dry-run and reported as `{dry_run: true}`
    * so a plan can still describe exactly what it would have sent.
    */
-  call(tool, args = {}) {
+  call(tool, args = {}, { timeoutMs = null } = {}) {
     const refusal = deny(tool, args);
     if (refusal) {
       this.stats.refused++;
@@ -79,13 +79,13 @@ export class Broker {
       const wait = this.minGapMs - (Date.now() - this.lastAt);
       if (wait > 0) await new Promise(r => setTimeout(r, wait));
       this.lastAt = Date.now();
-      return this.#send(tool, args);
+      return this.#send(tool, args, timeoutMs);
     };
     this.chain = this.chain.then(run, run);
     return this.chain;
   }
 
-  async #send(tool, args) {
+  async #send(tool, args, timeoutMs = null) {
     const began = Date.now();
     const body = JSON.stringify({
       jsonrpc: '2.0', id: ++this.id,
@@ -97,7 +97,14 @@ export class Broker {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
         body,
-        signal: AbortSignal.timeout(this.timeoutMs),
+        // A PER-CALL OVERRIDE, AND ONLY UPWARDS. The harness's calls are not all the same
+        // kind of thing: most answer out of the broker's own memory in milliseconds,
+        // while `travel` and `walk_to` are a character WALKING at roughly a second a
+        // square. Timing one of those out does not cancel it — the character keeps
+        // walking and DUM stops watching, which is the worst of the two outcomes. A step
+        // may therefore ask for longer; it may not ask for shorter, because a short
+        // timeout is the failure this exists to prevent.
+        signal: AbortSignal.timeout(Math.max(this.timeoutMs, timeoutMs ?? 0)),
       });
     } catch (e) {
       this.stats.failures++;

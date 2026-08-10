@@ -1,0 +1,121 @@
+{
+  // THE SWARM — the fleet does nothing at all until a human takes the controls, and then
+  // does what that human does.
+  //
+  // WHAT THIS IS FOR. The Graveyard of Tos generates undead for thirty-five minutes in
+  // every hundred and twenty — `tosgrave.kod` gates TryCreateMonster on the game hour, and
+  // outside the window the room creates nothing, so a fleet parked there by day is
+  // standing in an empty field. This doctrine is for the other eighty-five minutes. The
+  // alternative has always been to send the fleet somewhere it can farm unattended, and
+  // the measured problem with that is that everywhere reachable and safe is also level 50
+  // or below: a fleet at max health 50 grinds all afternoon and gains nothing, because
+  // AdvancementCheck only rolls when the creature's level is STRICTLY GREATER.
+  //
+  // A swarm changes what the operator's attention is worth. One human picking fights that
+  // twenty characters could not safely pick alone, with twenty characters swinging at the
+  // same corpse — and advancement is a per-character flag rather than a split pot, so that
+  // corpse pays all twenty.
+
+  "extends": "survive.jsonc",
+
+  "name": "swarm",
+  "why": "on the days the graveyard is shut, stop pretending the fleet can advance itself unattended — sleep until an operator logs in, then follow and focus-fire behind them",
+
+  // REQUIRED BEFORE THIS CAN BE COMMITTED, and deliberately absent. A fleet name
+  // identifies a roster on one machine, so writing ours here would be useless to a
+  // stranger and a description of us. `tools/dum-guard.mjs` enforces that.
+  // "fleet": "<your-fleet>",
+
+  "claim": {
+    // MOVEMENT AND WORK, AND NOT ONE THING MORE. Following and focus-firing are both
+    // decisions about what a character does with its time; neither is a decision about
+    // whether it may die. `survival` and `mortality` stay with the keeper, so a follower
+    // that drops below its flee line still breaks off and still walks itself out of the
+    // Underworld even if the operator has walked the swarm into something it cannot beat.
+    // That is the whole reason the split exists and a swarm is exactly the situation that
+    // tempts you to ignore it.
+    "movement": "bot",
+    "work": "bot",
+    "lease_ms": 120000
+  },
+
+  "swarm": {
+    // Both halves are opt-in, because either alone is a coherent thing to want: follow
+    // without focus_fire is an escort, focus_fire without follow is a fire team that
+    // stays put.
+    "follow": true,
+    "focus_fire": true,
+
+    // Squares, not fine coordinates. Melee reach is a disc of radius 2-3 SQUARES on both
+    // sides (`SquaredDistanceTo <= GetAttackRange^2`, nomoveon.kod:121) and nothing about
+    // being hit reads the fine position at all. Closer than 2 buys nothing and crowds the
+    // leader's own square; further than 3 and the swarm cannot reach what the leader is
+    // hitting.
+    "within": 2,
+
+    // HOW THE SWARM KNOWS WHERE ITS LEADER IS, AND WHY THE PROXY IS NOT REQUIRED.
+    //
+    // Meridian allows ONE CONNECTION PER CHARACTER, so an operator logging in takes the
+    // broker's connection to that character with them. The leader becomes the one
+    // character in the world the broker cannot see — and a swarm that cannot see its
+    // leader sits still looking perfectly obedient. There are three ways round it and
+    // they are not equal:
+    //
+    //   1. THE AGENT SOCKET — the default, and it needs nothing new. `m59agent.dll` is
+    //      already injected into every client the fleet terminal launches, exists
+    //      expressly to drive one "without a proxy in the path", and already answers
+    //      `pos` with `{room, x, y, angle}` read from the client's own player struct via
+    //      the exported GetPlayerInfo. Because it is the CLIENT's own room id, it changes
+    //      the moment a new map loads — so this follows through doors with no inference
+    //      at all.
+    //   2. THE PROXY — `m59-proxy.mjs` in front of the leader's connection. Also survives
+    //      doors, at the cost of a rewriting shim owning the security stream.
+    //   3. BY SIGHT — followers recognise the leader's object id in their own room
+    //      contents. Needs nothing, and is blind at every door.
+    //
+    // `prefer` picks the order the rule tries. It falls through on failure and SAYS which
+    // one it landed on, because "following by sight" and "following properly" must never
+    // read the same on the board.
+    "prefer": ["agent", "proxy", "sight"]
+  },
+
+  "prey": {
+    // The swarm does not choose prey; the operator does, by swinging at things. This is
+    // here only as the floor the followers apply to themselves — a follower under it
+    // breaks off regardless of what the leader is doing.
+    "choose": false,
+    "flee_below": 0.4,
+
+    // The operator can walk the swarm at anything. `max_threat_over` still governs what a
+    // FOLLOWER will engage, and it is left at the standing value on purpose: a human who
+    // wants the swarm to help with something above the band is asking twenty characters
+    // to fight something the gate exists to refuse, and should raise this deliberately
+    // rather than discover it did not apply.
+    "max_threat_over": 6
+  },
+
+  "placement": {
+    // Nothing to place. The leader is the placement, and `spread` re-deriving an
+    // assignment underneath a swarm would be twenty characters walking away from the
+    // person they are supposed to be following.
+    "spread": false,
+    "rooms": []
+  },
+
+  "moot": {
+    // POOLING HAPPENS IN AN INN AND NOWHERE ELSE, and the harness already refuses
+    // anything else (`m59-allhands.mjs` checks the room against its inn table — the first
+    // accidental moot ran in Deep Woods of Ileria, which spawns living trees, and stood a
+    // dozen characters still in the open to eat).
+    //
+    // 52 is Familiars, in Tos — which is also the staging room for the graveyard, so the
+    // swarm assembles, pools and sets out from one place instead of three.
+    //
+    // The pooling itself is the harness's, not DUM's: reagents first (create food needs
+    // 2 elderberry + 2 herbs in the CASTER's own pack), then food, then relay, which is
+    // the only thing in the game that moves vigor rather than the means to make it.
+    "enabled": true,
+    "room": 52,
+    "why": "the fleet's resources are never scarce, they are in the wrong pockets — and every hand-over needs both characters in one room, which two driving keepers almost never are"
+  }
+}

@@ -180,6 +180,54 @@ export const DEFAULTS = {
     keep_working_pairs: true,
   },
 
+  // THE CRATE UNDER CASTLE VICTORIA. See src/decide/rules/crate.mjs for the arithmetic;
+  // every number that is not a preference lives there, cited, rather than here.
+  //
+  // OFF BY DEFAULT, and for a sharper reason than the other opt-ins. Pairing and spread
+  // are contested tactics. This one has a MEASURABLE expected value and it is poor: the
+  // median item is worth about forty shillings, one find in nine spawns a monster
+  // adjacent to the character that just got it, and one of the two possible monsters is
+  // a level-120 narthyl worm that nothing in this fleet may fight. It is worth doing at
+  // all only because the fleet is standing in the castle anyway.
+  crate: {
+    check: false,
+    // Which rooms count as "hunting in Castle Victoria": 38 the castle itself, 39
+    // upstairs, 40 the throne room. Room 2, Outside Castle Victoria, is deliberately
+    // absent — it is the approach rather than the castle, and somebody passing through
+    // is not somebody the trip is nearly free for.
+    zone: [38, 39, 40],
+    // How many must be in the castle before anyone is sent. TWO IS THE MECHANIC, NOT A
+    // PREFERENCE: `poLastFinder` refuses whoever found last, in silence, so a fleet that
+    // can only ever field ONE eligible character down there collects exactly one item
+    // and then nothing, for ever.
+    quorum: 2,
+    // The Underbasement of Victoria, and the square the rummage happens on. The kod says
+    // row 10, col 6; `walk_to` takes col, row.
+    room: 41,
+    square: { col: 6, row: 10 },
+    // How often to probe while the window may be open. The counter cannot be read, so
+    // every check is a guess; this is the trade between collecting shortly after it
+    // comes up and having a character in a basement rather than in a fight. Thirty
+    // minutes is about seventeen probes across the eight-hour uncertainty window.
+    probe_every_ms: 30 * 60_000,
+    // Do not send a hurt character. One find in nine puts a monster next to it and
+    // getting out of that is the keeper's job — which it does better at full health.
+    min_health: 0.8,
+    // Below 30 base max health the crate does not answer AT ALL: both squares are gated
+    // on `PFLAG_PKILL_ENABLE` and `EvaluatePKStatus` sets it at exactly that number.
+    // Lowering this sends characters to a basement to be ignored in silence.
+    min_level: 30,
+    // Walk back to the room it came from afterwards. Two reasons, and the second is the
+    // one that is easy to miss: turning this off leaves the character in the basement
+    // for its keeper to make perfectly reasonable decisions about a room nobody meant
+    // it to be in — AND it leaves the fleet board this pass is still working from
+    // describing a character that is no longer where it says. See src/act/errands.mjs.
+    return_after: true,
+    // travel and walk_to are a character WALKING, not a request. See Broker.call.
+    travel_timeout_ms: 180_000,
+    walk_timeout_ms: 90_000,
+  },
+
   escalate: {
     // What to do about a keeper that reports it is stuck. DUM's contribution here is
     // to NOT restart the ones that are deliberately waiting — see
@@ -195,6 +243,13 @@ export const DEFAULTS = {
   record: {
     // Append-only ndjson, gitignored. One line per tick per character.
     dir: 'var/journal',
+    // THE OTHER HALF OF THE RECORD, AND IT IS NOT THE SAME THING. The journal says what
+    // happened; this keeps the handful of facts a LATER decision reads — when the crate
+    // last paid out, and which character it will now refuse. Neither is on the wire or
+    // on the board, so without somewhere to put them the rule that needs them cannot be
+    // written at all. Fleet-scoped, gitignored, and see src/record/memory.mjs for why
+    // reconstructing it from the journal is not the same.
+    memory_dir: 'var/memory',
     // Keep the full observation on every line, or only the fields a rule read. Full
     // is large and is what makes an after-the-fact "why did it decide that" possible
     // without re-running anything.

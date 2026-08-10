@@ -59,6 +59,35 @@ doctrine, one driven by DUM and one by the LLM bot.
    bot has crashed, been `Ctrl-C`'d, or simply never started — must still run
    from a fight it is losing. Everything about the split is downstream of that.
 
+## The boundary, in one table
+
+**The split is by CLOCK, not by importance.** The same table is in the harness's
+`CLAUDE.md` and neither copy is the summary of the other — if you change one, change both.
+
+| | decides at | owner | examples |
+|---|---|---|---|
+| identity, mortality, survival, recovery | **1s** | **the harness, always** | am I dead; something is hitting me; sit down while hurt and safe; get out of the Underworld |
+| unstick a stalled keeper | 60s | **the harness** (`m59-supervise.mjs`) | telling a deliberate refusal from a stall needs keeper internals, and it runs on characters DUM holds too |
+| work, movement, economy, social | minutes | **DUM** | what to hunt; which room; which errands to stop for; when to bank |
+
+DUM ticks at thirty seconds. A survival rule here would be acting on information that is
+on average fifteen seconds old, against a keeper that has better information and is
+already acting on it. That is the whole argument, and everything else follows from it.
+
+### Claiming is not being busy, and the difference is load-bearing
+
+DUM claims `work`/`movement` on every character it manages, for its whole run. That is
+**ownership** — the board shows `held_by`, and the character stays *takeable*. If mere
+ownership read as a commitment, `respect-commitment` would refuse every character DUM
+just claimed, the fleet board would grey every row, and the harness's unstick round would
+step over keepers that had genuinely stopped.
+
+`busy` is the other half: the holder saying an operation is *in flight*. `runErrand`
+declares it before the first step and frees it after the last one **including after a
+failure** — the lease heals a forgotten one, but ten minutes of every stall detector
+politely stepping over a genuinely stuck character is not a good outcome. A dry run
+declares nothing at all, because a plan must not change what the fleet believes.
+
 ## Where the fleet actually is
 
 This repository holds no roster, no credentials and no server address. It reads
@@ -82,7 +111,7 @@ src/sense/           harness responses -> a normalised Observation
 src/decide/          the rule table. Pure functions. No I/O, no clock, no randomness
 src/act/             Intent -> harness orders, diffed, then verified
 src/loop/            cadence and the per-character / per-fleet ticks
-src/record/          append-only journal and the trace exporter
+src/record/          append-only journal, the keyed memory, and the trace exporter
 src/config/          layered doctrine loading
 doctrines/           worked examples, no character names
 tests/               offline. No broker, no server, no network
@@ -93,6 +122,21 @@ Intent | null`, deterministic, with no `Date.now()`, no `Math.random()`, no
 network. That is what makes the tests fixture-driven and what makes a bad
 decision reproducible from its journal entry alone. If a rule needs the time,
 the time arrives in the observation.
+
+**And if a rule needs the PAST, that arrives in the observation too.** Some
+decisions are not answerable from any read of the world — the crate under Castle
+Victoria is the worked case: its timer has no packet, and the character it will
+silently refuse is server-side state that produces no error, only a missing item.
+`src/record/memory.mjs` is where those facts live. The tick reads it once and puts
+it on the observation, exactly as it does the clock; a rule that opened the file
+itself would break purity for the same reason `Date.now()` would.
+
+Two things about it that read backwards, both in that file's own comments:
+**unknown is not zero** — a missing memory must resolve to "go and look", so losing
+it costs one walk rather than the behaviour — and **an errand is the one write with
+nothing to diff against**, so what stops it re-firing every tick is the emitting
+rule's memory and nothing else. A rule that emits an errand off a condition alone
+produces a character that lives in a basement.
 
 ## Working here
 

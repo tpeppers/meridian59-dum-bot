@@ -24,6 +24,8 @@ import { escalateRules } from './rules/escalate.mjs';
 import { economyRules } from './rules/economy.mjs';
 import { placementRules, placementFleetRules } from './rules/placement.mjs';
 import { partyFleetRules } from './rules/party.mjs';
+import { crateFleetRules } from './rules/crate.mjs';
+import { swarmFleetRules } from './rules/swarm.mjs';
 
 const isFleet = r => r.scope === 'fleet';
 
@@ -55,6 +57,22 @@ export const characterRules = new RuleSet('character', [
  * thirty seconds.
  */
 export const fleetRules = new RuleSet('fleet', [
+  // FIRST, AND THE ORDERING ARGUMENT IS NOT "IT MATTERS MOST". It is the only rule in
+  // this table gated on a WINDOW THAT CLOSES. Everything below it is a standing
+  // condition — an unpaired character is just as unpaired in five minutes, a stalled one
+  // just as stalled — so being deferred costs those rules a tick and costs this one an
+  // item somebody else on a shared server can take in the meantime. It is also by far
+  // the rarest to fire: it needs a quorum in one castle and a probe interval to have
+  // elapsed, so putting it below a rule that can fire on any tick would starve it
+  // without ever looking wrong.
+  // ABOVE EVERYTHING, AND FOR THE OPPOSITE REASON TO THE CRATE. The crate is first
+  // because its window closes; the swarm is first because a HUMAN IS WAITING. Every rule
+  // below re-tasks, re-places or re-pairs a character on its own schedule, and any of
+  // them firing while an operator is leading pulls a follower out of the swarm and sends
+  // it somewhere the operator did not go. With `swarm.follow` off — the ordinary case —
+  // both rules return `pass` on their first line and cost one comparison.
+  ...swarmFleetRules,
+  ...crateFleetRules,
   ...partyFleetRules,
   ...placementFleetRules,
   ...economyRules.filter(isFleet),

@@ -25,6 +25,8 @@
  * time — which is why `action` and `why` are handled separately below rather than
  * being listed as ordinary fields.
  */
+import { runErrand } from './errands.mjs';
+
 export const ORDER_FIELDS = {
   mode:              { policy: null, note: 'lives on the keeper itself, not its policy' },
   hunt:              { policy: 'hunt' },
@@ -134,10 +136,17 @@ export function planOrders(intent, obs, { yieldTo = [] } = {}) {
  * bot concludes is "leave this alone" or "somebody should look at this", and both are
  * findings that belong in the journal rather than silence.
  */
-export async function apply(broker, intent, obs, { commit = false, yieldTo = [] } = {}) {
+export async function apply(broker, intent, obs, { commit = false, yieldTo = [], holder = null } = {}) {
   if (!intent) return { acted: false, kind: 'idle' };
   if (intent.kind === 'none' || intent.kind === 'report')
     return { acted: false, kind: intent.kind, why: intent.why, evidence: intent.evidence };
+
+  // AN ERRAND IS A SEQUENCE, NOT A POLICY, so none of the diffing below applies: there
+  // is no current value of "has this character been to the basement" to compare against.
+  // What stops it being re-issued every tick is the emitting rule's own memory rather
+  // than this file's diff — see the note at the top of src/act/errands.mjs, because that
+  // substitution is the one thing about errands that can go quietly wrong.
+  if (intent.kind === 'errand') return runErrand(broker, intent, { commit, holder });
 
   // A BATCH IS INDIVISIBLE IN INTENT AND NOT IN EXECUTION, and saying so is better than
   // pretending. Pairing writes both sides; if the second write fails the fleet is left

@@ -158,6 +158,13 @@ export const respectCommitment = {
   decide(obs) {
     const c = obs.commitment;
     if (!c || !c.kind) return null;
+    // A bot claim is ownership, not an operation. The harness marks it `takeable: true`
+    // and explicitly says nothing is mid-flight. Blocking on our own claim makes every
+    // later strategy edit impossible to apply until the lease expires, even though DUM
+    // is the process holding that lease. Claim acquisition still prevents one bot from
+    // taking another bot's faculties; this guard only decides whether an order may be
+    // considered.
+    if (c.takeable === true) return null;
     // `partner` is the weakest of the four and is a standing arrangement rather than a
     // journey — it does not block a change of orders, only a relocation. The rules that
     // relocate check it themselves.

@@ -160,10 +160,10 @@ settings have catalogue defaults and may be overridden in the doctrine:
       "max_bots_per_room": 4
     },
     "sell-and-bank": {
-      "bank_above": 2000,
-      "walking_money": 400,
-      "max_carry": 14,
-      "sell_at_load": 0.85,
+      "bank_above": 3000,
+      "walking_money": 1000,
+      "max_carry": 50,
+      "sell_at_load": 0.95,
       "sell_when_broke": false,
       "broke_under": 500,
       "broke_stacks": 8

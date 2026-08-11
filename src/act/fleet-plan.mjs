@@ -65,6 +65,13 @@ export function callsForFleetPlan(plan = [], why = null) {
         weapon_priority: need(step, 'priority') }, why: step.why ?? why });
       continue;
     }
+    if (step.do === 'placement-policy') {
+      calls.push({ tool: 'autopilot', args: { agent: need(step, 'agent'), action: 'start',
+        assigned_room: step.to == null ? null : Number(step.to),
+        max_bots_per_safe_spot: step.max_bots_per_safe_spot == null
+          ? null : Number(step.max_bots_per_safe_spot) }, why: step.why ?? why });
+      continue;
+    }
     if (step.do === 'equip-best') {
       const agent = need(step, 'agent');
       calls.push({ tool: 'equip_best', args: { agent },
@@ -87,7 +94,8 @@ export function callsForFleetPlan(plan = [], why = null) {
       continue;
     }
     if (step.do === 'deploy') {
-      const agent = need(step, 'agent'), assigned_room = need(step, 'to');
+      const agent = need(step, 'agent');
+      const assigned_room = step.to == null ? null : Number(step.to);
       calls.push({ tool: 'autopilot', args: {
         agent, action: 'start', mode: 'farm', assigned_room,
         hunt: step.hunt,
@@ -104,6 +112,7 @@ export function callsForFleetPlan(plan = [], why = null) {
         hold_resume_above: step.hold_resume_above,
         purpose: step.purpose,
         goals: step.goals,
+        max_bots_per_safe_spot: step.max_bots_per_safe_spot,
       }, why: step.why ?? why });
       continue;
     }

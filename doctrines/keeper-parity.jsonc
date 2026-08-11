@@ -108,6 +108,22 @@
     "concentration_report_at": 0.33
   },
 
+  "strategies": {
+    "enabled": true,
+    "defaults": ["sell-and-bank"],
+    "settings": {
+      "sell-and-bank": {
+        "bank_above": 500,
+        "walking_money": 400,
+        "max_carry": 14,
+        "sell_at_load": 0.85,
+        "sell_when_broke": false,
+        "broke_under": 500,
+        "broke_stacks": 8
+      }
+    }
+  },
+
   "party": {
     // Solo. The fleet was deliberately un-paired and has run that way since; a doctrine
     // claiming parity must not quietly re-pair it.

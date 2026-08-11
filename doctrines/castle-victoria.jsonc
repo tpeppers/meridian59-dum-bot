@@ -18,7 +18,20 @@
 
   "strategies": {
     "enabled": true,
-    "defaults": ["create-weapons", "vs-skeletons", "check-cv-crate", "create-food"]
+    // Spread Out is deliberately absent: Castle patrols retain their quarry and safety
+    // posture without being forced into different rooms or different wall squares.
+    "defaults": ["create-weapons", "vs-skeletons", "check-cv-crate", "create-food", "sell-and-bank"],
+    "settings": {
+      "sell-and-bank": {
+        "bank_above": 2000,
+        "walking_money": 400,
+        "max_carry": 14,
+        "sell_at_load": 0.85,
+        "sell_when_broke": false,
+        "broke_under": 500,
+        "broke_stacks": 8
+      }
+    }
   },
 
   "castle_victoria": {
@@ -29,8 +42,6 @@
     "rest_below": 0.75,
     "flee_below": 0.35,
     "fight_above_vigor": 180,
-    "max_carry": 14,
-    "bank_above": 2000,
     "use_safe_spots": true
   },
 

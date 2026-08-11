@@ -43,15 +43,20 @@ test('strategies: Spread Out defaults off and its enabled caps preserve the old 
 });
 
 test('strategies: selling and banking values are independently maintained', () => {
+  const economy = STRATEGY_CATALOG.find(s => s.id === STRATEGY_IDS.SELL_AND_BANK);
+  assert.deepEqual(Object.fromEntries(economy.settings.map(s => [s.id, s.default])), {
+    bank_above: 3000, walking_money: 1000, max_carry: 50, sell_at_load: 0.95,
+    sell_when_broke: false, broke_under: 500, broke_stacks: 8,
+  });
   const doctrine = loadDoctrine({ file: 'doctrines/castle-victoria.jsonc' }).config;
   const obs = { agent: 'banker', policy: {}, keeper: { policy: {} }, strategies: {
     agents: { banker: [STRATEGY_IDS.SELL_AND_BANK] },
   } };
   const intent = economyRules[0].decide(obs, doctrine);
-  assert.equal(intent.orders.bank_above, 2000);
-  assert.equal(intent.orders.walking_money, 400);
-  assert.equal(intent.orders.max_carry, 14);
-  assert.equal(intent.orders.sell_at_load, 0.85);
+  assert.equal(intent.orders.bank_above, 3000);
+  assert.equal(intent.orders.walking_money, 1000);
+  assert.equal(intent.orders.max_carry, 50);
+  assert.equal(intent.orders.sell_at_load, 0.95);
   assert.equal(intent.orders.sell_when_broke, false);
 });
 

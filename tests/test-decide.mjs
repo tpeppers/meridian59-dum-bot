@@ -188,3 +188,34 @@ test('pairing: the same board always produces the same pairing', () => {
   const b = pairUp([...fx.fleet().characters].reverse()).pairs.map(p => p.map(x => x.agent));
   assert.deepEqual(new Set(a.map(String)), new Set(b.map(String)));
 });
+
+// ---------------------------------------------------------------- the GY shift's orders
+//
+// Both of these were paid for live, on a 35-minute window, and both look like fussiness
+// until the fleet walks out of a spawning graveyard in front of you.
+import { ordersFor as gyOrders, SHIFT_MAX_CARRY } from '../src/decide/rules/graveyard.mjs';
+
+const armoured = { character: 'A', equipped: [{ name: 'chain armor' }, { name: 'mace' }] };
+const bare = { character: 'B', equipped: [{ name: 'mace' }] };
+
+test('gy shift: hunts the prey the room actually makes, armoured or not', () => {
+  // 70 is 85% zombie and the crypt 80%. A farm keeper told to hunt the 15% concludes the
+  // room cannot produce its prey and leaves — which emptied both rooms inside a minute.
+  assert.equal(gyOrders(armoured).hunt, 'zombie');
+  assert.equal(gyOrders(bare).hunt, 'zombie');
+});
+
+test('gy shift: armour buys the CEILING, not a different quarry', () => {
+  // Hunt says what to look for; max_threat_over says what may be engaged when it turns up.
+  assert.ok(gyOrders(armoured).max_threat_over > gyOrders(bare).max_threat_over);
+});
+
+test('gy shift: banking and selling are suppressed for the window', () => {
+  // bank_above 500 and max_carry 14 both trip on a pack full from the PREVIOUS shift, so
+  // the window opens and the fleet sets off for Barloque. Eleven of twenty-one did.
+  for (const row of [armoured, bare]) {
+    assert.equal(gyOrders(row).bank_above, null);
+    assert.equal(gyOrders(row).max_carry, SHIFT_MAX_CARRY);
+    assert.equal(gyOrders(row).roam, false);
+  }
+});

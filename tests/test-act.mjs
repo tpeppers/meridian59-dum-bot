@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { planOrders, apply, ORDER_FIELDS } from '../src/act/orders.mjs';
+import { verify } from '../src/act/verify.mjs';
 import { deny, ALLOWED, NOT_YET } from '../src/link/surface.mjs';
 import { checkFleet, FleetMismatch } from '../src/link/guard.mjs';
 import * as fx from './fixtures.mjs';
@@ -42,6 +43,20 @@ test('orders: every ORDER_FIELDS entry names a policy key, or says why it does n
     assert.ok(spec.policy !== undefined, `${k} has no policy mapping and no note`);
   assert.equal(ORDER_FIELDS.mode.policy, null);
   assert.ok(ORDER_FIELDS.mode.note);
+});
+
+test('verify: policy writes are re-read from autopilot status, not generic character status', async () => {
+  const calls = [];
+  const broker = { call: async (tool, args) => {
+    calls.push({ tool, args });
+    return { mode: 'farm', policy: { farmCleanup: {
+      enabled: true, max_floor_items: 12, keep_free_stacks: 1 } } };
+  } };
+  const wanted = { enabled: true, max_floor_items: 12, keep_free_stacks: 1 };
+  const result = await verify(broker, { acted: true, kind: 'orders', sent: {
+    agent: 'role-a', action: 'start', mode: 'farm', farm_cleanup: wanted } });
+  assert.equal(result.verified, true);
+  assert.deepEqual(calls, [{ tool: 'autopilot', args: { agent: 'role-a', action: 'status' } }]);
 });
 
 test('orders: a field ORDER_FIELDS has never heard of throws rather than being dropped', () => {

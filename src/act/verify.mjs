@@ -63,8 +63,9 @@ export async function verify(broker, applied) {
     const fields = {};
     let allOk = true;
     for (const one of applied.sent) {
-      const got = await broker.call('status', { agent: one.agent }).catch(e => ({ error: e.message }));
-      const policy = got?.autopilot?.policy ?? got?.keeper?.policy ?? {};
+      const got = await broker.call('autopilot', { agent: one.agent, action: 'status' })
+        .catch(e => ({ error: e.message }));
+      const policy = got?.policy ?? got?.autopilot?.policy ?? got?.keeper?.policy ?? {};
       const ok = policy.partner === one.partner;
       fields[one.agent] = { wanted: one.partner ?? null, got: policy.partner ?? null, ok };
       allOk = allOk && ok;
@@ -78,11 +79,15 @@ export async function verify(broker, applied) {
   }
 
   const agent = applied.sent.agent;
-  const got = await broker.call('status', { agent }).catch(e => ({ error: e.message }));
+  // Generic `status` describes the character and deliberately carries no keeper object.
+  // The fresh policy read is the autopilot tool's status action; using the generic one
+  // made every successful policy write verify against `{}` and report a false failure.
+  const got = await broker.call('autopilot', { agent, action: 'status' })
+    .catch(e => ({ error: e.message }));
   if (got?.error) return { verified: null, fields: {}, why: `could not re-read ${agent}: ${got.error}` };
 
-  const policy = got?.autopilot?.policy ?? got?.keeper?.policy ?? {};
-  const mode = got?.autopilot?.mode ?? got?.keeper?.mode ?? null;
+  const policy = got?.policy ?? got?.autopilot?.policy ?? got?.keeper?.policy ?? {};
+  const mode = got?.mode ?? got?.autopilot?.mode ?? got?.keeper?.mode ?? null;
   const fields = {};
   let allOk = true;
 

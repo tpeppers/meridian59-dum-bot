@@ -58,6 +58,8 @@ export const ORDER_FIELDS = {
   break_out_via_logoff: { policy: 'breakOutViaLogoff' },
   vault_items:        { policy: 'vaultItems', compare: sameList },
   strategy_stats:     { policy: 'strategyStats', compare: sameObject },
+  farm_cleanup:       { policy: 'farmCleanup', compare: sameObject },
+  farm_delivery:      { policy: 'farmDelivery', compare: sameObject },
 };
 
 function sameList(a, b) {

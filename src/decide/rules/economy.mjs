@@ -26,6 +26,36 @@ import { STRATEGY_IDS, strategyEnabled, strategySettings } from '../../strategie
 
 export const economyRules = [
   {
+    id: 'farm-coordination-policy',
+    faculty: 'economy',
+    why: 'Farm clean-up and Farm delivery are independent keeper capabilities coordinated through DUM strategy assignments',
+    enabled: doctrine => doctrine.strategies?.enabled === true,
+    offWhy: 'DUM strategies are disabled',
+    decide(obs, doctrine) {
+      const cleanupOn = strategyEnabled(obs, doctrine, obs.agent, STRATEGY_IDS.FARM_CLEANUP);
+      const deliveryOn = strategyEnabled(obs, doctrine, obs.agent, STRATEGY_IDS.FARM_DELIVERY);
+      const cleanup = cleanupOn
+        ? { enabled: true, ...strategySettings(obs, doctrine, obs.agent, STRATEGY_IDS.FARM_CLEANUP) }
+        : null;
+      const delivery = deliveryOn
+        ? { enabled: true, ...strategySettings(obs, doctrine, obs.agent, STRATEGY_IDS.FARM_DELIVERY) }
+        : null;
+      const live = obs.keeper?.policy ?? obs.policy ?? {};
+      const sameCleanup = sameObject(live.farmCleanup ?? null, cleanup);
+      const sameDelivery = sameObject(live.farmDelivery ?? null, delivery);
+      if (sameCleanup && sameDelivery) return null;
+      if (!cleanupOn && !deliveryOn && live.farmCleanup == null && live.farmDelivery == null) return null;
+      return {
+        kind: 'orders',
+        orders: { action: 'start', farm_cleanup: cleanup, farm_delivery: delivery },
+        why: [cleanupOn ? 'clean the farm before sell trips' : 'leave farm cleanup off',
+              deliveryOn ? 'resupply active farmers on the return leg' : 'leave farm delivery off'].join('; '),
+        evidence: { want: { farm_cleanup: cleanup, farm_delivery: delivery },
+          keeper_has: { farm_cleanup: live.farmCleanup ?? null, farm_delivery: live.farmDelivery ?? null } },
+      };
+    },
+  },
+  {
     id: 'detailed-strategy-stats-policy',
     faculty: 'economy',
     why: 'the Detailed strategy stats opt-in controls the keeper-side rotating activity recorder',

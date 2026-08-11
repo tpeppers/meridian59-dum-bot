@@ -22,6 +22,7 @@ test('strategies: catalogue contains the independently selectable behaviours', (
     STRATEGY_IDS.VS_SKELETONS, STRATEGY_IDS.CHECK_CV_CRATE,
     STRATEGY_IDS.SPREAD_OUT, STRATEGY_IDS.SELL_AND_BANK,
     STRATEGY_IDS.ACCUMULATE_IN_VAULT,
+    STRATEGY_IDS.FARM_CLEANUP, STRATEGY_IDS.FARM_DELIVERY,
     STRATEGY_IDS.DETAILED_STATS,
   ]);
   assert.equal(STRATEGY_CATALOG.filter(s => s.group === 'Kraanan upkeep').length, 2);
@@ -32,7 +33,8 @@ test('strategies: detailed stats are opt-in, independently filtered, and expire 
   const defaults = Object.fromEntries(definition.settings.map(s => [s.id, s.default]));
   assert.equal(defaults.retention_hours, 24);
   assert.equal(defaults.default_window_hours, 2);
-  assert.ok(['crate_check', 'travel', 'fighting', 'trading', 'vault_accumulation', 'create_food']
+  assert.ok(['crate_check', 'travel', 'fighting', 'trading', 'vault_accumulation', 'create_food',
+    'farm_cleanup', 'farm_delivery']
     .every(key => defaults[key] === true));
   assert.deepEqual(inventoryGain([{ name: 'mace', amount: 1 }],
     [{ name: 'mace', amount: 1 }, { name: 'rose', amount: 2 }]),
@@ -48,6 +50,25 @@ test('strategies: detailed stats are opt-in, independently filtered, and expire 
     stats.rotate(now);
     assert.equal(stats.report({ hours: 2 }).crate.checks, 0);
   } finally { rmSync(dir, { recursive: true, force: true }); }
+});
+
+test('strategies: farm coordination is independent, configurable, and clears when disabled', () => {
+  const doctrine = loadDoctrine({ file: 'doctrines/castle-victoria.jsonc' }).config;
+  const rule = economyRules.find(r => r.id === 'farm-coordination-policy');
+  const obs = { agent: 'courier', keeper: { policy: { farmCleanup: null, farmDelivery: null } },
+    strategies: { agents: { courier: [STRATEGY_IDS.FARM_CLEANUP, STRATEGY_IDS.FARM_DELIVERY] },
+      settings: { courier: { [STRATEGY_IDS.FARM_CLEANUP]: { max_floor_items: 8 },
+        [STRATEGY_IDS.FARM_DELIVERY]: { herbs_per_farmer: 30, max_recipients: 2 } } } } };
+  const on = rule.decide(obs, doctrine);
+  assert.deepEqual(on.orders.farm_cleanup,
+    { enabled: true, max_floor_items: 8, keep_free_stacks: 1 });
+  assert.deepEqual(on.orders.farm_delivery,
+    { enabled: true, herbs_per_farmer: 30, elderberries_per_farmer: 10, max_recipients: 2 });
+  obs.keeper.policy.farmCleanup = on.orders.farm_cleanup;
+  obs.keeper.policy.farmDelivery = on.orders.farm_delivery;
+  obs.strategies.agents.courier = [];
+  assert.deepEqual(rule.decide(obs, doctrine).orders,
+    { action: 'start', farm_cleanup: null, farm_delivery: null });
 });
 
 test('strategies: disabling detailed stats clears a previously enabled keeper policy', () => {

@@ -14,6 +14,8 @@ export const STRATEGY_IDS = Object.freeze({
   SPREAD_OUT: 'spread-out',
   SELL_AND_BANK: 'sell-and-bank',
   ACCUMULATE_IN_VAULT: 'accumulate-in-vault',
+  FARM_CLEANUP: 'farm-cleanup',
+  FARM_DELIVERY: 'farm-delivery',
   DETAILED_STATS: 'detailed-strategy-stats',
 });
 
@@ -110,6 +112,36 @@ export const STRATEGY_CATALOG = Object.freeze([
     ]),
   }),
   Object.freeze({
+    id: STRATEGY_IDS.FARM_CLEANUP,
+    title: 'Farm clean-up',
+    group: 'Fleet coordination',
+    purpose: 'Consolidated return trips',
+    requirements: ['A sell-triggered town trip', 'Gettable drops in the farming room'],
+    description: 'Before a seller leaves the farm, discard confirmed broken or junk gear, collect protected vault items first, then take the most valuable sound gear, food, reagents, and sale stock the pack can hold.',
+    settings: Object.freeze([
+      Object.freeze({ id: 'max_floor_items', title: 'Maximum floor items', type: 'integer', min: 1, max: 40,
+        default: 12, description: 'Maximum ranked floor objects attempted before the seller departs.' }),
+      Object.freeze({ id: 'keep_free_stacks', title: 'Keep free stacks', type: 'integer', min: 0, max: 12,
+        default: 1, description: 'Leave this many configured stack slots free for travel or merchant results.' }),
+    ]),
+  }),
+  Object.freeze({
+    id: STRATEGY_IDS.FARM_DELIVERY,
+    title: 'Farm delivery',
+    group: 'Fleet coordination',
+    purpose: 'Shared field resupply',
+    requirements: ['A town-returning courier', 'A reachable apothecary', 'Shillings above the walking reserve'],
+    description: 'One returning seller polls active farmers in its destination room, buys their herb and elderberry shortfalls, and gives each farmer its requested share. Undeliverable stock stays with the courier.',
+    settings: Object.freeze([
+      Object.freeze({ id: 'herbs_per_farmer', title: 'Herbs per farmer', type: 'integer', min: 0, max: 100,
+        default: 20, description: 'Maximum herb shortfall carried for each active farmer on one trip.' }),
+      Object.freeze({ id: 'elderberries_per_farmer', title: 'Elderberries per farmer', type: 'integer', min: 0, max: 100,
+        default: 10, description: 'Maximum elderberry shortfall carried for each active farmer on one trip.' }),
+      Object.freeze({ id: 'max_recipients', title: 'Maximum recipients', type: 'integer', min: 1, max: 12,
+        default: 4, description: 'Maximum farmers supplied by one courier trip.' }),
+    ]),
+  }),
+  Object.freeze({
     id: STRATEGY_IDS.DETAILED_STATS,
     title: 'Detailed strategy stats',
     group: 'Observability',
@@ -123,7 +155,8 @@ export const STRATEGY_CATALOG = Object.freeze([
       Object.freeze({ id: 'default_window_hours', title: 'Default dashboard window (hours)',
         type: 'number', min: 0.25, max: 168, default: 2,
         description: 'Initial look-back used by the DUM bot and Harness tabs.' }),
-      ...['crate_check', 'travel', 'fighting', 'trading', 'vault_accumulation', 'create_food']
+      ...['crate_check', 'travel', 'fighting', 'trading', 'vault_accumulation', 'create_food',
+          'farm_cleanup', 'farm_delivery']
         .map(id => Object.freeze({ id, title: id.split('_').map(w => w[0].toUpperCase() + w.slice(1)).join(' '),
           type: 'boolean', default: true,
           description: `Collect drillable ${id.replaceAll('_', ' ')} records while this strategy is enabled.` })),

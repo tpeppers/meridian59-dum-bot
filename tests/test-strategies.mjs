@@ -3,6 +3,7 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { StrategyStore } from '../src/record/strategies.mjs';
+import { Journal } from '../src/record/journal.mjs';
 import { STRATEGY_CATALOG, STRATEGY_IDS } from '../src/strategies/catalog.mjs';
 import { foodFleetRules } from '../src/decide/rules/food.mjs';
 import { castleAssignments, castleDeploymentDiffers } from '../src/decide/rules/castle-victoria.mjs';
@@ -19,8 +20,43 @@ test('strategies: catalogue contains the independently selectable behaviours', (
     STRATEGY_IDS.CREATE_WEAPONS, STRATEGY_IDS.CREATE_FOOD,
     STRATEGY_IDS.VS_SKELETONS, STRATEGY_IDS.CHECK_CV_CRATE,
     STRATEGY_IDS.SPREAD_OUT, STRATEGY_IDS.SELL_AND_BANK,
+    STRATEGY_IDS.ACCUMULATE_IN_VAULT,
   ]);
   assert.equal(STRATEGY_CATALOG.filter(s => s.group === 'Kraanan upkeep').length, 2);
+});
+
+test('strategies: vault accumulation accepts several items and clears protection when disabled', () => {
+  const doctrine = loadDoctrine({ file: 'doctrines/castle-victoria.jsonc' }).config;
+  const strategy = STRATEGY_CATALOG.find(s => s.id === STRATEGY_IDS.ACCUMULATE_IN_VAULT);
+  assert.deepEqual(strategy.settings[0].default, ['inky cap mushroom']);
+  const enabled = { agent: 'collector', keeper: { policy: { vaultItems: [] } }, strategies: {
+    agents: { collector: [STRATEGY_IDS.ACCUMULATE_IN_VAULT] },
+    settings: { collector: { [STRATEGY_IDS.ACCUMULATE_IN_VAULT]: {
+      items: ['inky cap mushroom', 'dark angel feather'],
+    } } },
+  } };
+  const rule = economyRules.find(r => r.id === 'vault-accumulation-policy');
+  assert.deepEqual(rule.decide(enabled, doctrine).orders.vault_items,
+    ['inky cap mushroom', 'dark angel feather']);
+  enabled.strategies.agents.collector = [];
+  enabled.keeper.policy.vaultItems = ['inky cap mushroom'];
+  assert.deepEqual(rule.decide(enabled, doctrine).orders.vault_items, []);
+});
+
+test('observability: current-process counters group interventions by rule and kind', () => {
+  const journal = new Journal({ dir: join(tmpdir(), 'dum-observability-fixture'), enabled: false });
+  journal.write({ kind: 'tick', intent: { kind: 'orders', rule: 'vault-accumulation-policy' },
+    applied: { acted: true, kind: 'orders' }, verified: { verified: true } });
+  journal.write({ kind: 'tick', intent: { kind: 'orders', rule: 'vault-accumulation-policy' },
+    applied: { acted: false, kind: 'no-change' }, verified: { verified: false } });
+  journal.finding('collector', 'fixture finding');
+  const metrics = journal.observability();
+  assert.equal(metrics.interventions_triggered, 2);
+  assert.equal(metrics.interventions_applied, 1);
+  assert.equal(metrics.interventions_no_change, 1);
+  assert.equal(metrics.verification_failures, 1);
+  assert.deepEqual(metrics.by_rule, [{ name: 'vault-accumulation-policy', count: 2 }]);
+  assert.deepEqual(metrics.by_kind, [{ name: 'orders', count: 2 }]);
 });
 
 test('strategies: an empty larder is serviced before repeat weapon rolls', () => {
@@ -52,7 +88,7 @@ test('strategies: selling and banking values are independently maintained', () =
   const obs = { agent: 'banker', policy: {}, keeper: { policy: {} }, strategies: {
     agents: { banker: [STRATEGY_IDS.SELL_AND_BANK] },
   } };
-  const intent = economyRules[0].decide(obs, doctrine);
+  const intent = economyRules.find(rule => rule.id === 'economy-thresholds').decide(obs, doctrine);
   assert.equal(intent.orders.bank_above, 3000);
   assert.equal(intent.orders.walking_money, 1000);
   assert.equal(intent.orders.max_carry, 50);
@@ -76,6 +112,12 @@ test('strategies: a multi-unit toggle changes only the named behaviour', () => {
     const configured = store.snapshot(['a', 'b']);
     assert.equal(configured.settings.a[STRATEGY_IDS.SPREAD_OUT].max_bots_per_safe_spot, 2);
     assert.equal(configured.settings.b[STRATEGY_IDS.SPREAD_OUT].max_bots_per_room, 5);
+    store.update(['a', 'b'], {}, { [STRATEGY_IDS.ACCUMULATE_IN_VAULT]: {
+      items: ['inky cap mushroom', 'dark angel feather'],
+    } });
+    const itemState = store.states(['a', 'b']).states[STRATEGY_IDS.ACCUMULATE_IN_VAULT];
+    assert.deepEqual(itemState.settings.items, ['inky cap mushroom', 'dark angel feather']);
+    assert.deepEqual(itemState.mixed_settings, []);
   } finally { rmSync(dir, { recursive: true, force: true }); }
 });
 

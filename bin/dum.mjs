@@ -88,7 +88,8 @@ function context({ config, commit }) {
     defaults: config.strategies.defaults, settings: config.strategies.settings, enabled: commit,
   });
   const strategyServer = commit && config.strategies.enabled
-    ? new StrategyControlServer({ store: strategies, url: config.link.strategy_control_url }) : null;
+    ? new StrategyControlServer({ store: strategies, journal,
+        url: config.link.strategy_control_url }) : null;
   const broker = new Broker({
     controlUrl: config.link.control_url,
     timeoutMs: config.link.timeout_ms,

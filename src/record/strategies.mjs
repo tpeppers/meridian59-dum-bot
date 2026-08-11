@@ -78,7 +78,7 @@ export class StrategyStore {
       const settings = {}, mixed_settings = [];
       for (const key of keys) {
         const first = values[0]?.[key];
-        if (values.every(v => Object.is(v[key], first))) settings[key] = first;
+        if (values.every(v => sameSetting(v[key], first))) settings[key] = first;
         else mixed_settings.push(key);
       }
       states[id] = { state: enabled === 0 ? 'none' : enabled === total ? 'all' : 'some',
@@ -118,3 +118,6 @@ export class StrategyStore {
     return this.states(who);
   }
 }
+
+const sameSetting = (a, b) => Object.is(a, b) ||
+  (Array.isArray(a) && Array.isArray(b) && a.length === b.length && a.every((v, i) => v === b[i]));

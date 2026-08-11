@@ -167,6 +167,9 @@ settings have catalogue defaults and may be overridden in the doctrine:
       "sell_when_broke": false,
       "broke_under": 500,
       "broke_stacks": 8
+    },
+    "accumulate-in-vault": {
+      "items": ["inky cap mushroom", "dark angel feather"]
     }
   }
 }
@@ -179,6 +182,16 @@ unit to a room and the keeper applies no occupancy cap while choosing a safe wal
 `sell-and-bank` leaves the time-sensitive execution in the keeper and makes DUM own
 the policy: when a pack is worth selling, when carried cash warrants a bank trip, and
 how much spending money remains afterwards.
+
+`accumulate-in-vault` protects every configured item from the keeper's eat, sell,
+gift and emergency-drop paths. It does not create a separate vault errand: when a
+normal town loop passes through Barloque, the keeper offers the protected stacks to
+Obert Cair'bre and verifies their removal from the pack. The local strategy editor
+looks up the corresponding monster treasure tables and highlights those creatures.
+
+The loopback strategy-control service also exposes `GET /observability`. Its counters
+cover the current DUM process: rule interventions triggered and applied, no-change
+diffs, verification failures, findings and errors, grouped by rule and action kind.
 
 ## `weapons` — named selection order and staging threshold
 

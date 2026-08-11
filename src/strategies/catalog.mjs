@@ -98,7 +98,13 @@ export const STRATEGY_CATALOG = Object.freeze([
     description: 'Never eat, sell, gift, or discard the selected items. Deposit them with the mainland vaultman whenever an ordinary town loop passes through Barloque.',
     settings: Object.freeze([
       Object.freeze({ id: 'items', title: 'Items to accumulate', type: 'item-list',
-        default: Object.freeze(['inky cap mushroom']), max_items: 24,
+        default: Object.freeze([
+          'dark angel feather',
+          'inky cap mushroom',
+          'blue dragon scale',
+          'arrow',
+          'nerudite arrow',
+        ]), max_items: 24,
         description: 'Choose one or more compendium items. Matching monster drops are highlighted automatically.' }),
     ]),
   }),

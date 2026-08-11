@@ -169,7 +169,13 @@ settings have catalogue defaults and may be overridden in the doctrine:
       "broke_stacks": 8
     },
     "accumulate-in-vault": {
-      "items": ["inky cap mushroom", "dark angel feather"]
+      "items": [
+        "dark angel feather",
+        "inky cap mushroom",
+        "blue dragon scale",
+        "arrow",
+        "nerudite arrow"
+      ]
     }
   }
 }

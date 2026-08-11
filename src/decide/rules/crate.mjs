@@ -60,6 +60,8 @@
 // belongs to the keeper, and a keeper has more to work with at full health.
 
 /** Five real minutes. `blakserv/systimer.c:93` with `KodPeriod` at its default of 5. */
+import { STRATEGY_IDS, strategyEnabled } from '../../strategies/catalog.mjs';
+
 export const GAME_HOUR_MS = 5 * 60 * 1000;
 
 /**
@@ -260,7 +262,13 @@ export const crateFleetRules = [
       const c = doctrine.crate ?? {};
       const now = fleetObs.at;
       const zone = new Set(c.zone ?? []);
-      const rows = fleetObs.characters ?? [];
+      const rows = (fleetObs.characters ?? []).filter(r =>
+        // Observations produced before the strategy system retain the historical
+        // crate.check behaviour. A live DUM snapshot makes the selection explicit.
+        !fleetObs.strategies || strategyEnabled(fleetObs, doctrine, r.agent, STRATEGY_IDS.CHECK_CV_CRATE));
+
+      if (!rows.some(r => r.in_game))
+        return { kind: 'pass', why: 'no live unit has Check CV Crate enabled' };
 
       // THE QUORUM IS A PROXIMITY TEST, NOT A VOTE. Two reasons, and both are about the
       // trip being cheap rather than about consensus: the crate is one hop from Castle

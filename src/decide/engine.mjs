@@ -26,6 +26,7 @@
  * @property {string} agent
  * @property {string} kind      'orders' | 'travel' | 'report' | 'none'
  * @property {object} orders    arguments for the harness call, when kind is a write
+ * @property {object[]|null} plan fleet-level actions, when kind is 'act'
  * @property {string} why       human sentence, journalled
  * @property {object} evidence  the observation fields the rule actually read
  */
@@ -123,6 +124,13 @@ export function decide(ruleSet, obs, doctrine) {
       agent: out.orders?.agent ?? obs.agent ?? null,
       kind: out.kind ?? 'orders',
       orders: out.orders ?? {},
+      // Fleet rules describe several characters at once. Keeping that plan on the
+      // intent is not presentation trivia: act/ is the boundary that validates and
+      // executes it. The first implementation dropped this field here, then tried to
+      // diff an empty order against a board observation and failed on agent=null.
+      plan: Array.isArray(out.plan) ? out.plan : null,
+      shortfalls: out.shortfalls ?? null,
+      notes: out.notes ?? null,
       why: out.why ?? rule.why,
       evidence: out.evidence ?? {},
     };

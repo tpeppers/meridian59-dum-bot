@@ -22,6 +22,8 @@
 // enough identical — 85/15 zombie/skeleton in the graveyard, 80/20 in the crypt — so
 // crossing BETWEEN them mid-shift costs the walk and buys nothing, which is why
 // `assignRooms` below never moves a character that is already on either one.
+import { keeperWeaponPriority } from '../weapons.mjs';
+
 export const GRAVEYARD = 70;
 export const CRYPT = 71;
 
@@ -166,14 +168,27 @@ export const SHIFT_MAX_CARRY = 60;
 // The skeleton is still fought: `max_threat_over` is what decides whether one may be
 // engaged when it does appear, and that is the knob the armour buys. Hunt says what to look
 // for; the ceiling says what is allowed. Conflating them costs the whole shift.
-export const ordersFor = row => ({
+export const ordersFor = (row, doctrine = {}) => ({
   hunt: 'zombie',
   max_threat_over: wearsBodyArmour(row) ? SKELETON_CEILING : ZOMBIE_CEILING,
   flee_below: wearsBodyArmour(row) ? 0.40 : 0.35,
   max_carry: SHIFT_MAX_CARRY,
   bank_above: null,
   roam: false,
+  weapon_priority: keeperWeaponPriority(doctrine.weapons?.preset, doctrine.weapons?.presets),
 });
+
+const sameList = (a, b) => Array.isArray(a) && Array.isArray(b) &&
+  a.length === b.length && a.every((x, i) => x === b[i]);
+
+export function deploymentDiffers(row, to, orders) {
+  const p = row.policy ?? {};
+  return row.mode !== 'farm' || p.assignedRoom !== to || p.hunt !== orders.hunt ||
+    p.maxThreatOver !== orders.max_threat_over || p.fleeBelow !== orders.flee_below ||
+    p.maxCarry !== orders.max_carry || p.bankAbove !== orders.bank_above ||
+    p.roam !== orders.roam || p.useSafeSpots !== orders.use_safe_spots ||
+    !sameList(p.weaponPriority, orders.weapon_priority);
+}
 
 // ---------------------------------------------------------------- where to run
 //
@@ -240,22 +255,29 @@ export const graveyardFleetRules = [
         return { kind: 'act',
                  plan: live.filter(r => r.mode !== 'idle' || r.room !== TOS_INN)
                            .map(r => ({ agent: r.agent, do: 'stand-down', ...standDownOrders(),
+                                        moved: r.room !== TOS_INN,
                                         why: 'the rooms are not generating' })),
                  why: `standing down to the Tos inn — ${a.why ?? b.why}` };
 
-      const plan = assignRooms(live).map(r => ({
+      const assigned = assignRooms(live).map(r => {
+        const orders = { ...ordersFor(r, doctrine), use_safe_spots: true };
+        return { ...r, orders, differs: deploymentDiffers(r, r.to, orders) };
+      });
+      const plan = assigned.filter(r => r.differs).map(r => ({
         agent: r.agent, do: 'deploy', to: r.to, moved: r.moved,
-        ...ordersFor(r),
-        use_safe_spots: true,
+        ...r.orders,
         // Every kill of the clean shift came from behind a wall and nobody died; the shift
         // that fought in the open lost seven. This is not a preference.
         retreat_to: retreatTo(),
       }));
       const moving = plan.filter(p => p.moved).length;
+      if (!plan.length)
+        return { kind: 'pass', why: `undead observed (${a.seen + b.seen} standing); ` +
+          `${live.length} already hold the shift policy` };
       return { kind: 'act', plan,
                why: `undead observed (${a.seen + b.seen} standing) — ${plan.length} on the ` +
                     `shift, ${moving} moving, ${plan.length - moving} already on station; ` +
-                    `${plan.filter(p => p.hunt === 'skeleton').length} armoured on skeletons` };
+                    `${assigned.filter(r => wearsBodyArmour(r)).length} armoured on skeletons` };
     },
   },
 ];

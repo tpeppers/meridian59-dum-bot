@@ -1,0 +1,119 @@
+{
+  // THE MOOT — the fleet stands in one room and levels itself up to its own standard.
+  //
+  // `moot.hold: true` is the switch. It musters everyone to an inn, pools what they are
+  // carrying, and shares it out until each character reaches ITS OWN floor — read from its
+  // loadout, not from a number in this file. Then it says plainly what is still missing and
+  // has to be bought rather than moved.
+  //
+  // WHY IT EXISTS. Measured on this fleet in one pass: a character sitting on a 412-vigor
+  // larder next to one carrying nothing; another with 400 shillings and no food; 84
+  // elderberry and 76 herbs held by a character standing two rooms from four who could not
+  // cast `create food` for want of two herbs each. Nothing was scarce. Everything was in
+  // the wrong pocket — and every hand-over needs both characters in one room, which two
+  // driving keepers almost never are.
+
+  "extends": "survive.jsonc",
+
+  "name": "moot",
+  "why": "the fleet's resources are never scarce, they are in the wrong pockets — pool them in an inn and fill every character to its own loadout floor",
+
+  // REQUIRED BEFORE THIS CAN BE COMMITTED, and deliberately absent. `tools/dum-guard.mjs`
+  // enforces that a doctrine never names a real roster.
+  // "fleet": "<your-fleet>",
+
+  "claim": {
+    // Pooling is an economy decision and a muster is a movement one. NOT survival — the
+    // characters are standing still in a safe room, which is precisely when you want the
+    // keeper's own floor untouched underneath.
+    "economy": "bot",
+    "movement": "bot",
+    // Holding a meeting is also a work decision: the keeper must run in idle mode while
+    // it continues to own survival and recovery. Without this claim it would immediately
+    // walk back to its hunting assignment after arriving at the inn.
+    "work": "bot",
+    "lease_ms": 600000
+  },
+
+  "moot": {
+    "hold": true,
+
+    // WHERE. Familiars, in Tos — which is also the staging room for the graveyard, so the
+    // fleet pools and sets out from one place instead of two.
+    //
+    // AN INN AND NOWHERE ELSE, and the rule refuses anything not on the list rather than
+    // trusting the caller. A muster stands a dozen characters still, in one room, eating —
+    // the first accidental moot here ran in Deep Woods of Ileria, which spawns living
+    // trees, and every character in it was a target that was not fighting back.
+    "room": 52,
+    "inns": [153, 106, 103, 52, 202, 2001, 1017, 1007],
+
+    // Two characters is enough to start pooling; below that there is nobody to pool with
+    // and the muster is still walking.
+    "quorum": 2,
+
+    // WHAT EACH CHARACTER SHOULD END UP WITH IS NOT WRITTEN HERE — it is read from that
+    // character's LOADOUT (`substrate/loadouts/<name>.json`), whose carry list is already
+    // exactly this: an item, a floor, a priority weight and a kind. On this fleet that
+    // reads 20 elderberry, 20 herbs, a leather armor and a small round shield each, and
+    // changing it is a planner edit rather than a doctrine edit.
+    //
+    // This is only the fallback for a character with NO loadout — and the rule REPORTS
+    // when it has used it, because a silent default reads as "this one wants nothing",
+    // which is the single answer that is never true.
+    "default_want": {
+      "elderberry": { "min": 20, "weight": 3, "kind": "reagent" },
+      "herb":       { "min": 20, "weight": 2, "kind": "reagent" },
+      "loaf of bread": { "min": 2, "weight": 5, "kind": "food" }
+    },
+
+    // THE SHARE-OUT IS EQUAL FRACTION OF WANT, NOT EQUAL COUNT.
+    //
+    // A caster wanting 40 herbs and a fighter wanting 4 are not made equal by giving them
+    // 10 each — that leaves the caster at a quarter and overshoots the fighter. Filling
+    // both to the same fraction is what "fair" actually means here, and it degrades
+    // gracefully: at half supply everyone gets half of what they asked for, rather than
+    // the first few getting everything and the rest nothing.
+    //
+    // Nobody is taken below their OWN floor to fill somebody else's. A moot that leaves
+    // the donor short has moved the problem rather than solved it.
+    "share": "equal-fraction-of-want",
+
+    // THE MOOT NEVER RUNS DURING A WINDOW. Pooling is what the fleet does with the ~85
+    // minutes in every 120 when the undead are not up; doing it during a shift spends the
+    // very thing it is preparing for.
+    "yield_to_window": true,
+
+    // A SHORTAGE AND A MISPLACEMENT LOOK IDENTICAL ON A BOARD AND HAVE OPPOSITE FIXES.
+    // Pooling cures the second and cannot touch the first: this fleet held 1739 elderberry
+    // and 47 herbs, so every herb moved left the total at 47 and `create food` stayed
+    // blocked for everyone. The rule reports the residue as "must be BOUGHT, not moved"
+    // rather than declaring a successful redistribution of nothing.
+    "report_shortfalls": true
+  },
+
+  "weapons": {
+    "preset": "vsSkeletons",
+    "provision": {
+      "enabled": true,
+      "threshold": "axe",
+      "room": 52,
+      "cast_when_mana": true,
+      "mana_cost": 15
+    }
+  },
+
+  "placement": {
+    "spread": false,
+    "rooms": [52]
+  },
+
+  // Heartbeats still run on the one-minute character cadence. The expensive fleet pass
+  // refreshes 21 inventories/loadouts, so it stays at five minutes once the muster has
+  // settled; claim leases do not depend on the fleet-decision cadence.
+  "cadence": {
+    "character_ms": 60000,
+    "fleet_ms": 300000,
+    "backoff_ms": 60000
+  }
+}

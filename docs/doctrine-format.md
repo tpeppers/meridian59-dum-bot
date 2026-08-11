@@ -144,6 +144,36 @@ field would not be yielded and DUM would write it anyway.
 
 Also available as `--yield-to rest_below,max_carry,roam`.
 
+## `weapons` — named selection order and staging threshold
+
+`weapons.preset` selects a best-to-worst order. The built-ins are
+`strongestToWeakest` (the default, sorted by generic novice damage from the harness
+compendium) and `vsSkeletons` (Hammer, Mace, Axe, other weapons, None).
+
+A doctrine can add and swap its own named presets. Nested arrays are tied tiers and
+`"*"` means every other recognised weapon:
+
+```jsonc
+"weapons": {
+  "preset": "myUndeadOrder",
+  "presets": {
+    "myUndeadOrder": [["hammer", "mace"], "axe", "*"]
+  },
+  "provision": {
+    "enabled": true,
+    "threshold": "axe",       // inclusive: every tier above it also passes
+    "room": 52,                // acts only when every live hand is in this room
+    "cast_when_mana": true
+  }
+}
+```
+
+Provisioning first hands out exact qualifying spares, then has every character that
+knows Create Weapon cast whenever it has at least the configured mana cost and proven
+weight/bulk room. It stops casting as soon as existing qualifying weapons can cover the
+fleet. It never treats unknown carrying room as free room, and it becomes a no-op as
+soon as anyone leaves staging, so it cannot recall or interrupt an active shift.
+
 ## `prey`, `placement`, `economy`, `party`, `escalate`
 
 See the commented examples in [`../doctrines/`](../doctrines/). Two conventions run

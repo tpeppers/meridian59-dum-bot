@@ -47,6 +47,14 @@ export async function verify(broker, applied) {
                   `confirm it. Its evidence is the transcript, captured as it happened ` +
                   `and journalled under memory_patch` };
 
+  if (applied.kind === 'fleet-plan') {
+    const failed = applied.failures ?? [];
+    return { verified: failed.length ? false : null, fields: {},
+             why: failed.length
+               ? `${failed.length} fleet call(s) failed: ${failed.map(f => f.error).join('; ')}`
+               : 'fleet calls were accepted; placement and transfers are verified from the next fleet observation' };
+  }
+
   if (applied.kind === 'batch') {
     // Each half of a pairing is verified independently, because the interesting failure
     // is exactly the asymmetric one: side A believes it has a partner and side B has

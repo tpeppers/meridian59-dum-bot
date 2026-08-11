@@ -20,6 +20,8 @@ import { ALLOWED, READ, WRITE, NOT_YET } from '../src/link/surface.mjs';
 import { characterRules, fleetRules } from '../src/decide/index.mjs';
 import { Journal } from '../src/record/journal.mjs';
 import { Memory } from '../src/record/memory.mjs';
+import { StrategyStore } from '../src/record/strategies.mjs';
+import { StrategyControlServer } from '../src/link/strategy-control.mjs';
 import { pass } from '../src/loop/tick.mjs';
 import { run } from '../src/loop/run.mjs';
 
@@ -81,6 +83,12 @@ function context({ config, commit }) {
   const memory = new Memory({
     dir: config.record.memory_dir, fleet: config.fleet, enabled: commit,
   });
+  const strategies = new StrategyStore({
+    dir: config.record.strategy_dir, fleet: config.fleet,
+    defaults: config.strategies.defaults, enabled: commit,
+  });
+  const strategyServer = commit && config.strategies.enabled
+    ? new StrategyControlServer({ store: strategies, url: config.link.strategy_control_url }) : null;
   const broker = new Broker({
     controlUrl: config.link.control_url,
     timeoutMs: config.link.timeout_ms,
@@ -93,7 +101,8 @@ function context({ config, commit }) {
   // character busy or free it again, so a second spelling of this would be a second
   // process as far as the broker is concerned — able to claim, unable to release.
   const holder = `dum/${config.name}@pid-${process.pid}`;
-  return { broker, config, journal, memory, commit, holder, only: agentFlag() };
+  return { broker, config, journal, memory, strategies, strategyServer,
+           commit, holder, only: agentFlag() };
 }
 
 // ---------------------------------------------------------------- doctor

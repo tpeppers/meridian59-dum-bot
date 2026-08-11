@@ -26,6 +26,12 @@ import { placementRules, placementFleetRules } from './rules/placement.mjs';
 import { partyFleetRules } from './rules/party.mjs';
 import { crateFleetRules } from './rules/crate.mjs';
 import { swarmFleetRules } from './rules/swarm.mjs';
+import { graveyardFleetRules } from './rules/graveyard.mjs';
+import { marketFleetRules } from './rules/market.mjs';
+import { mootFleetRules } from './rules/moot.mjs';
+import { weaponFleetRules } from './rules/weapons.mjs';
+import { foodFleetRules } from './rules/food.mjs';
+import { castleVictoriaFleetRules } from './rules/castle-victoria.mjs';
 
 const isFleet = r => r.scope === 'fleet';
 
@@ -72,7 +78,30 @@ export const fleetRules = new RuleSet('fleet', [
   // it somewhere the operator did not go. With `swarm.follow` off — the ordinary case —
   // both rules return `pass` on their first line and cost one comparison.
   ...swarmFleetRules,
+  // The crate window closes and the strategy-selected checker is already in the castle.
   ...crateFleetRules,
+  // Establish the hands-off patrol policy before its maintenance strategies try to
+  // spend mana or hand over equipment.
+  ...castleVictoriaFleetRules,
+  // Provisioning runs only while every live hand is in its named staging room. Above
+  // the shift so readiness can block departure; once anyone is fighting it returns pass
+  // and cannot recall or interrupt the fleet.
+  ...weaponFleetRules,
+  ...foodFleetRules,
+  // BELOW THE SWARM, ABOVE EVERYTHING ELSE. A human at the controls outranks a schedule —
+  // if an operator is leading, followers should not be pulled onto the night shift. But
+  // the shift outranks placement, pairing and the ladder for the same reason the crate
+  // does: its window CLOSES, and the rules below it are standing conditions that will be
+  // just as true in five minutes.
+  ...graveyardFleetRules,
+  // BELOW THE SHIFT ON PURPOSE. A round trip to a counter is most of a 35-minute
+  // window, so the shift decides first and this only fires for characters it has not
+  // claimed — or for one so heavy it cannot pick up what it kills.
+  ...marketFleetRules,
+  // The moot yields to an open window on its own, so it sits below the shift and
+  // above the standing rules — pooling is what the ~85 idle minutes in every 120 are
+  // for, and it must not start while there is anything to farm.
+  ...mootFleetRules,
   ...partyFleetRules,
   ...placementFleetRules,
   ...economyRules.filter(isFleet),

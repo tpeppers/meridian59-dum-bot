@@ -42,6 +42,9 @@ export const DEFAULTS = {
     // fleet-wide bot is the one thing positioned to breach that for twenty-one of
     // them at once.
     calls_per_second: 4,
+    // DUM's own loopback control plane. The strategy-game website proxies to this;
+    // nothing outside the machine holding the fleet may mutate unit strategies.
+    strategy_control_url: 'http://127.0.0.1:8916',
   },
 
   // ---------------------------------------------------------------- ownership
@@ -169,6 +172,52 @@ export const DEFAULTS = {
     concentration_report_at: null,
   },
 
+  // ---------------------------------------------------------------- weapons
+  // The named order is always usable; provisioning is opt-in because casting and
+  // handing items between characters are fleet operations, not keeper preferences.
+  weapons: {
+    preset: 'strongestToWeakest',
+    // Named doctrine-local additions. Each value is best-to-worst; a nested list is a
+    // tied tier and "*" means every otherwise recognised weapon.
+    presets: {},
+    provision: {
+      enabled: false,
+      threshold: null,
+      room: null,
+      staging_only: true,
+      cast_when_mana: true,
+      mana_cost: 15,
+    },
+  },
+
+  // ---------------------------------------------------------------- composable strategies
+  // The per-unit file under var/ overrides these. An absent assignment inherits the
+  // defaults; once the website changes a unit, its explicit set wins until changed again.
+  strategies: {
+    enabled: true,
+    defaults: [],
+  },
+
+  food: {
+    min_items: 1,
+    mana_cost: 10,
+    elderberry_per_cast: 2,
+    herbs_per_cast: 2,
+  },
+
+  castle_victoria: {
+    shift: false,
+    rooms: { downstairs: 38, upstairs: 39 },
+    upstairs_share: 0.67,
+    retreat_to: 52,
+    rest_below: 0.75,
+    flee_below: 0.35,
+    fight_above_vigor: 180,
+    max_carry: 14,
+    bank_above: 2000,
+    use_safe_spots: true,
+  },
+
   party: {
     // Pair characters up. Two characters on one monster both advance from it — the
     // advancement flag is per character, not a split pot — but pairing is also the
@@ -267,6 +316,8 @@ export const DEFAULTS = {
     // written at all. Fleet-scoped, gitignored, and see src/record/memory.mjs for why
     // reconstructing it from the journal is not the same.
     memory_dir: 'var/memory',
+    // Per-unit strategy selections are operational state and may name roster handles.
+    strategy_dir: 'var/strategies',
     // Keep the full observation on every line, or only the fields a rule read. Full
     // is large and is what makes an after-the-fact "why did it decide that" possible
     // without re-running anything.

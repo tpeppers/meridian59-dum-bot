@@ -67,7 +67,7 @@ export function normalizeFleetRow(r = {}) {
     max_health: health.max ?? num(r.level),
     health,
     vigor: vital(r.vigor_of ?? r.vigor),
-    mana: vital(r.mana),
+    mana: vital(r.mana ?? r.mana_now),
     // `room` on the board is the NAME; the number is `room_num`.
     room: num(r.room_num),
     room_name: str(r.room_name ?? (typeof r.room === 'string' ? r.room : null)),
@@ -91,6 +91,9 @@ export function normalizeFleetRow(r = {}) {
     purse: num(r.purse),
     banked: num(r.banked?.value ?? r.banked),
     carrying: num(r.carrying),
+    has_weapon: bool(r.has_weapon),
+    wielding: str(r.wielding),
+    provides: Array.isArray(r.provides) ? r.provides.map(String) : [],
     // The keeper's own commitment description: errand | driven | parked | partner.
     // The board calls it `committed`.
     commitment: r.committed ?? r.commitment ?? null,

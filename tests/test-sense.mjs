@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { normalizeFleetRow, normalizeStatus } from '../src/sense/normalize.mjs';
+import { observeFleet } from '../src/sense/observe.mjs';
 
 const test = globalThis.__dumTest;
 
@@ -129,4 +130,21 @@ test('status: refusals default to an empty list, not to a guess', () => {
   const merged = normalizeStatus(normalizeFleetRow(boardRow()), {});
   assert.deepEqual(merged.refusals, []);
   assert.equal(merged.waiting_on, null);
+});
+
+test('fleet: scheduled rooms are sensed once each through an occupant', async () => {
+  const calls = [];
+  const broker = { call: async (tool, args) => {
+    calls.push({ tool, args });
+    if (tool === 'fleet') return { fleet: [
+      { ...boardRow(), agent: 'a', room_num: 70 },
+      { ...boardRow(), agent: 'b', room_num: 70 },
+      { ...boardRow(), agent: 'c', room_num: 71 },
+    ] };
+    return { room: { num: args.agent === 'c' ? 71 : 70 }, objects: [{ name: 'zombie' }] };
+  } };
+  const obs = await observeFleet(broker, { rooms: [70, 71] });
+  assert.equal(obs.room_views.length, 2);
+  assert.equal(calls.filter(x => x.tool === 'look').length, 2);
+  assert.deepEqual(obs.room_views.map(x => x.room), [70, 71]);
 });

@@ -1,0 +1,77 @@
+{
+  "extends": "survive.jsonc",
+  "name": "Castle Victoria undead shift",
+  "why": "run the whole fleet hands-off across Castle Victoria's two undead generators while equipment, food, and the crate remain independently selectable strategies",
+
+  "claim": {
+    "movement": "bot",
+    "work": "bot",
+    "economy": "bot",
+    "lease_ms": 600000
+  },
+
+  "cadence": {
+    "character_ms": 30000,
+    "fleet_ms": 120000,
+    "backoff_ms": 60000
+  },
+
+  "strategies": {
+    "enabled": true,
+    "defaults": ["create-weapons", "vs-skeletons", "check-cv-crate", "create-food"]
+  },
+
+  "castle_victoria": {
+    "shift": true,
+    "rooms": { "downstairs": 38, "upstairs": 39 },
+    "upstairs_share": 0.67,
+    "retreat_to": 52,
+    "rest_below": 0.75,
+    "flee_below": 0.35,
+    "fight_above_vigor": 180,
+    "max_carry": 14,
+    "bank_above": 2000,
+    "use_safe_spots": true
+  },
+
+  "weapons": {
+    "preset": "strongestToWeakest",
+    "provision": {
+      "enabled": false,
+      "threshold": "axe",
+      "room": null,
+      "staging_only": false,
+      "cast_when_mana": true,
+      "mana_cost": 15
+    }
+  },
+
+  "food": {
+    "min_items": 1,
+    "mana_cost": 10,
+    "elderberry_per_cast": 2,
+    "herbs_per_cast": 2
+  },
+
+  "record": {
+    "full_observations": false
+  },
+
+  "crate": {
+    "check": true,
+    "zone": [2, 38, 39, 40],
+    "quorum": 3,
+    "room": 41,
+    "square": { "col": 6, "row": 10 },
+    "probe_every_ms": 1800000,
+    "min_health": 0.8,
+    "min_level": 30,
+    "return_after": true,
+    "travel_timeout_ms": 180000,
+    "walk_timeout_ms": 90000
+  },
+
+  "graveyard": { "shift": false },
+  "placement": { "spread": false, "rooms": [38, 39] },
+  "prey": { "choose": false, "flee_below": 0.35, "max_threat_over": 28 }
+}

@@ -21,6 +21,7 @@ something new. A dependency nobody wrote down is how two repositories drift.
 | `status` | per-character vitals, room, keeper policy, keeper mode, commitment |
 | `progress`, `prey`, `inventory`, `bank` | fetched only when a loaded rule declared it needs them |
 | `autopilot` (`action: start`) | the single write surface for orders |
+| `cast` (`spell: "create weapon"` only) | the audited self-only provisioning spell; every other spell is refused at the argument boundary |
 | `commitment` on the board | which characters the fleet is already using |
 | `travel`, `walk_to` | the two halves of an errand's movement. Both are a character *walking* at roughly a second a square, so a step may raise its own timeout — see `Broker.call` |
 | `act` **with `verb: "go"` only** | the only way to work a place-triggered square. `UserGo` (`user.kod:5656`) answers on whatever square the character is standing on, which is the mechanism behind stairs, doors, ladders and the Castle Victoria crate. Every other verb `act` carries reaches into the pack and is refused at the surface |

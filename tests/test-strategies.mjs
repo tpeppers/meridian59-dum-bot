@@ -219,6 +219,9 @@ test('strategies: Castle Victoria only pins rooms and walls when Spread Out is e
     new Set(['zombie', 'battered skeleton', 'skeleton']));
   const skeleton = assigned.find(a => a.hunt === 'skeleton');
   assert.equal(skeleton.row.level + skeleton.max_threat_over, 75);
+  const zombie = assigned.find(a => a.to === 39 && a.hunt === 'zombie');
+  assert.equal(zombie.row.level + zombie.max_threat_over, 60,
+    'an upstairs zombie assignment admits the battered skeleton sharing that generator');
 });
 
 test('strategies: Castle policy diff includes live maintenance fields', () => {

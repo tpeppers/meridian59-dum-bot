@@ -38,9 +38,14 @@ export function castleAssignments(rows = [], doctrine = {}, fleetObs = { charact
     // Downstairs targets skeletons. Upstairs (and a unit still travelling there) uses
     // a stable 2:1 battered-skeleton/zombie mix.
     const hunt = upstairs ? (i % 3 === 2 ? 'zombie' : 'battered skeleton') : 'skeleton';
-    const targetLevel = hunt === 'skeleton' ? 75 : hunt === 'battered skeleton' ? 60 : 55;
+    // The keeper's ceiling gates the WHOLE generator, not only the quarry. A zombie
+    // hunter assigned upstairs still shares the room with level-60 battered skeletons;
+    // setting its ceiling to the zombie's 55 makes preyRooms() reject its own assigned
+    // room and leaves it farming zombies elsewhere forever. Size the ceiling to the
+    // strongest normal spawn in the assigned Castle room.
+    const roomThreatLevel = upstairs ? 60 : 75;
     return { row, to, hunt, max_bots_per_safe_spot: maxBotsPerSafeSpot,
-      max_threat_over: Math.max(0, targetLevel - (row.level ?? targetLevel)), spreading };
+      max_threat_over: Math.max(0, roomThreatLevel - (row.level ?? roomThreatLevel)), spreading };
   });
 }
 

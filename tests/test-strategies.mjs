@@ -28,7 +28,13 @@ test('strategies: catalogue contains the independently selectable behaviours', (
 test('strategies: vault accumulation accepts several items and clears protection when disabled', () => {
   const doctrine = loadDoctrine({ file: 'doctrines/castle-victoria.jsonc' }).config;
   const strategy = STRATEGY_CATALOG.find(s => s.id === STRATEGY_IDS.ACCUMULATE_IN_VAULT);
-  assert.deepEqual(strategy.settings[0].default, ['inky cap mushroom']);
+  assert.deepEqual(strategy.settings[0].default, [
+    'dark angel feather',
+    'inky cap mushroom',
+    'blue dragon scale',
+    'arrow',
+    'nerudite arrow',
+  ]);
   const enabled = { agent: 'collector', keeper: { policy: { vaultItems: [] } }, strategies: {
     agents: { collector: [STRATEGY_IDS.ACCUMULATE_IN_VAULT] },
     settings: { collector: { [STRATEGY_IDS.ACCUMULATE_IN_VAULT]: {

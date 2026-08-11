@@ -83,11 +83,12 @@ export const fleetRules = new RuleSet('fleet', [
   // Establish the hands-off patrol policy before its maintenance strategies try to
   // spend mana or hand over equipment.
   ...castleVictoriaFleetRules,
-  // Provisioning runs only while every live hand is in its named staging room. Above
-  // the shift so readiness can block departure; once anyone is fighting it returns pass
-  // and cannot recall or interrupt the fleet.
-  ...weaponFleetRules,
+  // An empty larder outranks equipment upgrades. Fleet rules are first-match-wins and
+  // Create Weapon can remain true through many unlucky rolls; putting it first could
+  // starve Create Food indefinitely. Food returns pass as soon as every selected unit
+  // has a meal, so ordinary weapon work loses no useful cadence.
   ...foodFleetRules,
+  ...weaponFleetRules,
   // BELOW THE SWARM, ABOVE EVERYTHING ELSE. A human at the controls outranks a schedule —
   // if an operator is leading, followers should not be pulled onto the night shift. But
   // the shift outranks placement, pairing and the ladder for the same reason the crate

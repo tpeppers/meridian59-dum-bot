@@ -13,6 +13,7 @@ import { economyRules } from '../src/decide/rules/economy.mjs';
 import { loadDoctrine } from '../src/config/load.mjs';
 import { callsForFleetPlan } from '../src/act/fleet-plan.mjs';
 import { fleetRules } from '../src/decide/index.mjs';
+import { canonicalItemSettings } from '../src/link/strategy-control.mjs';
 
 const test = globalThis.__dumTest;
 
@@ -92,10 +93,10 @@ test('strategies: vault accumulation accepts several items and clears protection
   const strategy = STRATEGY_CATALOG.find(s => s.id === STRATEGY_IDS.ACCUMULATE_IN_VAULT);
   assert.deepEqual(strategy.settings[0].default, [
     'dark angel feather',
-    'inky cap mushroom',
+    'Inky-cap mushroom',
     'blue dragon scale',
-    'arrow',
-    'nerudite arrow',
+    'arrows',
+    'nerudite arrows',
   ]);
   const enabled = { agent: 'collector', keeper: { policy: { vaultItems: [] } }, strategies: {
     agents: { collector: [STRATEGY_IDS.ACCUMULATE_IN_VAULT] },
@@ -109,6 +110,21 @@ test('strategies: vault accumulation accepts several items and clears protection
   enabled.strategies.agents.collector = [];
   enabled.keeper.policy.vaultItems = ['inky cap mushroom'];
   assert.deepEqual(rule.decide(enabled, doctrine).orders.vault_items, []);
+});
+
+test('strategies: vault item saves use the harness canonical item resolver', async () => {
+  const settings = { [STRATEGY_IDS.ACCUMULATE_IN_VAULT]: {
+    items: ['inky cap mushrooms', 'arrow'],
+  } };
+  const resolved = await canonicalItemSettings(settings, async items => {
+    assert.deepEqual(items, ['inky cap mushrooms', 'arrow']);
+    return { items: ['Inky-cap mushroom', 'arrows'] };
+  });
+  assert.deepEqual(resolved[STRATEGY_IDS.ACCUMULATE_IN_VAULT].items,
+    ['Inky-cap mushroom', 'arrows']);
+  await assert.rejects(() => canonicalItemSettings(settings, async () => {
+    throw new Error('item "mush" does not resolve');
+  }), /does not resolve/);
 });
 
 test('observability: current-process counters group interventions by rule and kind', () => {

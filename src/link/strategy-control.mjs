@@ -5,7 +5,7 @@
 // hot-swappable, makes the catalogue self-describing, and fails closed when DUM is down.
 
 import { createServer } from 'node:http';
-import { STRATEGY_CATALOG } from '../strategies/catalog.mjs';
+import { STRATEGY_CATALOG, STRATEGY_IDS } from '../strategies/catalog.mjs';
 
 const json = (res, status, body) => {
   const data = JSON.stringify(body);
@@ -27,10 +27,12 @@ async function bodyOf(req) {
 }
 
 export class StrategyControlServer {
-  constructor({ store, journal = null, detailStats = null, url = 'http://127.0.0.1:8916' }) {
+  constructor({ store, journal = null, detailStats = null, resolveItems = null,
+                url = 'http://127.0.0.1:8916' }) {
     this.store = store;
     this.journal = journal;
     this.detailStats = detailStats;
+    this.resolveItems = resolveItems;
     this.url = new URL(url);
     if (!['127.0.0.1', 'localhost', '[::1]'].includes(this.url.hostname))
       throw new Error('strategy control must bind to loopback');
@@ -59,7 +61,8 @@ export class StrategyControlServer {
         }
         if (req.method === 'POST') {
           const body = await bodyOf(req);
-          const { states } = this.store.update(body.agents, body.changes ?? {}, body.settings ?? {});
+          const settings = await canonicalItemSettings(body.settings ?? {}, this.resolveItems);
+          const { states } = this.store.update(body.agents, body.changes ?? {}, settings);
           return json(res, 200, { ok: true, catalogue: STRATEGY_CATALOG, states,
             selected: body.agents.length });
         }
@@ -78,4 +81,20 @@ export class StrategyControlServer {
     this.server = null;
     await new Promise(resolveStop => server.close(resolveStop));
   }
+}
+
+// Item identity belongs to the harness's generated datastore. Resolve this setting at
+// the HTTP boundary before the synchronous strategy store writes anything, so an
+// unknown or ambiguous name rejects the whole save rather than becoming a broken live
+// policy that DUM retries on every pass.
+export async function canonicalItemSettings(settings = {}, resolveItems = null) {
+  const id = STRATEGY_IDS.ACCUMULATE_IN_VAULT;
+  const values = settings?.[id];
+  if (!values || !Object.hasOwn(values, 'items')) return settings;
+  if (typeof resolveItems !== 'function')
+    throw new Error('the local item resolver is unavailable; collection settings were not saved');
+  const answer = await resolveItems(values.items);
+  const items = Array.isArray(answer) ? answer : answer?.items;
+  if (!Array.isArray(items)) throw new Error('the local item resolver returned no item list');
+  return { ...settings, [id]: { ...values, items } };
 }

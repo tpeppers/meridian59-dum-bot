@@ -195,7 +195,7 @@ export const DEFAULTS = {
   // defaults; once the website changes a unit, its explicit set wins until changed again.
   strategies: {
     enabled: true,
-    defaults: [],
+    defaults: ['max-weapons'],
     // Optional values by strategy id. Catalogue defaults reproduce the historical
     // enabled behaviour; leaving the id out keeps configuration concise.
     settings: {},

@@ -110,7 +110,7 @@
 
   "strategies": {
     "enabled": true,
-    "defaults": ["sell-and-bank"],
+    "defaults": ["sell-and-bank", "max-weapons"],
     "settings": {
       "sell-and-bank": {
         "bank_above": 500,

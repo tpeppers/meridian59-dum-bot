@@ -21,6 +21,7 @@ test('strategies: catalogue contains the independently selectable behaviours', (
     STRATEGY_IDS.CREATE_WEAPONS, STRATEGY_IDS.CREATE_FOOD,
     STRATEGY_IDS.VS_SKELETONS, STRATEGY_IDS.CHECK_CV_CRATE,
     STRATEGY_IDS.SPREAD_OUT, STRATEGY_IDS.SELL_AND_BANK,
+    STRATEGY_IDS.MAX_WEAPONS,
     STRATEGY_IDS.ACCUMULATE_IN_VAULT,
     STRATEGY_IDS.FARM_CLEANUP, STRATEGY_IDS.FARM_DELIVERY,
     STRATEGY_IDS.DETAILED_STATS,
@@ -160,6 +161,24 @@ test('strategies: selling and banking values are independently maintained', () =
   assert.equal(intent.orders.max_carry, 50);
   assert.equal(intent.orders.sell_at_load, 0.95);
   assert.equal(intent.orders.sell_when_broke, false);
+});
+
+test('strategies: Max Weapons defaults on at two and clears the keeper cap when disabled', () => {
+  const defaultDoctrine = loadDoctrine({ file: 'doctrines/survive.jsonc' }).config;
+  assert.ok(defaultDoctrine.strategies.defaults.includes(STRATEGY_IDS.MAX_WEAPONS));
+  const strategy = STRATEGY_CATALOG.find(s => s.id === STRATEGY_IDS.MAX_WEAPONS);
+  assert.equal(strategy.settings[0].default, 2);
+
+  const doctrine = loadDoctrine({ file: 'doctrines/castle-victoria.jsonc' }).config;
+  const rule = economyRules.find(r => r.id === 'max-weapons-policy');
+  const obs = { agent: 'seller', keeper: { policy: { maxWeapons: null } }, strategies: {
+    agents: { seller: [STRATEGY_IDS.MAX_WEAPONS] },
+    settings: { seller: { [STRATEGY_IDS.MAX_WEAPONS]: { max_weapons: 2 } } },
+  } };
+  assert.equal(rule.decide(obs, doctrine).orders.max_weapons, 2);
+  obs.keeper.policy.maxWeapons = 2;
+  obs.strategies.agents.seller = [];
+  assert.equal(rule.decide(obs, doctrine).orders.max_weapons, null);
 });
 
 test('strategies: a multi-unit toggle changes only the named behaviour', () => {

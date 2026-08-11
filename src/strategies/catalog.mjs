@@ -13,6 +13,7 @@ export const STRATEGY_IDS = Object.freeze({
   CREATE_FOOD: 'create-food',
   SPREAD_OUT: 'spread-out',
   SELL_AND_BANK: 'sell-and-bank',
+  MAX_WEAPONS: 'max-weapons',
   ACCUMULATE_IN_VAULT: 'accumulate-in-vault',
   FARM_CLEANUP: 'farm-cleanup',
   FARM_DELIVERY: 'farm-delivery',
@@ -90,6 +91,18 @@ export const STRATEGY_CATALOG = Object.freeze([
         default: 500, description: 'Cash plus bank balance considered broke.' }),
       Object.freeze({ id: 'broke_stacks', title: 'Broke pack stacks', type: 'integer', min: 1,
         default: 8, description: 'Minimum non-money stacks before a poverty-triggered market trip.' }),
+    ]),
+  }),
+  Object.freeze({
+    id: STRATEGY_IDS.MAX_WEAPONS,
+    title: 'Max Weapons',
+    group: 'Equipment maintenance',
+    purpose: 'Merchant pack cleanup',
+    requirements: ['A reachable trusted buyer'],
+    description: 'Keep equipped weapons plus the best spares under the configured total, and sell every excess weapon during merchant visits.',
+    settings: Object.freeze([
+      Object.freeze({ id: 'max_weapons', title: 'Maximum weapons', type: 'integer', min: 0,
+        default: 2, description: 'Total weapons retained after selling, including anything currently equipped.' }),
     ]),
   }),
   Object.freeze({

@@ -116,7 +116,7 @@ These are diffed against the keeper's live policy, so a rung that agrees with th
 keeper sends nothing.
 
 `mode` `hunt` `strategy` `purpose` `assigned_room` `partner` `rest_below`
-`flee_below` `max_carry` `bank_above` `roam` `roam_limit` `weapon_priority`
+`flee_below` `max_carry` `max_weapons` `bank_above` `roam` `roam_limit` `weapon_priority`
 `drop_junk` `use_safe_spots` `hold_resume_above` `fight_above_vigor` `pull_within`
 `decide_ms` `resync_ms` `break_out_via_logoff`
 
@@ -153,7 +153,7 @@ settings have catalogue defaults and may be overridden in the doctrine:
 ```jsonc
 "strategies": {
   "enabled": true,
-  "defaults": ["sell-and-bank"],
+  "defaults": ["sell-and-bank", "max-weapons"],
   "settings": {
     "spread-out": {
       "max_bots_per_safe_spot": 3,
@@ -167,6 +167,9 @@ settings have catalogue defaults and may be overridden in the doctrine:
       "sell_when_broke": false,
       "broke_under": 500,
       "broke_stacks": 8
+    },
+    "max-weapons": {
+      "max_weapons": 2
     },
     "accumulate-in-vault": {
       "items": [
@@ -198,6 +201,11 @@ unit to a room and the keeper applies no occupancy cap while choosing a safe wal
 `sell-and-bank` leaves the time-sensitive execution in the keeper and makes DUM own
 the policy: when a pack is worth selling, when carried cash warrants a bank trip, and
 how much spending money remains afterwards.
+
+`max-weapons` defaults on at two. The keeper counts the equipped weapon toward that
+total, retains the best remaining spare under the active weapon priority, and sells
+the rest on the next ordinary merchant visit. Equipped gear is never offered; unworn
+armour is sold unless it is the best usable piece for a currently empty armour slot.
 
 `accumulate-in-vault` protects every configured item from the keeper's eat, sell,
 gift and emergency-drop paths. It does not create a separate vault errand: when a

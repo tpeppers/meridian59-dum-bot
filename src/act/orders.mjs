@@ -39,6 +39,7 @@ export const ORDER_FIELDS = {
   rest_below:        { policy: 'restBelow' },
   flee_below:        { policy: 'fleeBelow' },
   max_carry:         { policy: 'maxCarry' },
+  max_weapons:       { policy: 'maxWeapons' },
   bank_above:        { policy: 'bankAbove' },
   walking_money:     { policy: 'walkingMoney' },
   sell_at_load:      { policy: 'sellAtLoad' },

@@ -85,7 +85,7 @@ function context({ config, commit }) {
   });
   const strategies = new StrategyStore({
     dir: config.record.strategy_dir, fleet: config.fleet,
-    defaults: config.strategies.defaults, enabled: commit,
+    defaults: config.strategies.defaults, settings: config.strategies.settings, enabled: commit,
   });
   const strategyServer = commit && config.strategies.enabled
     ? new StrategyControlServer({ store: strategies, url: config.link.strategy_control_url }) : null;

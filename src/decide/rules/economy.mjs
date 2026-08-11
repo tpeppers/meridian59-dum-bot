@@ -22,27 +22,42 @@
 // exactly this — a changed default that never reached any live keeper, because each
 // keeper's policy is persisted with the roster and restored on restart.
 
+import { STRATEGY_IDS, strategyEnabled, strategySettings } from '../../strategies/catalog.mjs';
+
 export const economyRules = [
   {
     id: 'economy-thresholds',
     faculty: 'economy',
-    why: 'the doctrine names banking and carrying thresholds this character should be on',
-    enabled: doctrine => Object.values(doctrine.economy ?? {}).some(v => v !== null),
-    offWhy: 'the doctrine sets no economy thresholds, so the keeper\'s own are left alone',
+    why: 'the Sell Loot and Bank Surplus strategy owns this keeper\'s pack and purse thresholds',
+    enabled: doctrine => doctrine.strategies?.enabled === true,
+    offWhy: 'DUM strategies are disabled',
     decide(obs, doctrine) {
-      const want = {};
-      const e = doctrine.economy ?? {};
-      // Only fields the doctrine actually set. `act/orders.mjs` diffs these against the
-      // keeper's live policy, so an agreeing tick sends nothing at all.
-      if (e.bank_above !== null && e.bank_above !== undefined) want.bank_above = e.bank_above;
-      if (e.max_carry !== null && e.max_carry !== undefined) want.max_carry = e.max_carry;
-      if (!Object.keys(want).length) return null;
+      if (!strategyEnabled(obs, doctrine, obs.agent, STRATEGY_IDS.SELL_AND_BANK)) return null;
+      const e = strategySettings(obs, doctrine, obs.agent, STRATEGY_IDS.SELL_AND_BANK);
+      const want = {
+        bank_above: e.bank_above,
+        walking_money: e.walking_money,
+        max_carry: e.max_carry,
+        sell_at_load: e.sell_at_load,
+        sell_when_broke: e.sell_when_broke,
+        sell_when_broke_under: e.broke_under,
+        sell_when_broke_stacks: e.broke_stacks,
+      };
+      const live = obs.keeper?.policy ?? obs.policy;
+      const keys = {
+        bank_above: 'bankAbove', walking_money: 'walkingMoney', max_carry: 'maxCarry',
+        sell_at_load: 'sellAtLoad', sell_when_broke: 'sellWhenBroke',
+        sell_when_broke_under: 'sellWhenBrokeUnder',
+        sell_when_broke_stacks: 'sellWhenBrokeStacks',
+      };
+      if (live && Object.entries(want).every(([key, value]) => live[keys[key]] === value))
+        return null;
       return {
         kind: 'orders',
         orders: { action: 'start', ...want },
         why: 'the doctrine sets economy thresholds — ' +
              Object.entries(want).map(([k, v]) => `${k}=${v}`).join(', '),
-        evidence: { want, keeper_has: pick(obs.keeper?.policy, ['bankAbove', 'maxCarry']) },
+        evidence: { want, keeper_has: pick(live, Object.values(keys)) },
       };
     },
   },

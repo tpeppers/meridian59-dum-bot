@@ -20,7 +20,7 @@
 // of would be accepted and then not actually yielded.
 import { ORDER_FIELDS } from '../act/orders.mjs';
 import { weaponPreset, thresholdRank } from '../decide/weapons.mjs';
-import { validateStrategyIds } from '../strategies/catalog.mjs';
+import { validateStrategyIds, validateStrategySettingsMap } from '../strategies/catalog.mjs';
 
 const ORDER_FIELD_NAMES = new Set(Object.keys(ORDER_FIELDS));
 
@@ -187,6 +187,8 @@ export function validate(c) {
 
   try { validateStrategyIds(c.strategies?.defaults); }
   catch (e) { say('strategies.defaults', e.message); }
+  try { validateStrategySettingsMap(c.strategies?.settings); }
+  catch (e) { say('strategies.settings', e.message); }
   if (typeof c.strategies?.enabled !== 'boolean')
     say('strategies.enabled', 'must be true or false');
 

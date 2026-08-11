@@ -250,6 +250,8 @@ export async function pass(ctx, { only = null, decideFleet = true } = {}) {
              note: `no character named "${only}" is in game on this fleet` };
 
   const characters = [];
-  for (const r of rows) characters.push(await tickCharacter(ctx, r));
+  for (const r of rows) characters.push(await tickCharacter(ctx, {
+    ...r, strategies: fleetLine.observation?.strategies ?? null,
+  }));
   return { fleet: fleetLine, characters };
 }

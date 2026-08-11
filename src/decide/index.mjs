@@ -27,7 +27,6 @@ import { partyFleetRules } from './rules/party.mjs';
 import { crateFleetRules } from './rules/crate.mjs';
 import { swarmFleetRules } from './rules/swarm.mjs';
 import { graveyardFleetRules } from './rules/graveyard.mjs';
-import { marketFleetRules } from './rules/market.mjs';
 import { mootFleetRules } from './rules/moot.mjs';
 import { weaponFleetRules } from './rules/weapons.mjs';
 import { foodFleetRules } from './rules/food.mjs';
@@ -50,11 +49,13 @@ export const characterRules = new RuleSet('character', [
   // "what should it be doing" is unreliable while the answer to "is it doing anything"
   // is no.
   ...escalateRules.filter(r => !isFleet(r)),
+  // Strategy-backed policy maintenance returns null once the keeper agrees, so it can
+  // run ahead of the ladder without starving ordinary work decisions.
+  ...economyRules.filter(r => !isFleet(r)),
   // The ladder is the directional decision. Everything after it is a refinement of the
   // orders it produced.
   ...ladderRules.filter(r => !isFleet(r)),
   ...placementRules.filter(r => !isFleet(r)),
-  ...economyRules.filter(r => !isFleet(r)),
 ]);
 
 /**
@@ -98,7 +99,6 @@ export const fleetRules = new RuleSet('fleet', [
   // BELOW THE SHIFT ON PURPOSE. A round trip to a counter is most of a 35-minute
   // window, so the shift decides first and this only fires for characters it has not
   // claimed — or for one so heavy it cannot pick up what it kills.
-  ...marketFleetRules,
   // The moot yields to an open window on its own, so it sits below the shift and
   // above the standing rules — pooling is what the ~85 idle minutes in every 120 are
   // for, and it must not start while there is anything to farm.

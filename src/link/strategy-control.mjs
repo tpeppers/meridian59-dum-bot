@@ -51,7 +51,7 @@ export class StrategyControlServer {
         }
         if (req.method === 'POST') {
           const body = await bodyOf(req);
-          const { states } = this.store.update(body.agents, body.changes);
+          const { states } = this.store.update(body.agents, body.changes ?? {}, body.settings ?? {});
           return json(res, 200, { ok: true, catalogue: STRATEGY_CATALOG, states,
             selected: body.agents.length });
         }

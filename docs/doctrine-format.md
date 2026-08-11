@@ -144,6 +144,42 @@ field would not be yielded and DUM would write it anyway.
 
 Also available as `--yield-to rest_below,max_carry,roam`.
 
+## `strategies` - independent, per-unit behaviours
+
+Strategies are toggled independently. `defaults` is the inherited selection; the local
+strategy-control API may override it per unit without editing a doctrine. Strategy
+settings have catalogue defaults and may be overridden in the doctrine:
+
+```jsonc
+"strategies": {
+  "enabled": true,
+  "defaults": ["sell-and-bank"],
+  "settings": {
+    "spread-out": {
+      "max_bots_per_safe_spot": 3,
+      "max_bots_per_room": 4
+    },
+    "sell-and-bank": {
+      "bank_above": 2000,
+      "walking_money": 400,
+      "max_carry": 14,
+      "sell_at_load": 0.85,
+      "sell_when_broke": false,
+      "broke_under": 500,
+      "broke_stacks": 8
+    }
+  }
+}
+```
+
+`spread-out` is off by default. Its enabled defaults reproduce the former harness
+limits: three bots per safe spot and four per room. With it off, DUM does not pin a
+unit to a room and the keeper applies no occupancy cap while choosing a safe wall.
+
+`sell-and-bank` leaves the time-sensitive execution in the keeper and makes DUM own
+the policy: when a pack is worth selling, when carried cash warrants a bank trip, and
+how much spending money remains afterwards.
+
 ## `weapons` — named selection order and staging threshold
 
 `weapons.preset` selects a best-to-worst order. The built-ins are
@@ -184,7 +220,7 @@ writing the harness's default back.** Asserting a default is a *write*: it lands
 the roster and pins a value that would otherwise move when the harness's default
 moved.
 
-**Anything that moves characters is off by default.** `placement.spread` and
+**Anything that moves characters is off by default.** The `spread-out` strategy and
 `party.pair` both stop keepers and walk characters across the world, and both have
 recorded thrash failures behind them. They are opted into deliberately, in their own
 run, so the result is measurable.

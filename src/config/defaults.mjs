@@ -154,7 +154,7 @@ export const DEFAULTS = {
     // means DUM will not relocate anyone.
     rooms: [],
     // Never more than this many characters assigned to one room.
-    per_room: 2,
+    per_room: 4,
   },
 
   economy: {
@@ -196,6 +196,9 @@ export const DEFAULTS = {
   strategies: {
     enabled: true,
     defaults: [],
+    // Optional values by strategy id. Catalogue defaults reproduce the historical
+    // enabled behaviour; leaving the id out keeps configuration concise.
+    settings: {},
   },
 
   food: {

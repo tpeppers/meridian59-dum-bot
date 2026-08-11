@@ -242,7 +242,8 @@ only when the conclusion is an order. A quiet fleet then costs one call per pass
 
 **Asked for:** `policy` on the fleet row — it is in memory already, since the row is
 built from `ap.status()` and simply omits it. At minimum: `assigned_room`,
-`bank_above`, `max_carry`, `rest_below`, `flee_below`, `use_safe_spots`.
+`bank_above`, `walking_money`, `max_carry`, `sell_at_load`, `sell_when_broke`,
+`max_bots_per_safe_spot`, `rest_below`, `flee_below`, `use_safe_spots`.
 
 ---
 

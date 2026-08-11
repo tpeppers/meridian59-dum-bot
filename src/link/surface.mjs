@@ -30,7 +30,7 @@ const NEVER = {
 // Safe at any time, including with --dry-run. These are what `sense` is built from.
 export const READ = new Set([
   'fleet', 'status', 'progress', 'inventory', 'equipment', 'abilities', 'spells',
-  'look', 'map', 'safe_spots', 'hunting_grounds', 'prey', 'history', 'post_mortem',
+  'loadout', 'look', 'map', 'safe_spots', 'hunting_grounds', 'prey', 'history', 'post_mortem',
   'who', 'safety', 'merchants', 'signets', 'bank',
 ]);
 
@@ -51,6 +51,9 @@ export const WRITE = new Set([
   'bank', 'sell', 'sell_all', 'shop', 'supply', 'quartermaster',
   // Errands the harness already knows how to run end to end.
   'loot_run', 'rest_up', 'equip_best', 'wear_best', 'escape_underworld',
+  // Provisioning may cast exactly one audited, self-only service spell. The argument
+  // guard below keeps widening this surface from also widening DUM into combat magic.
+  'cast',
   // `act`, AND ONLY ITS `go` VERB — enforced in deny() below, because the tool name is
   // not enough. This is the narrowest widening that makes a PLACE-TRIGGERED room
   // reachable at all, and it is here for one of them: the crate under Castle Victoria
@@ -63,7 +66,7 @@ export const WRITE = new Set([
 // Tools that exist and DUM has no business calling, listed so that adding one later is
 // a deliberate act with a comment attached rather than a silent widening.
 export const NOT_YET = new Set([
-  'attack', 'fight', 'cast', 'approach', 'face', 'attack_intent', 'move_intent',
+  'attack', 'fight', 'approach', 'face', 'attack_intent', 'move_intent',
   'context_intent', 'pilot', 'recording', 'rescue', 'leave_raza', 'split', 'trade',
   'loot', 'say', 'chat', 'converse', 'inbox', 'describe', 'look_at', 'go_through',
   'movement_mode', 'cancel_action', 'wait_for_event',
@@ -95,6 +98,10 @@ export function deny(tool, args = {}) {
       return `refused — act verb:"${args.verb ?? '?'}" reaches into the character's pack. ` +
              `DUM only claims verb:"go", which acts on the square underfoot. See ` +
              `src/link/surface.mjs`;
+    if (tool === 'cast' && !['create weapon', 'create food']
+          .includes(String(args.spell ?? '').trim().toLowerCase()))
+      return `refused — DUM may cast only the self-only provisioning spell "create weapon", ` +
+             `not "${args.spell ?? '?'}"`;
     // `autopilot` is on the write list and `autopilot --hard` ENDS the keeper rather
     // than making it inert: no frames, no observe(), no death record, no post-mortem.
     // The harness's own note is that deaths kept happening in exactly the windows it

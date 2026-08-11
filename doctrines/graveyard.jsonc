@@ -1,0 +1,125 @@
+{
+  // THE NIGHT SHIFT — a toggle, not a posture.
+  //
+  // `graveyard.shift: true` is the whole switch. Turn it on and the fleet forms up on the
+  // Tos undead whenever the rooms are OBSERVED to be generating, and stands down to the
+  // Tos inn whenever they are not. Turn it off and every rule in here returns `pass` on
+  // its first line. It composes with whatever else a bot is doing, because the shift only
+  // claims `work` and `movement` — the survival floor stays with the keeper.
+  //
+  // WHY THIS EXISTS AT ALL. Advancement rolls only when the creature's level is STRICTLY
+  // GREATER than base max health. This fleet is at 43-51, and everything reachable and
+  // safe — fungus beast, spider, living tree — is level 50 or below. Ten characters ground
+  // for a week and gained nothing. A zombie is 55. The Tos undead are the only prey found
+  // so far that pays a character at the cap, which is why a 35-minute window in every 120
+  // is worth building a doctrine around.
+
+  "extends": "survive.jsonc",
+
+  "name": "graveyard night shift",
+  "why": "the Tos undead are the only prey that advances a character at max health 50, they exist for ~35 minutes in every 120, and the two attempts at farming them differed by 7 deaths and 7 levels depending only on the rules below",
+
+  // REQUIRED BEFORE THIS CAN BE COMMITTED, and deliberately absent — a fleet name
+  // identifies a roster on one machine. `tools/dum-guard.mjs` enforces that.
+  // "fleet": "<your-fleet>",
+
+  "claim": {
+    // Where to stand and what to hit. NOT survival, NOT mortality — a shift walks
+    // characters into a room that spawns level-75 skeletons at 15-20%, which is exactly
+    // the situation where you want the keeper's own flee and Underworld-escape intact
+    // underneath whatever the doctrine thinks it is doing.
+    "movement": "bot",
+    "work": "bot",
+    "economy": "bot",
+    "lease_ms": 600000
+  },
+
+  "graveyard": {
+    // THE TOGGLE.
+    "shift": true,
+
+    // BOTH ROOMS, ALWAYS. Each generator caps at 10 creatures, so twenty-one characters in
+    // one room share ten spawns and spend the window queueing. The two tables are near
+    // identical (85/15 and 80/20 zombie/skeleton), so nobody already standing on either is
+    // ever moved to the other — that swap is pure walking. Measured: putting everyone in 70
+    // dropped the in-position count from 12 to 3 while they crossed to 71 and back.
+    "rooms": [70, 71],
+
+    // WHERE A FLEE ENDS, and it must not be further than this.
+    //
+    // The harness's own `nearestSanctuary` built its candidates from the spawn index and
+    // filtered out anything huntable — but a room that generates nothing has no entry in
+    // that index at all, so every inn in the world was invisible to it. A character fled
+    // the graveyard at 2 health and set off for the Twisted Wood, which holds trolls at
+    // rating 750, while Familiars sat two rooms away and was never a candidate. Naming the
+    // room is the fix; searching for it is the bug.
+    "retreat_to": 52,
+
+    // ARMOUR DECIDES THE QUARRY, NOT LEVEL.
+    //
+    // `max_threat_over` governs what a character will START, never what may start on it.
+    // Raising it so everyone could take skeletons did not make skeletons survivable — it
+    // just stopped characters declining, and seven died. A skeleton rates 525 and a bare
+    // character is hit ~84% of the time for 5-7.
+    //
+    // Zombies advance EVERY character in this fleet, so the bare half is not on a
+    // consolation prize; it is on the same payout at a hundred points less attack rating.
+    "armoured_hunt": "skeleton",
+    "armoured_max_threat_over": 28,
+    "bare_hunt": "zombie",
+    "bare_max_threat_over": 12,
+
+    // NON-NEGOTIABLE. Every kill of the clean shift came from behind a wall and nobody
+    // died. The shift that fought in the open lost seven characters to skeletons.
+    "use_safe_spots": true,
+
+    // THE WINDOW IS OBSERVED, NEVER COMPUTED.
+    //
+    // `tosgrave.kod` gates the generator on the game hour, and the harness has arithmetic
+    // for that clock which was WRONG on this server twice — it reported "NIGHT: undead are
+    // spawning" while three characters standing in the room could see it empty and the
+    // operator could see daylight. The formula derives the hour from the LOCAL machine's
+    // clock; the kod's GetTime() is the server's, and the server is somebody else's box.
+    //
+    // A room cannot lie about what is standing in it. So the rule refuses to deploy on a
+    // computed hour and will report "nobody is in either room to see" rather than guess.
+    "trust_the_room_not_the_clock": true,
+
+    // WHEN IT SHUTS, COME HOME — and go IDLE, not merely still.
+    //
+    // A `farm` keeper left pointed at a room that has stopped generating decides the room
+    // cannot produce its prey and LEAVES TO FIND SOME. That is how a finished shift turned
+    // into characters standing in the Badlands with a groundworm queen, in Ukgoth with a
+    // stone troll, and in the Sewers with a lupogg — nothing drove them there, it is just
+    // where the last fight ended. `idle` has no prey to go looking for.
+    "stand_down_to_idle": true
+  },
+
+  // PRE-FLIGHT ONLY. It becomes a no-op as soon as anyone leaves Familiars, so leaving
+  // this enabled during a shift cannot recall or interrupt a fighter.
+  "weapons": {
+    "preset": "vsSkeletons",
+    "provision": {
+      "enabled": true,
+      "threshold": "axe",
+      "room": 52,
+      "cast_when_mana": true,
+      "mana_cost": 15
+    }
+  },
+
+  "prey": {
+    // The shift names its own quarry per character, above. This is the floor a follower
+    // applies to itself regardless.
+    "choose": false,
+    "flee_below": 0.35,
+    "max_threat_over": 12
+  },
+
+  "placement": {
+    // The shift does the placing; `spread` re-deriving an assignment underneath it would
+    // move characters off the two rooms it just put them on.
+    "spread": false,
+    "rooms": [70, 71]
+  }
+}

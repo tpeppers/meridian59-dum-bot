@@ -11,11 +11,13 @@
 // character three looks exactly like a bot with nothing to do for characters four
 // through twenty-one.
 
-import { observeFleet, observeFromBoard, deepen } from '../sense/observe.mjs';
+import { observeFleet, observeFromBoard, deepen, enrichForMoot, enrichEquipment,
+         enrichMaintenance } from '../sense/observe.mjs';
 import { characterRules, fleetRules, decide } from '../decide/index.mjs';
 import { apply } from '../act/orders.mjs';
 import { verify } from '../act/verify.mjs';
 import { readErrand } from '../act/errands.mjs';
+import { STRATEGY_IDS } from '../strategies/catalog.mjs';
 
 /**
  * One character.
@@ -64,6 +66,11 @@ export async function tickCharacter(ctx, row) {
     line.intent = intent;
     if (!intent) { journal.write(line); return line; }
 
+    // A lease must exist BEFORE the write it authorises. The old loop claimed after the
+    // whole pass, which made the first pass of every committed run an unclaimed write.
+    if (!['none', 'report'].includes(intent.kind))
+      await ctx.ensureClaim?.([intent.agent].filter(Boolean));
+
     const applied = await apply(broker, intent, obs, { commit, yieldTo: config.yield_to ?? [], holder: ctx.holder });
     line.applied = applied;
 
@@ -106,7 +113,29 @@ export async function tickFleet(ctx, { decide: runRules = true } = {}) {
     // is read ONCE here, put on the observation, and journalled with it. A rule that
     // needs the past gets it as data.
     const memory = ctx.memory?.read() ?? null;
-    const obs = { ...await observeFleet(broker, { now }), memory };
+    const observed = await observeFleet(broker, { now,
+      rooms: config.graveyard?.shift === true ? (config.graveyard.rooms ?? []) : [] });
+    const strategies = ctx.strategies?.snapshot((observed.characters ?? [])
+      .filter(r => r.in_game).map(r => r.agent)) ?? null;
+    const obs = { ...observed, memory, strategies };
+    if (config.graveyard?.shift === true)
+      await enrichEquipment(broker, (obs.characters ?? []).filter(r => r.in_game));
+    if (config.moot?.hold === true || config.weapons?.provision?.enabled === true) {
+      const room = config.weapons?.provision?.enabled
+        ? config.weapons.provision.room : config.moot.room;
+      const here = (obs.characters ?? []).filter(r => r.in_game && r.room === room);
+      const enough = config.weapons?.provision?.enabled
+        ? here.length === (obs.characters ?? []).filter(r => r.in_game).length
+        : here.length >= (config.moot.quorum ?? 2);
+      if (enough) await enrichForMoot(broker, here,
+        { weapons: config.weapons?.provision?.enabled === true });
+    }
+    if (config.strategies?.enabled === true) {
+      const needsFacts = (obs.characters ?? []).filter(r => r.in_game &&
+        [STRATEGY_IDS.CREATE_WEAPONS, STRATEGY_IDS.CREATE_FOOD].some(id =>
+          obs.strategies?.agents?.[r.agent]?.includes(id)));
+      if (needsFacts.length) await enrichMaintenance(broker, needsFacts);
+    }
     line.observation = obs;
 
     // STAND DOWN WHILE THE FLEET IS PARKING. A parked keeper is running and
@@ -130,6 +159,14 @@ export async function tickFleet(ctx, { decide: runRules = true } = {}) {
     line.considered = considered;
     line.intent = intent;
     if (!intent) { journal.write(line); return line; }
+
+
+    // An errand has one named actor and no fleet `plan`; a batch act has a plan and may
+    // name both sides of a transfer. Claim the shape that was actually emitted. Reading
+    // `null.flatMap` here used to abort a perfectly valid crate check before its first
+    // write, so the timer stayed unknown and the same doomed intent returned forever.
+    const planAgents = fleetIntentAgents(intent);
+    if (intent.kind === 'act') await ctx.ensureClaim?.(planAgents);
 
     const applied = await apply(broker, intent, obs, { commit, yieldTo: config.yield_to ?? [], holder: ctx.holder });
     line.applied = applied;
@@ -176,6 +213,20 @@ export async function tickFleet(ctx, { decide: runRules = true } = {}) {
     journal.write(line);
     return line;
   }
+}
+
+// `to` is overloaded by the plan language: a give's `to` is an agent, while a muster's
+// `to` is a room number. Treating both as people created an empty broker session named
+// "52" during the first live moot. Keep this mapping next to the claim call and test it.
+export function fleetPlanAgents(plan = []) {
+  return [...new Set(plan.flatMap(p => ['give', 'give-weapon'].includes(p.do) ? [p.from, p.to] : [p.agent])
+    .filter(v => typeof v === 'string' && v))];
+}
+
+export function fleetIntentAgents(intent = {}) {
+  return intent.kind === 'errand'
+    ? [intent.agent].filter(Boolean)
+    : fleetPlanAgents(intent.plan ?? []);
 }
 
 /**

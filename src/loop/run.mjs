@@ -36,6 +36,7 @@ export async function run(ctx, { onPass = () => {} } = {}) {
   process.once('SIGINT', stop);
   process.once('SIGTERM', stop);
 
+  await ctx.strategyServer?.start();
   journal.write({ kind: 'startup', doctrine: config.name, fleet: config.fleet,
                   claim: config.claim, commit: ctx.commit,
                   why: 'a run begins. Everything below this line is attributable to this doctrine' });
@@ -64,14 +65,25 @@ export async function run(ctx, { onPass = () => {} } = {}) {
 
   async function claimFor(agents) {
     if (!ctx.commit || !wanted.length) return;
+    const failed = [];
     for (const agent of agents) {
       if (mine.has(agent)) continue;
       const r = await ctx.broker.call('autopilot', {
         agent, action: 'claim', faculties: wanted, by: holder,
         lease_ms: leaseMs, why: `doctrine "${config.name}" is directing this character`,
       }).catch(e => ({ error: e.message }));
-      if (r?.error) { journal.write({ kind: 'claim-failed', agent, why: r.error }); continue; }
-      mine.set(agent, r.granted ?? []);
+      if (r?.error) {
+        journal.write({ kind: 'claim-failed', agent, why: r.error });
+        failed.push(`${agent}: ${r.error}`);
+        continue;
+      }
+      const granted = r.granted ?? [];
+      const missing = wanted.filter(f => !granted.includes(f));
+      if (missing.length) {
+        const why = `did not grant ${missing.join(', ')}`;
+        journal.write({ kind: 'claim-failed', agent, why, granted, refused: r.refused ?? [] });
+        failed.push(`${agent}: ${why}`);
+      } else mine.set(agent, granted);
       // A REFUSAL IS NOT AN ERROR AND MUST NOT BE SILENT. The harness refuses survival
       // and mortality unless the operator consented on that machine; recording it is how
       // a doctrine that quietly did not get what it asked for becomes visible.
@@ -79,6 +91,9 @@ export async function run(ctx, { onPass = () => {} } = {}) {
         journal.write({ kind: 'claim-refused', agent, refused: r.refused,
                         why: 'the harness declined part of the claim' });
     }
+    // Ownership is a precondition, not an advisory. Failing the whole intent before
+    // apply is safer than moving/trading the subset whose claims happened to arrive.
+    if (failed.length) throw new Error(`claim not acquired before action: ${failed.join('; ')}`);
   }
 
   async function heartbeat() {
@@ -95,6 +110,11 @@ export async function run(ctx, { onPass = () => {} } = {}) {
         .catch(() => {});   // the lease expires on its own; a failed release is not fatal
   }
 
+  // Ticks perform the claim immediately before applying an intent. Exposing this narrow
+  // callback keeps claim mechanics in the long loop while fixing the old ordering bug,
+  // where the first write happened and ownership was requested afterwards.
+  ctx.ensureClaim = claimFor;
+
   let lastFleetAt = 0;
   let consecutiveErrors = 0;
 
@@ -103,10 +123,6 @@ export async function run(ctx, { onPass = () => {} } = {}) {
     const doFleet = began - lastFleetAt >= config.cadence.fleet_ms;
     try {
       const result = await pass(ctx, { only: ctx.only ?? null, decideFleet: doFleet });
-      // Claim whoever we just decided about, then push the lease out. Claiming AFTER the
-      // pass rather than before it means a character that turned out to be committed to
-      // something else is never claimed at all.
-      await claimFor((result.characters ?? []).map(l => l.agent).filter(Boolean));
       await heartbeat();
       if (doFleet) lastFleetAt = began;
       consecutiveErrors = 0;
@@ -131,6 +147,7 @@ export async function run(ctx, { onPass = () => {} } = {}) {
   // SAFETY net for a process that dies badly; a process that stops on purpose should not
   // leave a character owned by a pid that no longer exists for two more minutes.
   await releaseAll();
+  await ctx.strategyServer?.stop();
   journal.write({ kind: 'shutdown', held: [...mine.keys()],
                   why: 'asked to stop; the claim was released and the keeper has its ' +
                        'faculties back. Anything not released lapses on its own' });

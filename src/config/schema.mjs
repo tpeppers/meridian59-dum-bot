@@ -19,6 +19,8 @@
 // drift, and the drift is silent — a doctrine yielding a field this file has not heard
 // of would be accepted and then not actually yielded.
 import { ORDER_FIELDS } from '../act/orders.mjs';
+import { weaponPreset, thresholdRank } from '../decide/weapons.mjs';
+import { validateStrategyIds } from '../strategies/catalog.mjs';
 
 const ORDER_FIELD_NAMES = new Set(Object.keys(ORDER_FIELDS));
 
@@ -52,6 +54,11 @@ export function validate(c) {
     say('link.timeout_ms', 'must be at least 1000 — travel is a multi-hop walk');
   if (!num(c.link?.calls_per_second) || c.link.calls_per_second <= 0)
     say('link.calls_per_second', 'must be a positive number of calls per second');
+  try {
+    const u = new URL(c.link?.strategy_control_url);
+    if (!['127.0.0.1', 'localhost', '[::1]'].includes(u.hostname))
+      say('link.strategy_control_url', 'must stay on loopback; it changes live unit strategies');
+  } catch { say('link.strategy_control_url', 'must be an http URL on loopback'); }
 
   // ---- the claim
   for (const f of FACULTIES) {
@@ -165,6 +172,36 @@ export function validate(c) {
   }
   if (c.economy?.sell_loot !== null && typeof c.economy?.sell_loot !== 'boolean')
     say('economy.sell_loot', 'must be true, false, or null to leave the keeper\'s own value alone');
+
+  // ---- weapon policy and optional staging provision
+  try { weaponPreset(c.weapons?.preset, c.weapons?.presets); }
+  catch (e) { say('weapons.preset', e.message); }
+  if (c.weapons?.provision?.enabled || c.strategies?.defaults?.includes('create-weapons')) {
+    try { thresholdRank(c.weapons.provision.threshold, c.weapons.preset, c.weapons.presets); }
+    catch (e) { say('weapons.provision.threshold', e.message); }
+    if (c.weapons.provision.staging_only !== false && !Number.isInteger(c.weapons.provision.room))
+      say('weapons.provision.room', 'must be the staging-room number; provisioning never chases fighters');
+    if (!num(c.weapons.provision.mana_cost) || c.weapons.provision.mana_cost < 1)
+      say('weapons.provision.mana_cost', 'must be a positive mana cost');
+  }
+
+  try { validateStrategyIds(c.strategies?.defaults); }
+  catch (e) { say('strategies.defaults', e.message); }
+  if (typeof c.strategies?.enabled !== 'boolean')
+    say('strategies.enabled', 'must be true or false');
+
+  if (!Number.isInteger(c.food?.min_items) || c.food.min_items < 0)
+    say('food.min_items', 'must be a non-negative item count');
+  if (!num(c.food?.mana_cost) || c.food.mana_cost < 1)
+    say('food.mana_cost', 'must be a positive mana cost');
+
+  if (c.castle_victoria?.shift) {
+    const cv = c.castle_victoria;
+    if (!Number.isInteger(cv.rooms?.downstairs) || !Number.isInteger(cv.rooms?.upstairs))
+      say('castle_victoria.rooms', 'must name integer downstairs and upstairs room numbers');
+    if (!num(cv.upstairs_share) || cv.upstairs_share <= 0 || cv.upstairs_share >= 1)
+      say('castle_victoria.upstairs_share', 'must be a fraction strictly between 0 and 1');
+  }
 
   return bad;
 }

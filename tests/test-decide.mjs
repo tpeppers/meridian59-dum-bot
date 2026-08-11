@@ -193,7 +193,7 @@ test('pairing: the same board always produces the same pairing', () => {
 //
 // Both of these were paid for live, on a 35-minute window, and both look like fussiness
 // until the fleet walks out of a spawning graveyard in front of you.
-import { ordersFor as gyOrders, SHIFT_MAX_CARRY } from '../src/decide/rules/graveyard.mjs';
+import { ordersFor as gyOrders, deploymentDiffers, SHIFT_MAX_CARRY } from '../src/decide/rules/graveyard.mjs';
 
 const armoured = { character: 'A', equipped: [{ name: 'chain armor' }, { name: 'mace' }] };
 const bare = { character: 'B', equipped: [{ name: 'mace' }] };
@@ -218,4 +218,16 @@ test('gy shift: banking and selling are suppressed for the window', () => {
     assert.equal(gyOrders(row).max_carry, SHIFT_MAX_CARRY);
     assert.equal(gyOrders(row).roam, false);
   }
+});
+
+test('gy shift: a settled keeper is not restarted every fleet tick', () => {
+  const doctrine = { weapons: { preset: 'vsSkeletons', presets: {} } };
+  const orders = { ...gyOrders(armoured, doctrine), use_safe_spots: true };
+  const row = { ...armoured, mode: 'farm', policy: {
+    assignedRoom: 71, hunt: orders.hunt, maxThreatOver: orders.max_threat_over,
+    fleeBelow: orders.flee_below, maxCarry: orders.max_carry, bankAbove: orders.bank_above,
+    roam: orders.roam, useSafeSpots: true, weaponPriority: orders.weapon_priority,
+  } };
+  assert.equal(deploymentDiffers(row, 71, orders), false);
+  assert.equal(deploymentDiffers(row, 70, orders), true);
 });

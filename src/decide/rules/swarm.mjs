@@ -198,7 +198,15 @@ export function followPlan(leader, followers, { within = FOLLOW_WITHIN } = {}) {
 //   3. failing both, nothing. NOT "the nearest creature": guessing here turns a swarm
 //      into twenty characters starting twenty separate fights in one room, which is the
 //      worst outcome available and looks identical to working.
-export function swarmTarget(leader, room = {}) {
+export function swarmTarget(leader, room = {}, observed = null) {
+  // THE PROXY'S READING FIRST, because it is the only one that is not an inference. An
+  // attack is a client-to-server packet carrying the target object id, and m59-proxy reads
+  // it straight off the wire — no guessing which of three wounded creatures the human
+  // meant. `observe.mjs` drops it once it is older than 8 seconds, so a target arriving
+  // here is one the leader is swinging at NOW.
+  if (observed?.id != null)
+    return { target: observed.id,
+             how: `read off the leader's own ${observed.how} packet ${observed.age_ms}ms ago` };
   if (leader?.attacking) return { target: leader.attacking, how: 'the leader is swinging at it' };
   const hurt = (room.creatures ?? []).filter(c => c.health_falling);
   if (hurt.length === 1) return { target: hurt[0].id, how: 'the only creature in the room losing health' };
@@ -297,7 +305,7 @@ export const swarmFleetRules = [
       const { leader, why } = leaderOf(rows);
       if (!leader) return { kind: 'pass', why };
 
-      const { target, how } = swarmTarget(leader, fleetObs.room ?? {});
+      const { target, how } = swarmTarget(leader, fleetObs.room ?? {}, fleetObs.leader_target);
       if (!target) return { kind: 'pass', why: `no target to share — ${how}` };
 
       const here = rows.filter(r => r.agent !== leader.agent && r.room === leader.room && r.in_game);

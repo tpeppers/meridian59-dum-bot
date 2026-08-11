@@ -1,0 +1,73 @@
+// LOOPBACK-ONLY CONTROL PLANE FOR THE STRATEGY-GAME WEBSITE.
+//
+// The browser application never edits doctrine files and never imports this repository.
+// It asks the DUM process that is actually directing the fleet. That keeps assignments
+// hot-swappable, makes the catalogue self-describing, and fails closed when DUM is down.
+
+import { createServer } from 'node:http';
+import { STRATEGY_CATALOG } from '../strategies/catalog.mjs';
+
+const json = (res, status, body) => {
+  const data = JSON.stringify(body);
+  res.writeHead(status, { 'content-type': 'application/json; charset=utf-8',
+    'content-length': Buffer.byteLength(data), 'cache-control': 'no-store' });
+  res.end(data);
+};
+
+const loopback = address => !address || address === '127.0.0.1' || address === '::1' ||
+  address === '::ffff:127.0.0.1';
+
+async function bodyOf(req) {
+  let raw = '';
+  for await (const chunk of req) {
+    raw += chunk;
+    if (raw.length > 64 * 1024) throw new Error('request body is too large');
+  }
+  return raw ? JSON.parse(raw) : {};
+}
+
+export class StrategyControlServer {
+  constructor({ store, url = 'http://127.0.0.1:8916' }) {
+    this.store = store;
+    this.url = new URL(url);
+    if (!['127.0.0.1', 'localhost', '[::1]'].includes(this.url.hostname))
+      throw new Error('strategy control must bind to loopback');
+    this.server = null;
+  }
+
+  async start() {
+    if (this.server) return;
+    this.server = createServer(async (req, res) => {
+      try {
+        if (!loopback(req.socket.remoteAddress)) return json(res, 403, { error: 'loopback only' });
+        const u = new URL(req.url ?? '/', this.url);
+        if (u.pathname === '/health' && req.method === 'GET')
+          return json(res, 200, { ok: true, fleet: this.store.fleet });
+        if (u.pathname !== '/strategies') return json(res, 404, { error: 'not found' });
+        if (req.method === 'GET') {
+          const agents = (u.searchParams.get('agents') ?? '').split(',').map(s => s.trim()).filter(Boolean);
+          const { states } = this.store.states(agents);
+          return json(res, 200, { catalogue: STRATEGY_CATALOG, states, selected: agents.length });
+        }
+        if (req.method === 'POST') {
+          const body = await bodyOf(req);
+          const { states } = this.store.update(body.agents, body.changes);
+          return json(res, 200, { ok: true, catalogue: STRATEGY_CATALOG, states,
+            selected: body.agents.length });
+        }
+        return json(res, 405, { error: 'method not allowed' });
+      } catch (e) { return json(res, 400, { error: e.message }); }
+    });
+    await new Promise((resolveStart, reject) => {
+      this.server.once('error', reject);
+      this.server.listen(Number(this.url.port || 80), this.url.hostname.replace(/^\[|\]$/g, ''), resolveStart);
+    });
+  }
+
+  async stop() {
+    if (!this.server) return;
+    const server = this.server;
+    this.server = null;
+    await new Promise(resolveStop => server.close(resolveStop));
+  }
+}

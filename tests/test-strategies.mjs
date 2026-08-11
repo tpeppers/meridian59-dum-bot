@@ -8,6 +8,7 @@ import { foodFleetRules } from '../src/decide/rules/food.mjs';
 import { castleAssignments, castleDeploymentDiffers } from '../src/decide/rules/castle-victoria.mjs';
 import { loadDoctrine } from '../src/config/load.mjs';
 import { callsForFleetPlan } from '../src/act/fleet-plan.mjs';
+import { fleetRules } from '../src/decide/index.mjs';
 
 const test = globalThis.__dumTest;
 
@@ -17,6 +18,11 @@ test('strategies: catalogue contains the four independently selectable behaviour
     STRATEGY_IDS.VS_SKELETONS, STRATEGY_IDS.CHECK_CV_CRATE,
   ]);
   assert.equal(STRATEGY_CATALOG.filter(s => s.group === 'Kraanan upkeep').length, 2);
+});
+
+test('strategies: an empty larder is serviced before repeat weapon rolls', () => {
+  const ids = fleetRules.rules.map(rule => rule.id);
+  assert.ok(ids.indexOf('create-food-to-keep-fed') < ids.indexOf('maintain-qualifying-weapons'));
 });
 
 test('strategies: a multi-unit toggle changes only the named behaviour', () => {

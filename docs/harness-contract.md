@@ -20,7 +20,7 @@ something new. A dependency nobody wrote down is how two repositories drift.
 | `fleet` | the tick's spine: one call, N characters, with `stalled`, `parked`, `commitment` |
 | `status` | per-character vitals, room, keeper policy, keeper mode, commitment |
 | `progress`, `prey`, `inventory`, `bank` | fetched only when a loaded rule declared it needs them; opt-in crate outcome logging brackets the crate action with two inventory reads |
-| `autopilot` (`action: start`) | the single write surface for orders, including nullable `strategy_stats`, `farm_cleanup`, and `farm_delivery`, plus the nullable `max_weapons` merchant-retention cap |
+| `autopilot` (`action: start`) | the single write surface for orders, including nullable `strategy_stats`, `farm_cleanup`, and `farm_delivery`, the nullable `max_weapons` cap, and independent `buy_food`, `buy_weapons`, and `buy_reagents` permissions |
 | process-wide interest board | fresh per-room farming demand (`needs.herb`, `needs.elderberry`) lets one town-returning keeper claim a destination and buy exact shared cargo |
 | `fleet[].coordination` | current-session clean-up and delivery counts; rotating keeper records provide the 2h/6h/24h drill-ins |
 | `cast` (`create weapon` and `create food` only) | audited self-only maintenance spells; opt-in food outcome logging adds `observe_created:true` so the result carries a positive inventory delta |

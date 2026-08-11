@@ -22,6 +22,7 @@ test('strategies: catalogue contains the independently selectable behaviours', (
     STRATEGY_IDS.VS_SKELETONS, STRATEGY_IDS.CHECK_CV_CRATE,
     STRATEGY_IDS.SPREAD_OUT, STRATEGY_IDS.SELL_AND_BANK,
     STRATEGY_IDS.MAX_WEAPONS,
+    STRATEGY_IDS.BUY_FOOD, STRATEGY_IDS.BUY_WEAPONS, STRATEGY_IDS.BUY_REAGENTS,
     STRATEGY_IDS.ACCUMULATE_IN_VAULT,
     STRATEGY_IDS.FARM_CLEANUP, STRATEGY_IDS.FARM_DELIVERY,
     STRATEGY_IDS.DETAILED_STATS,
@@ -179,6 +180,21 @@ test('strategies: Max Weapons defaults on at two and clears the keeper cap when 
   obs.keeper.policy.maxWeapons = 2;
   obs.strategies.agents.seller = [];
   assert.equal(rule.decide(obs, doctrine).orders.max_weapons, null);
+});
+
+test('strategies: food, weapon, and reagent buying are independent keeper permissions', () => {
+  const doctrine = loadDoctrine({ file: 'doctrines/castle-victoria.jsonc' }).config;
+  for (const id of [STRATEGY_IDS.BUY_FOOD, STRATEGY_IDS.BUY_WEAPONS, STRATEGY_IDS.BUY_REAGENTS])
+    assert.ok(doctrine.strategies.defaults.includes(id));
+  const rule = economyRules.find(r => r.id === 'purchase-strategy-policy');
+  const obs = { agent: 'shopper', keeper: { policy: {
+    buyFood: true, buyWeapons: true, buyReagents: true,
+  } }, strategies: { agents: { shopper: [STRATEGY_IDS.BUY_REAGENTS] } } };
+  assert.deepEqual(rule.decide(obs, doctrine).orders, {
+    action: 'start', buy_food: false, buy_weapons: false, buy_reagents: true,
+  });
+  obs.keeper.policy = { buyFood: false, buyWeapons: false, buyReagents: true };
+  assert.equal(rule.decide(obs, doctrine), null);
 });
 
 test('strategies: a multi-unit toggle changes only the named behaviour', () => {

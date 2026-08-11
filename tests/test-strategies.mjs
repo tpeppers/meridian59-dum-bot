@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { StrategyStore } from '../src/record/strategies.mjs';
 import { Journal } from '../src/record/journal.mjs';
+import { DetailStats, inventoryGain } from '../src/record/detail-stats.mjs';
 import { STRATEGY_CATALOG, STRATEGY_IDS } from '../src/strategies/catalog.mjs';
 import { foodFleetRules } from '../src/decide/rules/food.mjs';
 import { castleAssignments, castleDeploymentDiffers } from '../src/decide/rules/castle-victoria.mjs';
@@ -21,8 +22,46 @@ test('strategies: catalogue contains the independently selectable behaviours', (
     STRATEGY_IDS.VS_SKELETONS, STRATEGY_IDS.CHECK_CV_CRATE,
     STRATEGY_IDS.SPREAD_OUT, STRATEGY_IDS.SELL_AND_BANK,
     STRATEGY_IDS.ACCUMULATE_IN_VAULT,
+    STRATEGY_IDS.DETAILED_STATS,
   ]);
   assert.equal(STRATEGY_CATALOG.filter(s => s.group === 'Kraanan upkeep').length, 2);
+});
+
+test('strategies: detailed stats are opt-in, independently filtered, and expire on their selected clock', () => {
+  const definition = STRATEGY_CATALOG.find(s => s.id === STRATEGY_IDS.DETAILED_STATS);
+  const defaults = Object.fromEntries(definition.settings.map(s => [s.id, s.default]));
+  assert.equal(defaults.retention_hours, 24);
+  assert.equal(defaults.default_window_hours, 2);
+  assert.ok(['crate_check', 'travel', 'fighting', 'trading', 'vault_accumulation', 'create_food']
+    .every(key => defaults[key] === true));
+  assert.deepEqual(inventoryGain([{ name: 'mace', amount: 1 }],
+    [{ name: 'mace', amount: 1 }, { name: 'rose', amount: 2 }]),
+    [{ name: 'rose', amount: 2 }]);
+
+  const dir = mkdtempSync(join(tmpdir(), 'dum-detail-stats-'));
+  let now = Date.UTC(2026, 7, 11, 12);
+  try {
+    const stats = new DetailStats({ dir, now: () => now });
+    stats.write({ category: 'crate-check', event: 'check', agent: 'a', retention_hours: 1 });
+    assert.equal(stats.report({ hours: 2 }).crate.checks, 1);
+    now += 61 * 60_000;
+    stats.rotate(now);
+    assert.equal(stats.report({ hours: 2 }).crate.checks, 0);
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+});
+
+test('strategies: disabling detailed stats clears a previously enabled keeper policy', () => {
+  const doctrine = loadDoctrine({ file: 'doctrines/castle-victoria.jsonc' }).config;
+  const rule = economyRules.find(r => r.id === 'detailed-strategy-stats-policy');
+  const obs = { agent: 'watcher', keeper: { policy: { strategyStats: null } }, strategies: {
+    agents: { watcher: [STRATEGY_IDS.DETAILED_STATS] }, settings: { watcher: {} },
+  } };
+  const enabled = rule.decide(obs, doctrine);
+  assert.equal(enabled.orders.strategy_stats.enabled, true);
+  assert.equal(enabled.orders.strategy_stats.default_window_hours, 2);
+  obs.strategies.agents.watcher = [];
+  obs.keeper.policy.strategyStats = enabled.orders.strategy_stats;
+  assert.equal(rule.decide(obs, doctrine).orders.strategy_stats, null);
 });
 
 test('strategies: vault accumulation accepts several items and clears protection when disabled', () => {

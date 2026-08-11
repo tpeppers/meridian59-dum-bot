@@ -26,6 +26,32 @@ import { STRATEGY_IDS, strategyEnabled, strategySettings } from '../../strategie
 
 export const economyRules = [
   {
+    id: 'detailed-strategy-stats-policy',
+    faculty: 'economy',
+    why: 'the Detailed strategy stats opt-in controls the keeper-side rotating activity recorder',
+    enabled: doctrine => doctrine.strategies?.enabled === true,
+    offWhy: 'DUM strategies are disabled',
+    decide(obs, doctrine) {
+      const enabled = strategyEnabled(obs, doctrine, obs.agent, STRATEGY_IDS.DETAILED_STATS);
+      const wanted = enabled
+        ? { enabled: true, ...strategySettings(obs, doctrine, obs.agent, STRATEGY_IDS.DETAILED_STATS) }
+        : null;
+      const live = obs.keeper?.policy?.strategyStats ?? obs.policy?.strategyStats ?? null;
+      if (sameObject(live, wanted)) return null;
+      // Do not write null to keepers that predate this feature. Once explicitly enabled,
+      // however, unchecking the strategy must clear it rather than leaving collection on.
+      if (!enabled && live == null) return null;
+      return {
+        kind: 'orders',
+        orders: { action: 'start', strategy_stats: wanted },
+        why: enabled
+          ? `retain opt-in detailed strategy records for ${wanted.retention_hours}h and open dashboards at ${wanted.default_window_hours}h`
+          : 'the detailed strategy stats opt-in is off, so stop keeper-side detail collection',
+        evidence: { want: wanted, keeper_has: live },
+      };
+    },
+  },
+  {
     id: 'vault-accumulation-policy',
     faculty: 'economy',
     why: 'the Accumulate items in vault strategy protects selected drops and stores them during Barloque town loops',
@@ -128,3 +154,8 @@ export const economyRules = [
 ];
 
 const pick = (obj, keys) => Object.fromEntries(keys.map(k => [k, obj?.[k] ?? null]));
+const sameObject = (a, b) => {
+  if (a == null || b == null) return a == null && b == null;
+  const ordered = value => Object.fromEntries(Object.entries(value).sort(([x], [y]) => x.localeCompare(y)));
+  return JSON.stringify(ordered(a)) === JSON.stringify(ordered(b));
+};

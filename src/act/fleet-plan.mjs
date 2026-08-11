@@ -88,7 +88,7 @@ export function callsForFleetPlan(plan = [], why = null) {
     }
     if (step.do === 'cast-create-food') {
       const agent = need(step, 'agent');
-      calls.push({ tool: 'cast', args: { agent, spell: 'create food' },
+      calls.push({ tool: 'cast', args: { agent, spell: 'create food', observe_created: true },
                    timeoutMs: 60_000, why: step.why ?? why });
       calls.push(resumeKeeper(agent, step.why ?? why));
       continue;

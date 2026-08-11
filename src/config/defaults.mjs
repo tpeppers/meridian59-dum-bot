@@ -321,6 +321,9 @@ export const DEFAULTS = {
     memory_dir: 'var/memory',
     // Per-unit strategy selections are operational state and may name roster handles.
     strategy_dir: 'var/strategies',
+    // Small opt-in outcome records used by the DUM/Harness drill-ins. Each line carries
+    // its selected retention; 24h is the catalogue default and dashboards open at 2h.
+    strategy_stats_dir: 'var/strategy-stats',
     // Keep the full observation on every line, or only the fields a rule read. Full
     // is large and is what makes an after-the-fact "why did it decide that" possible
     // without re-running anything.

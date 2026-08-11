@@ -7,6 +7,22 @@ const HERB = /^herbs?$/i;
 const amountOf = (items, re) => (items ?? []).filter(i => re.test(String(i.name ?? '')))
   .reduce((n, i) => n + (Number(i.amount) || 1), 0);
 
+export function createFoodReadiness(row, food) {
+  const meals = amountOf(row.items, FOOD);
+  const elderberry = amountOf(row.items, ELDERBERRY);
+  const herbs = amountOf(row.items, HERB);
+  const mana = row.mana?.value ?? 0;
+  const hasSpell = (row.provides ?? []).some(s => String(s).toLowerCase() === 'create food');
+  const short = meals < food.min_items;
+  const blocked_by = [];
+  if (short && !hasSpell) blocked_by.push('spell');
+  if (short && mana < food.mana_cost) blocked_by.push('mana');
+  if (short && elderberry < food.elderberry_per_cast) blocked_by.push('elderberry');
+  if (short && herbs < food.herbs_per_cast) blocked_by.push('herbs');
+  return { short, ready: short && !blocked_by.length, meals, mana, has_spell: hasSpell,
+    reagents: { elderberry, herbs }, blocked_by };
+}
+
 export const foodFleetRules = [{
   id: 'create-food-to-keep-fed',
   faculty: 'economy',
@@ -25,11 +41,9 @@ export const foodFleetRules = [{
         unread.map(r => r.agent).join(', '), evidence: { unread: unread.map(r => r.agent) } };
 
     const f = doctrine.food;
-    const short = selected.filter(r => amountOf(r.items, FOOD) < f.min_items);
-    const plan = short.filter(r => r.provides.some(s => String(s).toLowerCase() === 'create food') &&
-      (r.mana?.value ?? 0) >= f.mana_cost &&
-      amountOf(r.items, ELDERBERRY) >= f.elderberry_per_cast &&
-      amountOf(r.items, HERB) >= f.herbs_per_cast)
+    const readiness = new Map(selected.map(r => [r.agent, createFoodReadiness(r, f)]));
+    const short = selected.filter(r => readiness.get(r.agent).short);
+    const plan = short.filter(r => readiness.get(r.agent).ready)
       .map(r => ({ do: 'cast-create-food', agent: r.agent,
         why: `larder below ${f.min_items}; spend one verified reagent pair` }));
 

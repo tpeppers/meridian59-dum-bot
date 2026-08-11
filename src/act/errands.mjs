@@ -185,7 +185,7 @@ export async function runErrand(broker, intent, { commit = false, holder = null,
           .catch(e => ({ error: e.message }))
       : await broker.write(step.tool, step.args, { why: step.why });
 
-    results.push({ tool: step.tool, args: step.args, why: step.why, result: r });
+    results.push({ tool: step.tool, args: step.args, label: step.label, why: step.why, result: r });
 
     // In dry-run every step returns a description, so nothing arrives and nothing is
     // collected — which is correct: a plan describes the walk it would take, it does

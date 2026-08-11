@@ -21,6 +21,7 @@ import { characterRules, fleetRules } from '../src/decide/index.mjs';
 import { Journal } from '../src/record/journal.mjs';
 import { Memory } from '../src/record/memory.mjs';
 import { StrategyStore } from '../src/record/strategies.mjs';
+import { DetailStats } from '../src/record/detail-stats.mjs';
 import { StrategyControlServer } from '../src/link/strategy-control.mjs';
 import { pass } from '../src/loop/tick.mjs';
 import { run } from '../src/loop/run.mjs';
@@ -87,8 +88,11 @@ function context({ config, commit }) {
     dir: config.record.strategy_dir, fleet: config.fleet,
     defaults: config.strategies.defaults, settings: config.strategies.settings, enabled: commit,
   });
+  const detailStats = new DetailStats({
+    dir: config.record.strategy_stats_dir, enabled: commit,
+  });
   const strategyServer = commit && config.strategies.enabled
-    ? new StrategyControlServer({ store: strategies, journal,
+    ? new StrategyControlServer({ store: strategies, journal, detailStats,
         url: config.link.strategy_control_url }) : null;
   const broker = new Broker({
     controlUrl: config.link.control_url,
@@ -102,7 +106,7 @@ function context({ config, commit }) {
   // character busy or free it again, so a second spelling of this would be a second
   // process as far as the broker is concerned — able to claim, unable to release.
   const holder = `dum/${config.name}@pid-${process.pid}`;
-  return { broker, config, journal, memory, strategies, strategyServer,
+  return { broker, config, journal, memory, strategies, detailStats, strategyServer,
            commit, holder, only: agentFlag() };
 }
 

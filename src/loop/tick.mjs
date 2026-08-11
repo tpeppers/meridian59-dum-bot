@@ -103,6 +103,11 @@ export async function tickFleet(ctx, { decide: runRules = true } = {}) {
   const { broker, config, journal, commit } = ctx;
   const now = ctx.now?.() ?? Date.now();
   const line = { kind: 'fleet-tick', at: now, decided: runRules };
+  const write = () => {
+    ctx.detailStats?.captureFleetTick(line, config);
+    journal.write(line);
+    return line;
+  };
 
   try {
     // WHAT DUM REMEMBERS ARRIVES IN THE OBSERVATION, EXACTLY AS THE CLOCK DOES.
@@ -149,16 +154,15 @@ export async function tickFleet(ctx, { decide: runRules = true } = {}) {
     // minutes and this runs every few of them; nothing is lost by waiting.
     if (obs.parking > 0) {
       line.stood_down = `${obs.parking} character(s) are parking for a fleet update`;
-      journal.write(line);
-      return line;
+      return write();
     }
 
-    if (!runRules) { journal.write(line); return line; }
+    if (!runRules) return write();
 
     const { intent, considered } = decide(fleetRules, obs, config);
     line.considered = considered;
     line.intent = intent;
-    if (!intent) { journal.write(line); return line; }
+    if (!intent) return write();
 
 
     // An errand has one named actor and no fleet `plan`; a batch act has a plan and may
@@ -206,12 +210,10 @@ export async function tickFleet(ctx, { decide: runRules = true } = {}) {
                       { sent: applied.sent });
     if (intent.kind === 'report') journal.finding(null, intent.why, intent.evidence);
 
-    journal.write(line);
-    return line;
+    return write();
   } catch (e) {
     line.error = e.message;
-    journal.write(line);
-    return line;
+    return write();
   }
 }
 

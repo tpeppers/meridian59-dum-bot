@@ -79,6 +79,38 @@ export class Journal {
     return this.write({ kind: 'finding', agent, why, evidence });
   }
 
+  /** Current-process intervention counters for the local fleet command post. */
+  observability() {
+    const ticks = this.lines.filter(line => line.kind === 'tick' || line.kind === 'fleet-tick');
+    const triggered = ticks.filter(line => line.intent && !['none', 'pass'].includes(line.intent.kind));
+    const byRule = new Map(), byKind = new Map();
+    for (const line of triggered) {
+      const rule = line.intent.rule ?? 'unattributed';
+      const kind = line.intent.kind ?? 'unknown';
+      byRule.set(rule, (byRule.get(rule) ?? 0) + 1);
+      byKind.set(kind, (byKind.get(kind) ?? 0) + 1);
+    }
+    const sorted = map => [...map].map(([name, count]) => ({ name, count }))
+      .sort((a, b) => b.count - a.count || a.name.localeCompare(b.name));
+    const first = this.lines[0]?.at ?? null;
+    const last = this.lines.at(-1)?.at ?? null;
+    return {
+      since: first,
+      through: last,
+      ticks: ticks.length,
+      character_ticks: ticks.filter(line => line.kind === 'tick').length,
+      fleet_ticks: ticks.filter(line => line.kind === 'fleet-tick').length,
+      interventions_triggered: triggered.length,
+      interventions_applied: triggered.filter(line => line.applied?.acted === true).length,
+      interventions_no_change: triggered.filter(line => line.applied?.kind === 'no-change').length,
+      verification_failures: this.lines.filter(line => line.verified?.verified === false).length,
+      findings: this.lines.filter(line => line.kind === 'finding').length,
+      errors: this.lines.filter(line => line.error || ['pass-failed', 'claim-failed', 'heartbeat-failed'].includes(line.kind)).length,
+      by_rule: sorted(byRule),
+      by_kind: sorted(byKind),
+    };
+  }
+
   /** Everything written this run, for `plan` to print. */
   all() { return this.lines; }
 }

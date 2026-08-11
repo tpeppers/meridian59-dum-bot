@@ -26,6 +26,34 @@ import { STRATEGY_IDS, strategyEnabled, strategySettings } from '../../strategie
 
 export const economyRules = [
   {
+    id: 'vault-accumulation-policy',
+    faculty: 'economy',
+    why: 'the Accumulate items in vault strategy protects selected drops and stores them during Barloque town loops',
+    enabled: doctrine => doctrine.strategies?.enabled === true,
+    offWhy: 'DUM strategies are disabled',
+    decide(obs, doctrine) {
+      const enabled = strategyEnabled(obs, doctrine, obs.agent, STRATEGY_IDS.ACCUMULATE_IN_VAULT);
+      const wanted = enabled
+        ? strategySettings(obs, doctrine, obs.agent, STRATEGY_IDS.ACCUMULATE_IN_VAULT).items
+        : [];
+      const live = obs.keeper?.policy?.vaultItems ?? obs.policy?.vaultItems ?? null;
+      const held = Array.isArray(live) ? live.map(String) : [];
+      if (held.length === wanted.length && held.every((v, i) => v === wanted[i])) return null;
+      // null and [] both mean unprotected. This avoids writing an empty policy to every
+      // keeper that has never enabled the strategy, while still clearing a previously
+      // configured list when the checkbox is turned off.
+      if (!wanted.length && live == null) return null;
+      return {
+        kind: 'orders',
+        orders: { action: 'start', vault_items: wanted },
+        why: wanted.length
+          ? `protect and vault ${wanted.join(', ')} during Barloque town loops`
+          : 'the vault accumulation strategy is off, so release its item protections',
+        evidence: { want: wanted, keeper_has: held },
+      };
+    },
+  },
+  {
     id: 'economy-thresholds',
     faculty: 'economy',
     why: 'the Sell Loot and Bank Surplus strategy owns this keeper\'s pack and purse thresholds',

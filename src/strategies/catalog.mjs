@@ -13,6 +13,7 @@ export const STRATEGY_IDS = Object.freeze({
   CREATE_FOOD: 'create-food',
   SPREAD_OUT: 'spread-out',
   SELL_AND_BANK: 'sell-and-bank',
+  ACCUMULATE_IN_VAULT: 'accumulate-in-vault',
 });
 
 export const STRATEGY_CATALOG = Object.freeze([
@@ -88,6 +89,19 @@ export const STRATEGY_CATALOG = Object.freeze([
         default: 8, description: 'Minimum non-money stacks before a poverty-triggered market trip.' }),
     ]),
   }),
+  Object.freeze({
+    id: STRATEGY_IDS.ACCUMULATE_IN_VAULT,
+    title: 'Accumulate items in vault',
+    group: 'Economy',
+    purpose: 'Protected collection storage',
+    requirements: ['Selected items in the pack', 'Enough shillings for the vault fee', 'A town trip through Barloque'],
+    description: 'Never eat, sell, gift, or discard the selected items. Deposit them with the mainland vaultman whenever an ordinary town loop passes through Barloque.',
+    settings: Object.freeze([
+      Object.freeze({ id: 'items', title: 'Items to accumulate', type: 'item-list',
+        default: Object.freeze(['inky cap mushroom']), max_items: 24,
+        description: 'Choose one or more compendium items. Matching monster drops are highlighted automatically.' }),
+    ]),
+  }),
 ]);
 
 const KNOWN = new Set(STRATEGY_CATALOG.map(s => s.id));
@@ -114,6 +128,14 @@ export function validateStrategySettings(id, values = {}, { partial = false } = 
     if (!field) throw new Error(`${id} has no setting named ${key}`);
     if (field.type === 'boolean') {
       if (typeof value !== 'boolean') throw new Error(`${id}.${key} must be true or false`);
+    } else if (field.type === 'item-list') {
+      if (!Array.isArray(value)) throw new Error(`${id}.${key} must be a list of item names`);
+      const clean = [...new Set(value.map(v => String(v).trim()).filter(Boolean))];
+      if (clean.some(v => v.length > 80)) throw new Error(`${id}.${key} item names must be 80 characters or fewer`);
+      if (clean.length > (field.max_items ?? 24))
+        throw new Error(`${id}.${key} may contain at most ${field.max_items ?? 24} items`);
+      out[key] = clean;
+      continue;
     } else {
       if (typeof value !== 'number' || !Number.isFinite(value))
         throw new Error(`${id}.${key} must be a number`);

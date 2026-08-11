@@ -56,6 +56,7 @@ export const ORDER_FIELDS = {
   decide_ms:         { policy: 'decideMs' },
   resync_ms:         { policy: 'resyncMs' },
   break_out_via_logoff: { policy: 'breakOutViaLogoff' },
+  vault_items:        { policy: 'vaultItems', compare: sameList },
 };
 
 function sameList(a, b) {

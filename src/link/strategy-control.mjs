@@ -27,8 +27,9 @@ async function bodyOf(req) {
 }
 
 export class StrategyControlServer {
-  constructor({ store, url = 'http://127.0.0.1:8916' }) {
+  constructor({ store, journal = null, url = 'http://127.0.0.1:8916' }) {
     this.store = store;
+    this.journal = journal;
     this.url = new URL(url);
     if (!['127.0.0.1', 'localhost', '[::1]'].includes(this.url.hostname))
       throw new Error('strategy control must bind to loopback');
@@ -43,6 +44,9 @@ export class StrategyControlServer {
         const u = new URL(req.url ?? '/', this.url);
         if (u.pathname === '/health' && req.method === 'GET')
           return json(res, 200, { ok: true, fleet: this.store.fleet });
+        if (u.pathname === '/observability' && req.method === 'GET')
+          return json(res, 200, { fleet: this.store.fleet,
+            metrics: this.journal?.observability?.() ?? null });
         if (u.pathname !== '/strategies') return json(res, 404, { error: 'not found' });
         if (req.method === 'GET') {
           const agents = (u.searchParams.get('agents') ?? '').split(',').map(s => s.trim()).filter(Boolean);

@@ -37,10 +37,10 @@ const isFleet = r => r.scope === 'fleet';
 /**
  * One character, one tick.
  *
- * `respect-commitment` is first and unconditional. Everything below it assumes the
- * character is available to be redirected, and a character the fleet is already using
- * for something is not — taking one half of a two-character operation abandons the
- * other half silently.
+ * `respect-commitment` is first. Everything below it assumes the character is available
+ * to be redirected, and a character the fleet is already using for a non-takeable
+ * operation is not — taking one half of a two-character operation abandons the other
+ * half silently. A takeable bot claim is ownership, not an operation, and passes through.
  */
 export const characterRules = new RuleSet('character', [
   respectCommitment,

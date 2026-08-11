@@ -77,6 +77,12 @@ test('commitment: a pairing does not block a change of orders', () => {
   assert.equal(respectCommitment.decide(o), null);
 });
 
+test('commitment: a takeable bot claim does not block strategy maintenance', () => {
+  const o = fx.working();
+  o.commitment = { kind: 'bot', takeable: true, label: 'DUM is steering' };
+  assert.equal(respectCommitment.decide(o), null);
+});
+
 test('commitment: it is first in the table, so an errand blocks everything below it', () => {
   const { intent } = decide(characterRules, fx.onErrand(), fx.doctrine());
   assert.equal(intent.rule, 'respect-commitment');

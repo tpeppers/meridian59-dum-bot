@@ -26,6 +26,30 @@ import { STRATEGY_IDS, strategyEnabled, strategySettings } from '../../strategie
 
 export const economyRules = [
   {
+    id: 'max-weapons-policy',
+    faculty: 'economy',
+    why: 'the Max Weapons strategy limits merchant-trip weapon retention without changing combat selection',
+    enabled: doctrine => doctrine.strategies?.enabled === true,
+    offWhy: 'DUM strategies are disabled',
+    decide(obs, doctrine) {
+      const enabled = strategyEnabled(obs, doctrine, obs.agent, STRATEGY_IDS.MAX_WEAPONS);
+      const wanted = enabled
+        ? strategySettings(obs, doctrine, obs.agent, STRATEGY_IDS.MAX_WEAPONS).max_weapons
+        : null;
+      const live = obs.keeper?.policy?.maxWeapons ?? obs.policy?.maxWeapons ?? null;
+      if (live === wanted) return null;
+      if (!enabled && live == null) return null;
+      return {
+        kind: 'orders',
+        orders: { action: 'start', max_weapons: wanted },
+        why: enabled
+          ? `retain at most ${wanted} weapons after merchant visits, including equipped weapons`
+          : 'the Max Weapons strategy is off, so remove the merchant weapon cap',
+        evidence: { want: wanted, keeper_has: live },
+      };
+    },
+  },
+  {
     id: 'farm-coordination-policy',
     faculty: 'economy',
     why: 'Farm clean-up and Farm delivery are independent keeper capabilities coordinated through DUM strategy assignments',

@@ -20,7 +20,7 @@
     "enabled": true,
     // Spread Out is deliberately absent: Castle patrols retain their quarry and safety
     // posture without being forced into different rooms or different wall squares.
-    "defaults": ["create-weapons", "vs-skeletons", "check-cv-crate", "create-food", "sell-and-bank", "max-weapons", "accumulate-in-vault", "farm-cleanup", "farm-delivery"],
+    "defaults": ["create-weapons", "vs-skeletons", "check-cv-crate", "create-food", "sell-and-bank", "max-weapons", "buy-food", "buy-weapons", "buy-reagents", "accumulate-in-vault", "farm-cleanup", "farm-delivery"],
     "settings": {
       "sell-and-bank": {
         "bank_above": 3000,

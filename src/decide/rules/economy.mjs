@@ -26,6 +26,29 @@ import { STRATEGY_IDS, strategyEnabled, strategySettings } from '../../strategie
 
 export const economyRules = [
   {
+    id: 'purchase-strategy-policy',
+    faculty: 'economy',
+    why: 'Food, weapon, and reagent purchases are independent opt-in merchant permissions',
+    enabled: doctrine => doctrine.strategies?.enabled === true,
+    offWhy: 'DUM strategies are disabled',
+    decide(obs, doctrine) {
+      const want = {
+        buy_food: strategyEnabled(obs, doctrine, obs.agent, STRATEGY_IDS.BUY_FOOD),
+        buy_weapons: strategyEnabled(obs, doctrine, obs.agent, STRATEGY_IDS.BUY_WEAPONS),
+        buy_reagents: strategyEnabled(obs, doctrine, obs.agent, STRATEGY_IDS.BUY_REAGENTS),
+      };
+      const live = obs.keeper?.policy ?? obs.policy ?? {};
+      const keys = { buy_food: 'buyFood', buy_weapons: 'buyWeapons', buy_reagents: 'buyReagents' };
+      if (Object.entries(want).every(([key, value]) => live[keys[key]] === value)) return null;
+      return {
+        kind: 'orders',
+        orders: { action: 'start', ...want },
+        why: Object.entries(want).map(([key, value]) => `${key}=${value}`).join(', '),
+        evidence: { want, keeper_has: pick(live, Object.values(keys)) },
+      };
+    },
+  },
+  {
     id: 'max-weapons-policy',
     faculty: 'economy',
     why: 'the Max Weapons strategy limits merchant-trip weapon retention without changing combat selection',

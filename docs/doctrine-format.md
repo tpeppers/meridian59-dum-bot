@@ -116,7 +116,8 @@ These are diffed against the keeper's live policy, so a rung that agrees with th
 keeper sends nothing.
 
 `mode` `hunt` `strategy` `purpose` `assigned_room` `partner` `rest_below`
-`flee_below` `max_carry` `max_weapons` `bank_above` `roam` `roam_limit` `weapon_priority`
+`flee_below` `max_carry` `max_weapons` `buy_food` `buy_weapons` `buy_reagents`
+`bank_above` `roam` `roam_limit` `weapon_priority`
 `drop_junk` `use_safe_spots` `hold_resume_above` `fight_above_vigor` `pull_within`
 `decide_ms` `resync_ms` `break_out_via_logoff`
 
@@ -153,7 +154,7 @@ settings have catalogue defaults and may be overridden in the doctrine:
 ```jsonc
 "strategies": {
   "enabled": true,
-  "defaults": ["sell-and-bank", "max-weapons"],
+  "defaults": ["sell-and-bank", "max-weapons", "buy-food", "buy-weapons", "buy-reagents"],
   "settings": {
     "spread-out": {
       "max_bots_per_safe_spot": 3,
@@ -206,6 +207,12 @@ how much spending money remains afterwards.
 total, retains the best remaining spare under the active weapon priority, and sells
 the rest on the next ordinary merchant visit. Equipped gear is never offered; unworn
 armour is sold unless it is the best usable piece for a currently empty armour slot.
+
+`buy-food`, `buy-weapons`, and `buy-reagents` are independent merchant permissions and
+default on for backward compatibility. Turning off Buy Food also suppresses food-only
+town trips and food-specific bank withdrawals. Turning off Buy Weapons does not prevent
+Create Weapon, loot, equipping, or fleet handoffs. Turning off Buy Reagents still allows
+Farm Delivery to redistribute reagent spares already carried by the courier.
 
 `accumulate-in-vault` protects every configured item from the keeper's eat, sell,
 gift and emergency-drop paths. It does not create a separate vault errand: when a

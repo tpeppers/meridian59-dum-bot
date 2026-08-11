@@ -143,12 +143,12 @@ export const STRATEGY_CATALOG = Object.freeze([
       Object.freeze({ id: 'items', title: 'Items to accumulate', type: 'item-list',
         default: Object.freeze([
           'dark angel feather',
-          'inky cap mushroom',
+          'Inky-cap mushroom',
           'blue dragon scale',
-          'arrow',
-          'nerudite arrow',
+          'arrows',
+          'nerudite arrows',
         ]), max_items: 24,
-        description: 'Choose one or more compendium items. Matching monster drops are highlighted automatically.' }),
+        description: 'Choose complete compendium item names. Punctuation and plurals are normalised; partial names are rejected. Matching monster drops are highlighted automatically.' }),
     ]),
   }),
   Object.freeze({

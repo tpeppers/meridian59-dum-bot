@@ -175,10 +175,10 @@ settings have catalogue defaults and may be overridden in the doctrine:
     "accumulate-in-vault": {
       "items": [
         "dark angel feather",
-        "inky cap mushroom",
+        "Inky-cap mushroom",
         "blue dragon scale",
-        "arrow",
-        "nerudite arrow"
+        "arrows",
+        "nerudite arrows"
       ]
     },
     "detailed-strategy-stats": {
@@ -219,6 +219,10 @@ gift and emergency-drop paths. It does not create a separate vault errand: when 
 normal town loop passes through Barloque, the keeper offers the protected stacks to
 Obert Cair'bre and verifies their removal from the pack. The local strategy editor
 looks up the corresponding monster treasure tables and highlights those creatures.
+Every entry must resolve to exactly one complete name in the harness's local item
+datastore. Case, punctuation and singular/plural spelling are tolerated, but partial
+names are rejected: `mushroom`, `red mushroom`, and `Inky-cap mushroom` are three
+different items.
 
 `detailed-strategy-stats` is off by default and can be enabled on any selection of
 units. Each category is independently switchable. Enabled keepers spool per-trip,

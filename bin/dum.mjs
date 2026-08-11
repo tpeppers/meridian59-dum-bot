@@ -91,9 +91,6 @@ function context({ config, commit }) {
   const detailStats = new DetailStats({
     dir: config.record.strategy_stats_dir, enabled: commit,
   });
-  const strategyServer = commit && config.strategies.enabled
-    ? new StrategyControlServer({ store: strategies, journal, detailStats,
-        url: config.link.strategy_control_url }) : null;
   const broker = new Broker({
     controlUrl: config.link.control_url,
     timeoutMs: config.link.timeout_ms,
@@ -101,6 +98,10 @@ function context({ config, commit }) {
     dryRun: !commit,
     onCall: e => journal.write({ kind: 'call', ...e }),
   });
+  const strategyServer = commit && config.strategies.enabled
+    ? new StrategyControlServer({ store: strategies, journal, detailStats,
+        resolveItems: items => broker.call('resolve_item_names', { items }),
+        url: config.link.strategy_control_url }) : null;
   // WHO DUM IS, ON THE WIRE. One string, computed once, because it is an identity the
   // harness checks rather than a label: only the holder of a claim may declare that
   // character busy or free it again, so a second spelling of this would be a second

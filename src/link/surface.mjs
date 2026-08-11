@@ -31,7 +31,7 @@ const NEVER = {
 export const READ = new Set([
   'fleet', 'status', 'progress', 'inventory', 'equipment', 'abilities', 'spells',
   'loadout', 'look', 'map', 'safe_spots', 'hunting_grounds', 'prey', 'history', 'post_mortem',
-  'who', 'safety', 'merchants', 'signets', 'bank',
+  'who', 'safety', 'merchants', 'signets', 'bank', 'resolve_item_names',
 ]);
 
 // ---------------------------------------------------------------- write

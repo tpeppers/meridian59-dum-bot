@@ -57,12 +57,20 @@ export const ORDER_FIELDS = {
   resync_ms:         { policy: 'resyncMs' },
   break_out_via_logoff: { policy: 'breakOutViaLogoff' },
   vault_items:        { policy: 'vaultItems', compare: sameList },
+  strategy_stats:     { policy: 'strategyStats', compare: sameObject },
 };
 
 function sameList(a, b) {
   const norm = v => Array.isArray(v) ? v.map(String) : (v == null ? [] : [String(v)]);
   const x = norm(a), y = norm(b);
   return x.length === y.length && x.every((v, i) => v === y[i]);
+}
+
+function sameObject(a, b) {
+  if (a == null || b == null) return a == null && b == null;
+  if (typeof a !== 'object' || typeof b !== 'object') return false;
+  const ordered = value => Object.fromEntries(Object.entries(value).sort(([x], [y]) => x.localeCompare(y)));
+  return JSON.stringify(ordered(a)) === JSON.stringify(ordered(b));
 }
 
 const same = (a, b) => (a === b) || (a == null && b == null);

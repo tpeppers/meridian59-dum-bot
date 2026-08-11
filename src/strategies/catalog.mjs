@@ -14,6 +14,7 @@ export const STRATEGY_IDS = Object.freeze({
   SPREAD_OUT: 'spread-out',
   SELL_AND_BANK: 'sell-and-bank',
   ACCUMULATE_IN_VAULT: 'accumulate-in-vault',
+  DETAILED_STATS: 'detailed-strategy-stats',
 });
 
 export const STRATEGY_CATALOG = Object.freeze([
@@ -106,6 +107,26 @@ export const STRATEGY_CATALOG = Object.freeze([
           'nerudite arrow',
         ]), max_items: 24,
         description: 'Choose one or more compendium items. Matching monster drops are highlighted automatically.' }),
+    ]),
+  }),
+  Object.freeze({
+    id: STRATEGY_IDS.DETAILED_STATS,
+    title: 'Detailed strategy stats',
+    group: 'Observability',
+    purpose: 'Rotating activity records and drill-ins',
+    requirements: ['Local disk space for a short rotating log'],
+    description: 'Opt into drillable crate, travel, fighting, trading, vault, and food-production records. Lightweight fleet counters remain available when this is off.',
+    settings: Object.freeze([
+      Object.freeze({ id: 'retention_hours', title: 'Retain detailed records (hours)',
+        type: 'number', min: 1, max: 168, default: 24,
+        description: 'Detailed records older than this are excluded and their daily spool files are retired.' }),
+      Object.freeze({ id: 'default_window_hours', title: 'Default dashboard window (hours)',
+        type: 'number', min: 0.25, max: 168, default: 2,
+        description: 'Initial look-back used by the DUM bot and Harness tabs.' }),
+      ...['crate_check', 'travel', 'fighting', 'trading', 'vault_accumulation', 'create_food']
+        .map(id => Object.freeze({ id, title: id.split('_').map(w => w[0].toUpperCase() + w.slice(1)).join(' '),
+          type: 'boolean', default: true,
+          description: `Collect drillable ${id.replaceAll('_', ' ')} records while this strategy is enabled.` })),
     ]),
   }),
 ]);

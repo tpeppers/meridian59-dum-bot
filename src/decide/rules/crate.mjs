@@ -60,7 +60,7 @@
 // belongs to the keeper, and a keeper has more to work with at full health.
 
 /** Five real minutes. `blakserv/systimer.c:93` with `KodPeriod` at its default of 5. */
-import { STRATEGY_IDS, strategyEnabled } from '../../strategies/catalog.mjs';
+import { STRATEGY_IDS, strategyEnabled, strategySettings } from '../../strategies/catalog.mjs';
 
 export const GAME_HOUR_MS = 5 * 60 * 1000;
 
@@ -305,6 +305,8 @@ export const crateFleetRules = [
       const room = c.room ?? 41;
       const square = c.square ?? { col: 6, row: 10 };
       const back = who.room ?? null;
+      const observeReward = strategyEnabled(fleetObs, doctrine, who.agent, STRATEGY_IDS.DETAILED_STATS) &&
+        strategySettings(fleetObs, doctrine, who.agent, STRATEGY_IDS.DETAILED_STATS).crate_check;
 
       return {
         kind: 'errand',
@@ -324,6 +326,9 @@ export const crateFleetRules = [
               expect: 'arrived', timeout_ms: c.walk_timeout_ms ?? 90_000,
               // Fourteen rows up an open floor at roughly a second a square.
               estimate_ms: 30_000, why: 'onto the crate square itself' },
+            ...(observeReward ? [{ tool: 'inventory', args: { agent: who.agent },
+              label: 'crate-before', estimate_ms: 3_000,
+              why: 'snapshot the pack so a successful crate check can name its reward' }] : []),
             // `act verb:'go'` IS THE MECHANIC. Not walking — `UserGo` sends the
             // character's CURRENT square (`user.kod:5656`) and the room answers on that.
             // It must not run unless the walk arrived: a `go` on an exit square takes
@@ -331,6 +336,9 @@ export const crateFleetRules = [
             { tool: 'act', args: { agent: who.agent, verb: 'go' },
               timeout_ms: 30_000, collect: 'messages', estimate_ms: 5_000,
               why: 'rummage in the crate and read what the room says back' },
+            ...(observeReward ? [{ tool: 'inventory', args: { agent: who.agent },
+              label: 'crate-after', estimate_ms: 3_000,
+              why: 'read the pack delta after the crate answers' }] : []),
             ...(c.return_after === false ? [] : [
               // ALWAYS, INCLUDING AFTER A FAILURE. Leaving a character standing in the
               // basement because the walk did not arrive is worse than the failed check:

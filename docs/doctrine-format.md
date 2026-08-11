@@ -176,6 +176,16 @@ settings have catalogue defaults and may be overridden in the doctrine:
         "arrow",
         "nerudite arrow"
       ]
+    },
+    "detailed-strategy-stats": {
+      "retention_hours": 24,
+      "default_window_hours": 2,
+      "crate_check": true,
+      "travel": true,
+      "fighting": true,
+      "trading": true,
+      "vault_accumulation": true,
+      "create_food": true
     }
   }
 }
@@ -195,9 +205,16 @@ normal town loop passes through Barloque, the keeper offers the protected stacks
 Obert Cair'bre and verifies their removal from the pack. The local strategy editor
 looks up the corresponding monster treasure tables and highlights those creatures.
 
+`detailed-strategy-stats` is off by default and can be enabled on any selection of
+units. Each category is independently switchable. Enabled keepers spool per-trip,
+per-fight, per-trade and vault-snapshot facts; DUM spools crate outcomes and Create
+Food readiness/outcomes. Records expire from disk on the selected clock (24 hours by
+default), while the DUM bot and Harness tabs open on a two-hour view by default.
+
 The loopback strategy-control service also exposes `GET /observability`. Its counters
 cover the current DUM process: rule interventions triggered and applied, no-change
 diffs, verification failures, findings and errors, grouped by rule and action kind.
+`GET /observability?hours=2` additionally returns the opt-in crate and food drill-ins.
 
 ## `weapons` — named selection order and staging threshold
 

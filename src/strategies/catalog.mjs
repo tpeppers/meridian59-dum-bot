@@ -13,6 +13,7 @@ export const STRATEGY_IDS = Object.freeze({
   CREATE_FOOD: 'create-food',
   SPREAD_OUT: 'spread-out',
   SELL_AND_BANK: 'sell-and-bank',
+  GUILD_TITHE: 'guild-tithe',
   MAX_WEAPONS: 'max-weapons',
   BUY_FOOD: 'buy-food',
   BUY_WEAPONS: 'buy-weapons',
@@ -94,6 +95,20 @@ export const STRATEGY_CATALOG = Object.freeze([
         default: 500, description: 'Cash plus bank balance considered broke.' }),
       Object.freeze({ id: 'broke_stacks', title: 'Broke pack stacks', type: 'integer', min: 1,
         default: 8, description: 'Minimum non-money stacks before a poverty-triggered market trip.' }),
+    ]),
+  }),
+  Object.freeze({
+    id: STRATEGY_IDS.GUILD_TITHE,
+    title: 'Guild Tithe',
+    group: 'Economy',
+    purpose: 'Guild rent support',
+    requirements: ['Guild membership', 'A completed town-sale trip',
+      'Verified sale proceeds above the walking-money reserve'],
+    description: 'After selling in town, pay Frular up to the configured daily amount from that trip\'s proceeds. Partial payments carry forward to later sale trips; verified daily totals survive restarts.',
+    settings: Object.freeze([
+      Object.freeze({ id: 'daily_amount', title: 'Daily tithe', type: 'integer', min: 0,
+        default: 2000,
+        description: 'Maximum shillings each character contributes per local calendar day from town-sale proceeds.' }),
     ]),
   }),
   Object.freeze({

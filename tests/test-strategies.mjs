@@ -65,8 +65,11 @@ test('strategies: farm coordination is independent, configurable, and clears whe
   const on = rule.decide(obs, doctrine);
   assert.deepEqual(on.orders.farm_cleanup,
     { enabled: true, max_floor_items: 8, keep_free_stacks: 1 });
+  // An explicitly-set setting overrides; every other one arrives at its catalogue default,
+  // which is what lets a new setting reach the keeper without every doctrine restating it.
   assert.deepEqual(on.orders.farm_delivery,
-    { enabled: true, herbs_per_farmer: 30, elderberries_per_farmer: 10, max_recipients: 2 });
+    { enabled: true, herbs_per_farmer: 30, elderberries_per_farmer: 10, max_recipients: 2,
+      per_farmer_default: 10, radius_rooms: 2 });
   obs.keeper.policy.farmCleanup = on.orders.farm_cleanup;
   obs.keeper.policy.farmDelivery = on.orders.farm_delivery;
   obs.strategies.agents.courier = [];

@@ -179,6 +179,10 @@ export const STRATEGY_CATALOG = Object.freeze([
         default: 10, description: 'Maximum elderberry shortfall carried for each active farmer on one trip.' }),
       Object.freeze({ id: 'max_recipients', title: 'Maximum recipients', type: 'integer', min: 1, max: 12,
         default: 4, description: 'Maximum farmers supplied by one courier trip.' }),
+      Object.freeze({ id: 'per_farmer_default', title: 'Other items per farmer', type: 'integer', min: 0, max: 100,
+        default: 10, description: 'Cap per farmer for anything else a loadout asks for. The two reagents above keep their own caps; this covers every other shortfall the fleet board can now state.' }),
+      Object.freeze({ id: 'radius_rooms', title: 'Delivery radius (rooms)', type: 'integer', min: 0, max: 3,
+        default: 2, description: 'How far off the destination a courier will walk to hand goods to a farmer who wants them. 0 keeps delivery to the destination room only.' }),
     ]),
   }),
   Object.freeze({

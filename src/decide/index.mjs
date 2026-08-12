@@ -31,6 +31,10 @@ import { mootFleetRules } from './rules/moot.mjs';
 import { weaponFleetRules } from './rules/weapons.mjs';
 import { foodFleetRules } from './rules/food.mjs';
 import { castleVictoriaFleetRules } from './rules/castle-victoria.mjs';
+import { factionCharacterRules, factionActiveFleetRules, factionRequestFleetRules }
+  from './rules/factions.mjs';
+import { factionGameFleetRules } from './rules/faction-games.mjs';
+import { learningFleetRules } from './rules/learning.mjs';
 
 const isFleet = r => r.scope === 'fleet';
 
@@ -44,6 +48,9 @@ const isFleet = r => r.scope === 'fleet';
  */
 export const characterRules = new RuleSet('character', [
   respectCommitment,
+  // A one-hour server quest outranks the indefinite advancement ladder. The rule is a
+  // no-op without a durable Set Faction goal and restores the prior hunt on completion.
+  ...factionCharacterRules,
   // Escalation before work: a character that is stuck or has outgrown its prey should
   // be reported before DUM decides what its orders ought to be, because the answer to
   // "what should it be doing" is unreliable while the answer to "is it doing anything"
@@ -79,11 +86,29 @@ export const fleetRules = new RuleSet('fleet', [
   // it somewhere the operator did not go. With `swarm.follow` off — the ordinary case —
   // both rules return `pass` on their first line and cost one comparison.
   ...swarmFleetRules,
+  // Explicit token-game PvP has a perishable target and therefore outranks standing
+  // faction errands. The broker re-verifies the player before every engagement.
+  ...factionGameFleetRules,
+  // A human-led swarm still wins. Once free, an ASSIGNED one-hour faction quest outranks
+  // standing maintenance windows. Merely asking for a new assignment is below the farm
+  // baseline: a stopped/rejoined character should resume useful work before it records
+  // `mode: waiting` as the policy to restore after a long errand.
+  ...factionActiveFleetRules,
   // The crate window closes and the strategy-selected checker is already in the castle.
   ...crateFleetRules,
   // Establish the hands-off patrol policy before its maintenance strategies try to
-  // spend mana or hand over equipment.
+  // spend mana or hand over equipment. This is also the baseline a finite learning
+  // errand returns to. It returns `pass` as soon as the policy agrees, so putting it
+  // immediately above learning costs the queue one tick after a doctrine change and
+  // prevents a long queue from starving a safety-critical room reassignment forever.
   ...castleVictoriaFleetRules,
+  // Learning is finite and explicitly queued. Keep it above food/weapon maintenance,
+  // which can remain true indefinitely, but below the patrol baseline it must restore.
+  ...learningFleetRules,
+  // A queued faction/soldier request has no closing window until it is spoken. Once the
+  // patrol baseline is sound it can interrupt at the next natural break and restore a
+  // real farming policy afterwards.
+  ...factionRequestFleetRules,
   // An empty larder outranks equipment upgrades. Fleet rules are first-match-wins and
   // Create Weapon can remain true through many unlucky rolls; putting it first could
   // starve Create Food indefinitely. Food returns pass as soon as every selected unit

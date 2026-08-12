@@ -93,6 +93,15 @@ export function callsForFleetPlan(plan = [], why = null) {
       calls.push(resumeKeeper(agent, step.why ?? why));
       continue;
     }
+    if (step.do === 'buy-next-planned') {
+      const agent = need(step, 'agent');
+      // The harness deliberately accepts a list but starts only one verified purchase
+      // per character. Keeping one agent per plan step makes ownership and the journal
+      // name the exact character whose external learning errand was queued.
+      calls.push({ tool: 'buy_next_planned_skills', args: { agents: [agent] },
+                   why: step.why ?? why });
+      continue;
+    }
     if (step.do === 'deploy') {
       const agent = need(step, 'agent');
       const assigned_room = step.to == null ? null : Number(step.to);

@@ -201,8 +201,8 @@ export function validate(c) {
     const cv = c.castle_victoria;
     if (!Number.isInteger(cv.rooms?.downstairs) || !Number.isInteger(cv.rooms?.upstairs))
       say('castle_victoria.rooms', 'must name integer downstairs and upstairs room numbers');
-    if (!num(cv.upstairs_share) || cv.upstairs_share <= 0 || cv.upstairs_share >= 1)
-      say('castle_victoria.upstairs_share', 'must be a fraction strictly between 0 and 1');
+    if (!num(cv.upstairs_share) || cv.upstairs_share < 0 || cv.upstairs_share > 1)
+      say('castle_victoria.upstairs_share', 'must be a fraction from 0 through 1');
   }
 
   return bad;

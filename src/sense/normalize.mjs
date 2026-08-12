@@ -94,6 +94,10 @@ export function normalizeFleetRow(r = {}) {
     has_weapon: bool(r.has_weapon),
     wielding: str(r.wielding),
     provides: Array.isArray(r.provides) ? r.provides.map(String) : [],
+    // Cache-only planner progress from the fleet row. DUM does not reproduce
+    // PlayerCanLearn or teacher lookup; the harness and compendium already share that
+    // calculation, and this strategy consumes their answer as ordinary observation data.
+    learning: r.learning ?? null,
     // The keeper's own commitment description: errand | driven | parked | partner.
     // The board calls it `committed`.
     commitment: r.committed ?? r.commitment ?? null,
@@ -118,6 +122,12 @@ export function normalizeFleetRow(r = {}) {
     // Hoisted the same way the harness hoists it, because placement is asked about far
     // more often than the rest of the policy.
     assigned_room: num(r.assigned_room ?? r.policy?.assignedRoom),
+    // The keeper stamps this only after a full sell/bank/restock town cycle. Faction
+    // requests use it as a natural-break signal rather than interrupting active farming.
+    town_service_at: num(r.town_service_at),
+    // Usually absent on the free board; a bounded faction enrichment adds it only for
+    // units with an active item quest.
+    items: Array.isArray(r.items) ? r.items : null,
     // WHY THIS CHARACTER IS NOT WORKING, AS DATA RATHER THAN AS PROSE.
     //
     // The reason `escalate.mjs` refuses to act on `doing`: matching sentences the harness

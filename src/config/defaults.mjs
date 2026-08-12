@@ -321,6 +321,8 @@ export const DEFAULTS = {
     memory_dir: 'var/memory',
     // Per-unit strategy selections are operational state and may name roster handles.
     strategy_dir: 'var/strategies',
+    // Durable queued/acquiring/completed faction-join goals, likewise fleet-local.
+    faction_dir: 'var/factions',
     // Small opt-in outcome records used by the DUM/Harness drill-ins. Each line carries
     // its selected retention; 24h is the catalogue default and dashboards open at 2h.
     strategy_stats_dir: 'var/strategy-stats',

@@ -5,6 +5,7 @@
 // opt-in: with no selected units this module sends no policy and moves nobody.
 
 import { STRATEGY_IDS, strategyRows, strategySettings } from '../../strategies/catalog.mjs';
+import { activeFactionWork } from './factions.mjs';
 
 export const placementRules = [];
 
@@ -14,12 +15,12 @@ export function spreadAssignments(rows = [], rooms = [], maxPerRoom = 4) {
   const cap = Math.max(1, Math.floor(maxPerRoom));
   const counts = new Map(allowed.map(room => [room, 0]));
   const ordered = [...rows].sort((a, b) => {
-    const ah = allowed.includes(a.room) ? 0 : 1;
-    const bh = allowed.includes(b.room) ? 0 : 1;
+    const ah = allowed.includes(a.policy?.assignedRoom) ? 0 : allowed.includes(a.room) ? 1 : 2;
+    const bh = allowed.includes(b.policy?.assignedRoom) ? 0 : allowed.includes(b.room) ? 1 : 2;
     return ah - bh || String(a.agent).localeCompare(String(b.agent));
   });
   return ordered.map(row => {
-    const preferred = [row.room, row.policy?.assignedRoom]
+    const preferred = [row.policy?.assignedRoom, row.room]
       .filter((room, i, all) => allowed.includes(room) && all.indexOf(room) === i);
     const open = allowed.filter(room => !preferred.includes(room))
       .sort((a, b) => (counts.get(a) ?? 0) - (counts.get(b) ?? 0));
@@ -39,7 +40,8 @@ export const placementFleetRules = [{
     (doctrine.placement?.rooms?.length ?? 0) > 0,
   offWhy: 'no allowed placement rooms or DUM strategies are disabled',
   decide(fleetObs, doctrine) {
-    const selected = strategyRows(fleetObs, doctrine, STRATEGY_IDS.SPREAD_OUT);
+    const selected = strategyRows(fleetObs, doctrine, STRATEGY_IDS.SPREAD_OUT)
+      .filter(row => !activeFactionWork(fleetObs, row));
     if (!selected.length) return { kind: 'pass', why: 'Spread Out is off for every live unit' };
     const roomCaps = selected.map(row =>
       strategySettings(fleetObs, doctrine, row.agent, STRATEGY_IDS.SPREAD_OUT).max_bots_per_room);

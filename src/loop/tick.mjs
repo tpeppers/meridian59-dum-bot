@@ -12,7 +12,7 @@
 // through twenty-one.
 
 import { observeFleet, observeFromBoard, deepen, enrichForMoot, enrichEquipment,
-         enrichMaintenance } from '../sense/observe.mjs';
+         enrichMaintenance, enrichFactionInventory, enrichFactionGames } from '../sense/observe.mjs';
 import { characterRules, fleetRules, decide } from '../decide/index.mjs';
 import { apply } from '../act/orders.mjs';
 import { verify } from '../act/verify.mjs';
@@ -122,7 +122,14 @@ export async function tickFleet(ctx, { decide: runRules = true } = {}) {
       rooms: config.graveyard?.shift === true ? (config.graveyard.rooms ?? []) : [] });
     const strategies = ctx.strategies?.snapshot((observed.characters ?? [])
       .filter(r => r.in_game).map(r => r.agent)) ?? null;
-    const obs = { ...observed, memory, strategies };
+    const agents = (observed.characters ?? []).filter(r => r.in_game).map(r => r.agent);
+    const factions = ctx.factions?.snapshot(agents) ?? null;
+    const obs = { ...observed, memory, strategies, factions };
+    if (factions) {
+      const waitingForCargo = (obs.characters ?? []).filter(row =>
+        factions.agents?.[row.agent]?.status === 'acquiring');
+      if (waitingForCargo.length) await enrichFactionInventory(broker, waitingForCargo);
+    }
     if (config.graveyard?.shift === true)
       await enrichEquipment(broker, (obs.characters ?? []).filter(r => r.in_game));
     if (config.moot?.hold === true || config.weapons?.provision?.enabled === true) {
@@ -140,6 +147,9 @@ export async function tickFleet(ctx, { decide: runRules = true } = {}) {
         [STRATEGY_IDS.CREATE_WEAPONS, STRATEGY_IDS.CREATE_FOOD].some(id =>
           obs.strategies?.agents?.[r.agent]?.includes(id)));
       if (needsFacts.length) await enrichMaintenance(broker, needsFacts);
+      const factionPlayers = (obs.characters ?? []).filter(r => r.in_game &&
+        obs.strategies?.agents?.[r.agent]?.includes(STRATEGY_IDS.PLAY_FACTION_GAMES));
+      if (factionPlayers.length) await enrichFactionGames(broker, factionPlayers);
     }
     line.observation = obs;
 
@@ -169,8 +179,11 @@ export async function tickFleet(ctx, { decide: runRules = true } = {}) {
     // name both sides of a transfer. Claim the shape that was actually emitted. Reading
     // `null.flatMap` here used to abort a perfectly valid crate check before its first
     // write, so the timer stayed unknown and the same doomed intent returned forever.
-    const planAgents = fleetIntentAgents(intent);
-    if (intent.kind === 'act') await ctx.ensureClaim?.(planAgents);
+    // Both fleet plans and errands need ownership before their first write. The helper
+    // deliberately returns the errand's named actor even though it has no fleet `plan`;
+    // gating this call on `kind === 'act'` computed the right character and then skipped
+    // the claim, so `busy` correctly refused every crate mission.
+    await ensureFleetIntentClaim(ctx, intent);
 
     const applied = await apply(broker, intent, obs, { commit, yieldTo: config.yield_to ?? [], holder: ctx.holder });
     line.applied = applied;
@@ -183,6 +196,8 @@ export async function tickFleet(ctx, { decide: runRules = true } = {}) {
     // window may still have been consumed, and nothing would remember. So the memory is
     // patched here, immediately, and the patch is journalled as data.
     if (applied.errand) {
+      const factionGoal = ctx.factions?.recordErrand(applied, { at: now });
+      if (factionGoal) line.faction_goal = factionGoal;
       // `memory` is the PRE-errand snapshot read at the top of this tick, which is what
       // the interpreter needs: `checked_by` is a per-character map and Memory.patch is
       // deliberately shallow, so the merge has to happen against what was there before.
@@ -231,6 +246,12 @@ export function fleetIntentAgents(intent = {}) {
     : fleetPlanAgents(intent.plan ?? []);
 }
 
+export async function ensureFleetIntentClaim(ctx, intent) {
+  const agents = fleetIntentAgents(intent);
+  if (agents.length) await ctx.ensureClaim?.(agents);
+  return agents;
+}
+
 /**
  * A full pass: the fleet board, then every character the doctrine is responsible for.
  *
@@ -254,6 +275,7 @@ export async function pass(ctx, { only = null, decideFleet = true } = {}) {
   const characters = [];
   for (const r of rows) characters.push(await tickCharacter(ctx, {
     ...r, strategies: fleetLine.observation?.strategies ?? null,
+    factions: fleetLine.observation?.factions ?? null,
   }));
   return { fleet: fleetLine, characters };
 }

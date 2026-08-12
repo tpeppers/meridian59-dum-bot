@@ -19,6 +19,8 @@ const test = globalThis.__dumTest;
 
 test('strategies: catalogue contains the independently selectable behaviours', () => {
   assert.deepEqual(STRATEGY_CATALOG.map(s => s.id), [
+    STRATEGY_IDS.AUTO_LEVEL_PLANNED,
+    STRATEGY_IDS.PLAY_FACTION_GAMES,
     STRATEGY_IDS.CREATE_WEAPONS, STRATEGY_IDS.CREATE_FOOD,
     STRATEGY_IDS.VS_SKELETONS, STRATEGY_IDS.CHECK_CV_CRATE,
     STRATEGY_IDS.SPREAD_OUT, STRATEGY_IDS.SELL_AND_BANK, STRATEGY_IDS.GUILD_TITHE,
@@ -163,6 +165,11 @@ test('strategies: Spread Out defaults off and its enabled caps preserve the old 
   assert.equal(assigned.filter(a => a.to === 10).length, 2);
   assert.equal(assigned.filter(a => a.to === 11).length, 2);
   assert.equal(assigned.filter(a => a.to === null).length, 2);
+  const travelling = spreadAssignments([
+    { agent: 'a', room: 11, policy: { assignedRoom: 10 } },
+    { agent: 'b', room: 10, policy: { assignedRoom: 11 } },
+  ], [10, 11], 1);
+  assert.deepEqual(Object.fromEntries(travelling.map(a => [a.row.agent, a.to])), { a: 10, b: 11 });
 });
 
 test('strategies: selling and banking values are independently maintained', () => {
@@ -278,13 +285,22 @@ test('strategies: Castle Victoria only pins rooms and walls when Spread Out is e
     [row.agent, [STRATEGY_IDS.SPREAD_OUT]])) } };
   const assigned = castleAssignments(rows, doctrine, obs);
   assert.equal(assigned.filter(a => a.to === 39).length, 4);
-  assert.equal(assigned.filter(a => a.to === 38).length, 4);
-  assert.equal(assigned.filter(a => a.to === null).length, 13);
+  assert.equal(assigned.filter(a => a.to === 38).length, 0);
+  assert.equal(assigned.filter(a => a.to === null).length, 17);
   assert.ok(assigned.filter(a => a.to != null).every(a => a.max_bots_per_safe_spot === 3));
   assert.deepEqual(new Set(assigned.map(a => a.hunt)),
-    new Set(['zombie', 'battered skeleton', 'skeleton']));
-  const skeleton = assigned.find(a => a.hunt === 'skeleton');
-  assert.equal(skeleton.row.level + skeleton.max_threat_over, 75);
+    new Set(['zombie', 'battered skeleton']));
+  const enRoute = [{ agent: 'traveller', in_game: true, level: 60, room: 826,
+    policy: { assignedRoom: 38 }, mode: 'farm' }];
+  const enRouteObs = { characters: enRoute,
+    strategies: { agents: { traveller: [STRATEGY_IDS.SPREAD_OUT] } } };
+  const mixedDoctrine = structuredClone(doctrine);
+  mixedDoctrine.castle_victoria.upstairs_share = 0.67;
+  assert.equal(castleAssignments(enRoute, mixedDoctrine, enRouteObs)[0].to, 38);
+  assert.equal(castleAssignments(enRoute, doctrine, enRouteObs)[0].to, 39,
+    'a retired room is not preserved merely because it was the previous assignment');
+  assert.equal(castleAssignments([{ ...enRoute[0], policy: {} }], doctrine, enRouteObs)[0].hunt,
+    'battered skeleton', 'a level-60 unit is never assigned a zombie that cannot advance it');
   const zombie = assigned.find(a => a.to === 39 && a.hunt === 'zombie');
   assert.equal(zombie.row.level + zombie.max_threat_over, 60,
     'an upstairs zombie assignment admits the battered skeleton sharing that generator');

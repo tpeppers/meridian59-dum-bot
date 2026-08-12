@@ -27,12 +27,15 @@ async function bodyOf(req) {
 }
 
 export class StrategyControlServer {
-  constructor({ store, journal = null, detailStats = null, resolveItems = null,
+  constructor({ store, factions = null, journal = null, detailStats = null, resolveItems = null,
+                resolveFactionStatuses = null,
                 url = 'http://127.0.0.1:8916' }) {
     this.store = store;
+    this.factions = factions;
     this.journal = journal;
     this.detailStats = detailStats;
     this.resolveItems = resolveItems;
+    this.resolveFactionStatuses = resolveFactionStatuses;
     this.url = new URL(url);
     if (!['127.0.0.1', 'localhost', '[::1]'].includes(this.url.hostname))
       throw new Error('strategy control must bind to loopback');
@@ -52,6 +55,38 @@ export class StrategyControlServer {
           return json(res, 200, { fleet: this.store.fleet,
             metrics: this.journal?.observability?.() ?? null,
             details: this.detailStats?.report?.({ hours }) ?? null });
+        }
+        if (u.pathname === '/factions') {
+          if (!this.factions) return json(res, 503, { error: 'faction goals are unavailable' });
+          if (req.method === 'GET') {
+            const agents = (u.searchParams.get('agents') ?? '').split(',')
+              .map(s => s.trim()).filter(Boolean);
+            const memberships = typeof this.resolveFactionStatuses === 'function'
+              ? await this.resolveFactionStatuses(agents) : {};
+            return json(res, 200, { ...this.factions.states(agents), memberships });
+          }
+          if (req.method === 'POST') {
+            const body = await bodyOf(req);
+            if (body.action === 'soldier') {
+              if (typeof this.resolveFactionStatuses !== 'function')
+                throw new Error('live faction membership lookup is unavailable');
+              const agents = [...new Set((body.agents ?? []).map(String).filter(Boolean))];
+              const memberships = await this.resolveFactionStatuses(agents);
+              for (const agent of agents) {
+                const status = memberships[agent];
+                if (!['duke', 'princess', 'rebel'].includes(status?.faction))
+                  throw new Error(`${agent} is not an observed member of a faction`);
+                if ((status?.max_health ?? 0) < 75)
+                  throw new Error(`${agent} needs at least 75 maximum health to become a soldier`);
+                if (status?.soldier) throw new Error(`${agent} is already a faction soldier`);
+              }
+              return json(res, 200, { ok: true,
+                ...this.factions.setSoldier(agents, memberships), memberships });
+            }
+            return json(res, 200, { ok: true,
+              ...this.factions.set(body.agents, body.faction ?? null) });
+          }
+          return json(res, 405, { error: 'method not allowed' });
         }
         if (u.pathname !== '/strategies') return json(res, 404, { error: 'not found' });
         if (req.method === 'GET') {

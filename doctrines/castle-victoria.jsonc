@@ -20,7 +20,10 @@
     "enabled": true,
     // Spread Out is deliberately absent: Castle patrols retain their quarry and safety
     // posture without being forced into different rooms or different wall squares.
-    "defaults": ["create-weapons", "vs-skeletons", "check-cv-crate", "create-food", "sell-and-bank", "max-weapons", "buy-food", "buy-weapons", "buy-reagents", "accumulate-in-vault", "farm-cleanup", "farm-delivery"],
+    // Farm delivery is opt-in too. A Castle seller otherwise follows its necessary town
+    // loop with an apothecary-and-six-recipient circuit; the bounded local almoner already
+    // shares the same reagents without turning a high-yield farmer into a long-haul courier.
+    "defaults": ["create-weapons", "vs-skeletons", "check-cv-crate", "create-food", "sell-and-bank", "max-weapons", "buy-food", "buy-weapons", "buy-reagents", "accumulate-in-vault", "farm-cleanup"],
     "settings": {
       "sell-and-bank": {
         "bank_above": 3000,
@@ -46,7 +49,10 @@
   "castle_victoria": {
     "shift": true,
     "rooms": { "downstairs": 38, "upstairs": 39 },
-    "upstairs_share": 0.67,
+    // The downstairs room currently has no keeper-detectable safe wall. Live samples
+    // sent its level-57 cohort through a fight/recover loop with no kills; upstairs has
+    // proven walls and level-60 prey that still advances the whole fleet.
+    "upstairs_share": 1,
     "retreat_to": 52,
     "rest_below": 0.75,
     "flee_below": 0.35,

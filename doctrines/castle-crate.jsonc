@@ -38,9 +38,10 @@
 
   "claim": {
     // The narrowest claim in this directory. `work` is what an errand is; nothing else
-    // is taken, so a character's orders, placement and economy stay exactly where the
-    // keeper and whatever supervisor is running left them.
-    "work": "bot"
+    // is changed. `movement` is also claimed because the errand takes step-by-step control
+    // while it is busy; the keeper keeps identity, mortality, survival and recovery.
+    "work": "bot",
+    "movement": "bot"
   },
 
   "crate": {

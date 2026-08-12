@@ -64,6 +64,7 @@ export const ORDER_FIELDS = {
   strategy_stats:     { policy: 'strategyStats', compare: sameObject },
   farm_cleanup:       { policy: 'farmCleanup', compare: sameObject },
   farm_delivery:      { policy: 'farmDelivery', compare: sameObject },
+  guild_tithe:        { policy: 'guildTithe', compare: sameObject },
 };
 
 function sameList(a, b) {

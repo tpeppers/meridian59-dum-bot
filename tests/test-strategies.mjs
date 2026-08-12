@@ -21,7 +21,7 @@ test('strategies: catalogue contains the independently selectable behaviours', (
   assert.deepEqual(STRATEGY_CATALOG.map(s => s.id), [
     STRATEGY_IDS.CREATE_WEAPONS, STRATEGY_IDS.CREATE_FOOD,
     STRATEGY_IDS.VS_SKELETONS, STRATEGY_IDS.CHECK_CV_CRATE,
-    STRATEGY_IDS.SPREAD_OUT, STRATEGY_IDS.SELL_AND_BANK,
+    STRATEGY_IDS.SPREAD_OUT, STRATEGY_IDS.SELL_AND_BANK, STRATEGY_IDS.GUILD_TITHE,
     STRATEGY_IDS.MAX_WEAPONS,
     STRATEGY_IDS.BUY_FOOD, STRATEGY_IDS.BUY_WEAPONS, STRATEGY_IDS.BUY_REAGENTS,
     STRATEGY_IDS.ACCUMULATE_IN_VAULT,
@@ -181,6 +181,18 @@ test('strategies: selling and banking values are independently maintained', () =
   assert.equal(intent.orders.max_carry, 50);
   assert.equal(intent.orders.sell_at_load, 0.95);
   assert.equal(intent.orders.sell_when_broke, false);
+});
+
+test('strategies: Guild Tithe installs a restart-safe daily sale-proceeds policy', () => {
+  const strategy = STRATEGY_CATALOG.find(s => s.id === STRATEGY_IDS.GUILD_TITHE);
+  assert.equal(strategy.settings[0].default, 2000);
+  const rule = economyRules.find(r => r.id === 'guild-tithe-policy');
+  const obs = { agent: 'member', policy: {}, keeper: { policy: { guildTithe: null } },
+    strategies: { agents: { member: [STRATEGY_IDS.GUILD_TITHE] }, settings: {} } };
+  const intent = rule.decide(obs, { strategies: { enabled: true, defaults: [], settings: {} } });
+  assert.deepEqual(intent.orders.guild_tithe, { enabled: true, daily_amount: 2000 });
+  obs.keeper.policy.guildTithe = intent.orders.guild_tithe;
+  assert.equal(rule.decide(obs, { strategies: { enabled: true, defaults: [], settings: {} } }), null);
 });
 
 test('strategies: Max Weapons defaults on at two and clears the keeper cap when disabled', () => {

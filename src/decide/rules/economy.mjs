@@ -157,6 +157,29 @@ export const economyRules = [
     },
   },
   {
+    id: 'guild-tithe-policy',
+    faculty: 'economy',
+    why: 'the Guild Tithe strategy taxes verified town-sale proceeds for guild rent',
+    enabled: doctrine => doctrine.strategies?.enabled === true,
+    offWhy: 'DUM strategies are disabled',
+    decide(obs, doctrine) {
+      const enabled = strategyEnabled(obs, doctrine, obs.agent, STRATEGY_IDS.GUILD_TITHE);
+      const wanted = enabled
+        ? { enabled: true,
+            daily_amount: strategySettings(obs, doctrine, obs.agent,
+              STRATEGY_IDS.GUILD_TITHE).daily_amount }
+        : null;
+      const live = obs.keeper?.policy?.guildTithe ?? obs.policy?.guildTithe ?? null;
+      if (sameObject(live, wanted)) return null;
+      if (!enabled && live == null) return null;
+      return { kind: 'orders', orders: { action: 'start', guild_tithe: wanted },
+        why: enabled
+          ? `reserve up to ${wanted.daily_amount} per day from actual town-sale proceeds for Frular`
+          : 'the Guild Tithe strategy is off, so stop taxing sale proceeds',
+        evidence: { want: wanted, keeper_has: live } };
+    },
+  },
+  {
     id: 'economy-thresholds',
     faculty: 'economy',
     why: 'the Sell Loot and Bank Surplus strategy owns this keeper\'s pack and purse thresholds',

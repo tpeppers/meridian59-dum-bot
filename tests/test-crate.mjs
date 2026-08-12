@@ -129,6 +129,16 @@ test('crate: hurt and committed characters are left alone', () => {
   eq(got.map(r => r.agent).join(','), 'free', 'only the unencumbered one');
 });
 
+test('crate: a takeable bot claim is ownership, not an operation in flight', () => {
+  const rows = [
+    inCastle('ours', { commitment: { kind: 'bot', takeable: true,
+      label: 'DUM is steering', detail: 'not an operation — nothing is mid-flight' } }),
+    inCastle('busy', { commitment: { kind: 'errand', takeable: false } }),
+  ];
+  const got = eligibleCheckers(rows, {});
+  eq(got.map(r => r.agent).join(','), 'ours', 'the correctly claimed character may run the errand');
+});
+
 test('crate: a row with no health reading is not eligible, because the floor means having looked', () => {
   const rows = [inCastle('unknown', { health: { value: null, max: null, pct: null } })];
   eq(eligibleCheckers(rows, {}).length, 0, 'null is not "fine"');
@@ -168,6 +178,13 @@ test('crate: ON by default, because the trip is nearly free from inside the cast
 test('crate: the null doctrine turns it back off, because a control that acts is not a control', () => {
   const { config } = loadDoctrine({ file: 'doctrines/survive.jsonc' });
   eq(config.crate.check, false, 'survive.jsonc overrides the default');
+});
+
+test('crate: the worked doctrine claims movement for the operation it drives', () => {
+  const { config } = loadDoctrine({ file: 'doctrines/castle-crate.jsonc' });
+  eq(config.claim.work, 'bot', 'the errand owns the decision');
+  eq(config.claim.movement, 'bot', 'and the step-by-step movement it performs');
+  eq(config.claim.survival, 'keeper', 'while the keeper retains the survival ladder');
 });
 
 test('crate: a quorum in the castle and an open window produces the errand, in order', () => {
@@ -333,6 +350,27 @@ test('crate: the character is freed even when a step failed', async () => {
   const applied = await runErrand(broker, intent, { commit: true, holder: 'dum/test@pid-1' });
   ok(applied.stopped, 'the errand failed');
   eq(seen.includes('free'), true, 'and the character was still handed back');
+});
+
+test('crate: a refused busy handoff aborts before movement', async () => {
+  const seen = [];
+  const broker = {
+    call: async (tool, args) => {
+      seen.push(`${tool}:${args.action ?? ''}`);
+      if (tool === 'autopilot' && args.action === 'busy')
+        return { busy: null, refused: 'nothing is claimed on this character' };
+      return { arrived: true };
+    },
+    write: async () => ({ dry_run: true }),
+  };
+  const intent = { rule: 'crate-check', kind: 'errand', why: 'x', orders: {
+    errand: 'crate-check', agent: 'role-b', steps: [
+      { tool: 'travel', args: { agent: 'role-b', to: 41 }, expect: 'arrived' },
+    ] } };
+  const applied = await runErrand(broker, intent, { commit: true, holder: 'dum/test@pid-1' });
+  ok(/could not mark busy/.test(applied.stopped), 'the refused ownership handoff stops the errand');
+  ok(!seen.some(x => x === 'travel:'), 'no movement was sent while the keeper still owned it');
+  ok(seen.includes('autopilot:free'), 'the cleanup path still hands it back');
 });
 
 test('crate: a dry run announces nothing — a plan must not change what the fleet believes', async () => {

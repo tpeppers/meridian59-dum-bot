@@ -20,13 +20,18 @@ something new. A dependency nobody wrote down is how two repositories drift.
 | `fleet` | the tick's spine: one call, N characters, with `stalled`, `parked`, `commitment` |
 | `status` | per-character vitals, room, keeper policy, keeper mode, commitment |
 | `progress`, `prey`, `inventory`, `bank` | fetched only when a loaded rule declared it needs them; opt-in crate outcome logging brackets the crate action with two inventory reads |
-| `autopilot` (`action: start`) | the single write surface for orders, including nullable `strategy_stats`, `farm_cleanup`, `farm_delivery`, and `guild_tithe`, the nullable `max_weapons` cap, and independent `buy_food`, `buy_weapons`, and `buy_reagents` permissions |
+| `autopilot` (`action: start`) | the single write surface for orders, including nullable `strategy_stats`, `farm_cleanup`, `farm_delivery`, and `guild_tithe`, the nullable `max_weapons` cap, independent `buy_food`, `buy_weapons`, and `buy_reagents` permissions, and `protect_items` for transient quest cargo that must stay in the pack rather than go to the vault |
 | process-wide interest board | fresh per-room farming demand (`needs.herb`, `needs.elderberry`) lets one town-returning keeper claim a destination and buy exact shared cargo |
 | `fleet[].coordination` | current-session clean-up and delivery counts; rotating keeper records provide the 2h/6h/24h drill-ins |
+| `fleet[].learning` | cache-only compendium plan + PlayerCanLearn view, including the first unfinished queue stage and its next currently buyable ability |
+| `buy_next_planned_skills` | localhost-only bounded errand: refresh advancement, select one ability from the first unfinished plan stage, fund its fixed price, visit a catalogue-backed teacher, verify acquisition, and restore the keeper |
+| `tithe` | source-audited exact payment to Frular; the keeper's `guild_tithe` policy invokes the same verified purse-delta primitive only after an actual town sale and keeps a durable per-character daily total |
 | `cast` (`create weapon` and `create food` only) | audited self-only maintenance spells; opt-in food outcome logging adds `observe_created:true` so the result carries a positive inventory delta |
 | `commitment` on the board | which characters the fleet is already using |
 | `travel`, `walk_to` | the two halves of an errand's movement. Both are a character *walking* at roughly a second a square, so a step may raise its own timeout — see `Broker.call` |
 | `act` **with `verb: "go"` only** | the only way to work a place-triggered square. `UserGo` (`user.kod:5656`) answers on whatever square the character is standing on, which is the mechanism behind stairs, doors, ladders and the Castle Victoria crate. Every other verb `act` carries reaches into the pack and is refused at the surface |
+| `faction_join` | the source-audited faction quest primitive: request sends only the fixed join phrase to the exact liege; offer permits only an assigned item and recipient from the server's join templates. DUM still cannot call general `say` or `trade` |
+| `fleet[].town_service_at` | session evidence that the keeper finished its sell/bank/restock cycle; a queued faction goal waits for this natural break before taking over, unless the unit is already free or the bounded fallback wait expires |
 
 DUM never calls `leave`, `join`, `reroll`, `godmode`, or `autopilot hard:true`, and
 `src/link/surface.mjs` refuses them rather than trusting itself.
@@ -175,11 +180,12 @@ square, and walks it back. For the two or three minutes that takes, the harness'
 
 Inside DUM that is safe by construction — `pass()` runs the fleet tick to
 completion before any character tick, so nothing here redirects a character
-mid-errand. **The exposure is `m59-supervise.mjs`**, the harness's own supervisor:
-it restarts stalled keepers, and a character mid-errand looks stalled by exactly the
-measure the harness's notes warn about — `ms_since_moved` is about the *keeper*,
-which is inert by design while an errand walks, so it climbs while the character is
-moving perfectly well.
+mid-errand. The harness now makes the same guarantee at its boundary: declaring
+`busy` cancels a keeper walk already in flight, and later keeper passes keep the
+death/danger/recovery ladder but yield before directional work. **The other exposure is
+`m59-supervise.mjs`**, the harness's own supervisor: a character mid-errand looks stalled
+by exactly the measure the harness's notes warn about — `ms_since_moved` is about the
+*keeper*, so it climbs while the character is moving perfectly well.
 
 The cost of losing that race was small — one abandoned check, and a character left in
 a basement its keeper walks out of — which is precisely why the crate was the right

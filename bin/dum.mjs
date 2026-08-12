@@ -21,6 +21,7 @@ import { characterRules, fleetRules } from '../src/decide/index.mjs';
 import { Journal } from '../src/record/journal.mjs';
 import { Memory } from '../src/record/memory.mjs';
 import { StrategyStore } from '../src/record/strategies.mjs';
+import { FactionGoalStore } from '../src/record/factions.mjs';
 import { DetailStats } from '../src/record/detail-stats.mjs';
 import { StrategyControlServer } from '../src/link/strategy-control.mjs';
 import { pass } from '../src/loop/tick.mjs';
@@ -88,6 +89,9 @@ function context({ config, commit }) {
     dir: config.record.strategy_dir, fleet: config.fleet,
     defaults: config.strategies.defaults, settings: config.strategies.settings, enabled: commit,
   });
+  const factions = new FactionGoalStore({
+    dir: config.record.faction_dir, fleet: config.fleet, enabled: commit,
+  });
   const detailStats = new DetailStats({
     dir: config.record.strategy_stats_dir, enabled: commit,
   });
@@ -98,16 +102,21 @@ function context({ config, commit }) {
     dryRun: !commit,
     onCall: e => journal.write({ kind: 'call', ...e }),
   });
-  const strategyServer = commit && config.strategies.enabled
-    ? new StrategyControlServer({ store: strategies, journal, detailStats,
+  // The same loopback server carries strategy assignments and durable faction goals.
+  // Factions are independent of the optional strategy catalogue, so a committed DUM
+  // run must expose this control plane even when strategies.enabled is false.
+  const strategyServer = commit
+    ? new StrategyControlServer({ store: strategies, factions, journal, detailStats,
         resolveItems: items => broker.call('resolve_item_names', { items }),
+        resolveFactionStatuses: async agents => Object.fromEntries(await Promise.all(
+          agents.map(async agent => [agent, await broker.call('faction_status', { agent })]))),
         url: config.link.strategy_control_url }) : null;
   // WHO DUM IS, ON THE WIRE. One string, computed once, because it is an identity the
   // harness checks rather than a label: only the holder of a claim may declare that
   // character busy or free it again, so a second spelling of this would be a second
   // process as far as the broker is concerned — able to claim, unable to release.
   const holder = `dum/${config.name}@pid-${process.pid}`;
-  return { broker, config, journal, memory, strategies, detailStats, strategyServer,
+  return { broker, config, journal, memory, strategies, factions, detailStats, strategyServer,
            commit, holder, only: agentFlag() };
 }
 

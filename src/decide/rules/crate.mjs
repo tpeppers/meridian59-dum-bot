@@ -163,7 +163,12 @@ export function eligibleCheckers(rows, crate = {}, {
     // kind that does not block a change of orders — but this one WALKS THE CHARACTER OUT
     // OF THE ROOM, and the other half of the pair is standing in the castle waiting for
     // somebody who is now in a basement.
-    !r.commitment?.kind &&
+    // A `bot` commitment with `takeable: true` is the harness describing DUM's own
+    // faculty claim, not an operation in flight. Treating ownership as work already in
+    // progress excludes every correctly claimed character and makes the crate rule run
+    // only during the broken interval after a broker restart. Real errands, driven
+    // operations, and pairings remain non-takeable and stay excluded.
+    (!r.commitment?.kind || r.commitment.takeable === true) &&
     r.agent !== finder &&
     (r.level ?? 0) >= minLevel &&
     // null health is not zero health: a row that did not report is not eligible, because

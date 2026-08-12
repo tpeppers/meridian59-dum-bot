@@ -206,6 +206,36 @@ export async function enrichMaintenance(broker, rows = []) {
   return rows;
 }
 
+/** Add inventory only for units whose durable faction goal is waiting on cargo. */
+export async function enrichFactionInventory(broker, rows = []) {
+  for (const row of rows) {
+    try {
+      const inventory = await broker.call('inventory', { agent: row.agent });
+      row.items = Array.isArray(inventory?.items) ? inventory.items : [];
+      row.faction_inventory_error = null;
+    } catch (e) {
+      row.items = null;
+      row.faction_inventory_error = e.message;
+    }
+  }
+  return rows;
+}
+
+/** Inspect only strategy-selected rooms for opposing visible token carriers. */
+export async function enrichFactionGames(broker, rows = []) {
+  for (const row of rows) {
+    try {
+      row.faction_game = await broker.call('faction_game', { agent: row.agent, action: 'scan' },
+        { timeoutMs: 45_000 });
+      row.faction_game_error = null;
+    } catch (e) {
+      row.faction_game = null;
+      row.faction_game_error = e.message;
+    }
+  }
+  return rows;
+}
+
 /** Add the server's cached use-list without refreshing inventory during a fight. */
 export async function enrichEquipment(broker, rows = []) {
   for (const row of rows) {

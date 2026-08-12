@@ -136,9 +136,10 @@ export const economyRules = [
     offWhy: 'DUM strategies are disabled',
     decide(obs, doctrine) {
       const enabled = strategyEnabled(obs, doctrine, obs.agent, STRATEGY_IDS.ACCUMULATE_IN_VAULT);
-      const wanted = enabled
+      const configured = enabled
         ? strategySettings(obs, doctrine, obs.agent, STRATEGY_IDS.ACCUMULATE_IN_VAULT).items
         : [];
+      const wanted = configured;
       const live = obs.keeper?.policy?.vaultItems ?? obs.policy?.vaultItems ?? null;
       const held = Array.isArray(live) ? live.map(String) : [];
       if (held.length === wanted.length && held.every((v, i) => v === wanted[i])) return null;

@@ -1,5 +1,6 @@
 import { keeperWeaponPriority } from '../weapons.mjs';
 import { STRATEGY_IDS, strategyEnabled, strategySettings } from '../../strategies/catalog.mjs';
+import { activeFactionWork } from './factions.mjs';
 
 const sameList = (a, b) => Array.isArray(a) && Array.isArray(b) &&
   a.length === b.length && a.every((x, i) => x === b[i]);
@@ -28,7 +29,17 @@ export function castleAssignments(rows = [], doctrine = {}, fleetObs = { charact
       maxBotsPerSafeSpot = settings.max_bots_per_safe_spot;
       const preferred = i < upstairsCount ? cv.rooms.upstairs : cv.rooms.downstairs;
       const other = preferred === cv.rooms.upstairs ? cv.rooms.downstairs : cv.rooms.upstairs;
-      to = [row.room, preferred, other].find(room => counts.has(room) &&
+      // Preserve the policy assignment while the character is travelling through some
+      // intermediate room. Current room used to win here, so a cohort/rank change could
+      // rewrite 38 to 39 between two travel legs and start a return journey.
+      // A 100%/0% split deliberately retires one room. Do not let the sticky-assignment
+      // guard preserve a room the doctrine has removed from service; in a mixed split it
+      // still prevents an en-route character from changing destinations mid-journey.
+      const allowed = cv.upstairs_share >= 1 ? new Set([cv.rooms.upstairs])
+        : cv.upstairs_share <= 0 ? new Set([cv.rooms.downstairs])
+        : new Set([cv.rooms.upstairs, cv.rooms.downstairs]);
+      to = [row.policy?.assignedRoom, row.room, preferred, other].find(room =>
+        allowed.has(room) && counts.has(room) &&
         (counts.get(room) ?? 0) < maxPerRoom) ?? null;
       if (to != null) counts.set(to, (counts.get(to) ?? 0) + 1);
     }
@@ -37,7 +48,12 @@ export function castleAssignments(rows = [], doctrine = {}, fleetObs = { charact
     const upstairs = effectiveRoom !== cv.rooms.downstairs;
     // Downstairs targets skeletons. Upstairs (and a unit still travelling there) uses
     // a stable 2:1 battered-skeleton/zombie mix.
-    const hunt = upstairs ? (i % 3 === 2 ? 'zombie' : 'battered skeleton') : 'skeleton';
+    // A kill advances only while monster level is strictly above max health. Zombies
+    // stop paying at 55, so the mature cohort must not spend its safe upstairs time on
+    // them merely to preserve the old 2:1 room mix.
+    const zombieStillPays = (row.level ?? 0) < 55;
+    const hunt = upstairs ? (zombieStillPays && i % 3 === 2 ? 'zombie' : 'battered skeleton')
+                          : 'skeleton';
     // The keeper's ceiling gates the WHOLE generator, not only the quarry. A zombie
     // hunter assigned upstairs still shares the room with level-60 battered skeletons;
     // setting its ceiling to the zombie's 55 makes preyRooms() reject its own assigned
@@ -71,7 +87,8 @@ export const castleVictoriaFleetRules = [{
   offWhy: 'castle_victoria.shift is off',
 
   decide(fleetObs, doctrine) {
-    const live = (fleetObs.characters ?? []).filter(r => r.in_game && !r.parked);
+    const live = (fleetObs.characters ?? []).filter(r => r.in_game && !r.parked &&
+      !activeFactionWork(fleetObs, r));
     if (!live.length) return { kind: 'pass', why: 'nobody in game' };
     const cv = doctrine.castle_victoria;
     const assigned = castleAssignments(live, doctrine, fleetObs).map(a => {

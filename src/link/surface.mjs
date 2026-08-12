@@ -31,7 +31,7 @@ const NEVER = {
 export const READ = new Set([
   'fleet', 'status', 'progress', 'inventory', 'equipment', 'abilities', 'spells',
   'loadout', 'look', 'map', 'safe_spots', 'hunting_grounds', 'prey', 'history', 'post_mortem',
-  'who', 'safety', 'merchants', 'signets', 'bank', 'resolve_item_names',
+  'who', 'safety', 'merchants', 'signets', 'bank', 'resolve_item_names', 'faction_status',
 ]);
 
 // ---------------------------------------------------------------- write
@@ -51,6 +51,16 @@ export const WRITE = new Set([
   'bank', 'sell', 'sell_all', 'shop', 'supply', 'quartermaster',
   // Errands the harness already knows how to run end to end.
   'loot_run', 'rest_up', 'equip_best', 'wear_best', 'escape_underworld',
+  // One bounded, localhost-only planner errand. The harness chooses from the first
+  // unfinished queue stage, funds one fixed-price ability, verifies it, and restores
+  // the keeper; DUM cannot name an arbitrary purchase through this surface.
+  'buy_next_planned_skills',
+  // One source-audited quest primitive. It permits only the fixed join phrase and an
+  // exact quest-item offer to an exact faction recipient; general say/trade stay out.
+  'faction_join',
+  // Source-audited promotion and explicitly opt-in token PvP. Both broker tools
+  // enforce exact targets and faction/profile preconditions; general fight remains out.
+  'faction_soldier', 'faction_game',
   // Provisioning may cast exactly one audited, self-only service spell. The argument
   // guard below keeps widening this surface from also widening DUM into combat magic.
   'cast',

@@ -29,6 +29,52 @@ import { pass } from './tick.mjs';
 
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 
+/**
+ * Renew the claims a running DUM process believes it owns, reacquiring any a restarted
+ * broker no longer remembers.
+ *
+ * Claims live in the broker process, while `mine` lives in DUM. A broker restart used to
+ * leave those two facts disagreeing for the rest of the DUM run: heartbeat returned an
+ * empty `renewed` list, which was a successful RPC and therefore looked healthy, and
+ * `claimFor` skipped the agent because `mine` still contained it. Keep the desired entry
+ * in `mine` even while the session is out of game so every later heartbeat retries.
+ */
+export async function heartbeatClaims(broker, mine, { holder, leaseMs, journal }) {
+  for (const [agent, faculties] of mine.entries()) {
+    const beat = await broker.call('autopilot', {
+      agent, action: 'heartbeat', by: holder, lease_ms: leaseMs,
+    }).catch(e => ({ error: e.message }));
+    if (beat?.error) {
+      journal.write({ kind: 'heartbeat-failed', agent, why: beat.error });
+      continue;
+    }
+
+    const renewed = beat?.renewed ?? [];
+    const missing = faculties.filter(f => !renewed.includes(f));
+    if (!missing.length) continue;
+
+    journal.write({ kind: 'claim-lost', agent, missing, renewed,
+      why: 'the broker no longer holds faculties DUM previously acquired — usually a broker restart' });
+    const claimed = await broker.call('autopilot', {
+      agent, action: 'claim', faculties, by: holder, lease_ms: leaseMs,
+      why: 'restoring this running doctrine after the broker forgot its in-memory claim',
+    }).catch(e => ({ error: e.message }));
+    if (claimed?.error) {
+      journal.write({ kind: 'claim-restore-failed', agent, why: claimed.error, missing });
+      continue;
+    }
+    const granted = claimed?.granted ?? [];
+    const stillMissing = faculties.filter(f => !granted.includes(f));
+    if (stillMissing.length) {
+      journal.write({ kind: 'claim-restore-failed', agent,
+        why: `did not grant ${stillMissing.join(', ')}`, granted, refused: claimed?.refused ?? [] });
+      continue;
+    }
+    journal.write({ kind: 'claim-restored', agent, granted,
+      why: 'the broker restarted and this still-running DUM process reacquired its directional faculties' });
+  }
+}
+
 export async function run(ctx, { onPass = () => {} } = {}) {
   const { config, journal } = ctx;
   let stopping = false;
@@ -98,9 +144,7 @@ export async function run(ctx, { onPass = () => {} } = {}) {
 
   async function heartbeat() {
     if (!ctx.commit) return;
-    for (const agent of mine.keys())
-      await ctx.broker.call('autopilot', { agent, action: 'heartbeat', by: holder, lease_ms: leaseMs })
-        .catch(e => journal.write({ kind: 'heartbeat-failed', agent, why: e.message }));
+    await heartbeatClaims(ctx.broker, mine, { holder, leaseMs, journal });
   }
 
   async function releaseAll() {

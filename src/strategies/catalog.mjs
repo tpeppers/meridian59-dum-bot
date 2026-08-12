@@ -22,9 +22,35 @@ export const STRATEGY_IDS = Object.freeze({
   FARM_CLEANUP: 'farm-cleanup',
   FARM_DELIVERY: 'farm-delivery',
   DETAILED_STATS: 'detailed-strategy-stats',
+  PLAY_FACTION_GAMES: 'play-faction-games',
+  AUTO_LEVEL_PLANNED: 'auto-level-planned-school',
 });
 
 export const STRATEGY_CATALOG = Object.freeze([
+  Object.freeze({
+    id: STRATEGY_IDS.AUTO_LEVEL_PLANNED,
+    title: 'Auto-level next planned spell/skill school when available',
+    group: 'Character development',
+    purpose: 'Planned ability acquisition',
+    requirements: ['An acquisition queue saved by the compendium planner',
+      'The first unfinished queue level is currently learnable',
+      'A catalogue-backed teacher and enough purse or banked shillings'],
+    description: 'At a quiet fleet boundary, buy one ability from the first unfinished planner queue level, verify it, and leave later levels closed until every ability in the current level is known.',
+    settings: Object.freeze([
+      Object.freeze({ id: 'max_parallel', title: 'Maximum simultaneous learning errands',
+        type: 'integer', min: 1, max: 4, default: 2,
+        description: 'Bound teacher trips started by one fleet pass so learning cannot monopolise the broker pacer.' }),
+    ]),
+  }),
+  Object.freeze({
+    id: STRATEGY_IDS.PLAY_FACTION_GAMES,
+    title: 'Play faction games',
+    group: 'Faction operations',
+    purpose: 'Explicit opt-in Council-token PvP',
+    requirements: ['Observed faction membership', 'Freshly verified opposing token carrier',
+      'Ordinary combat readiness'],
+    description: 'Inspect nearby players for a visible Council token, fight only verified carriers from another faction, recover a dropped token, and deliver it to the unit\'s own liege when no positively verified weak councilor is known.',
+  }),
   Object.freeze({
     id: STRATEGY_IDS.CREATE_WEAPONS,
     title: 'Create Weapons to keep Equipped',

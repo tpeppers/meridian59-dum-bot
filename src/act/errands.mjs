@@ -63,6 +63,14 @@ import { recordCrateCheck } from '../decide/rules/crate.mjs';
  */
 export const ERRANDS = {
   'crate-check': { record: recordCrateCheck, topic: 'crate' },
+  // These leave progress in FactionGoalStore rather than the general Memory topics.
+  'faction-request': { record: null, topic: null },
+  'faction-offer': { record: null, topic: null },
+  'soldier-request': { record: null, topic: null },
+  'soldier-hunt': { record: null, topic: null },
+  'soldier-report': { record: null, topic: null },
+  'faction-game-engage': { record: null, topic: null },
+  'faction-game-deliver': { record: null, topic: null },
 };
 
 /**
@@ -96,7 +104,9 @@ const CEILING_MS = 15 * 60_000;
 // What each tool costs when a step does not say. `travel` is a character WALKING at
 // roughly a second a square and a route can be twenty-five hops; the rest are one action
 // through the pacer.
-const DEFAULT_ESTIMATE_MS = { travel: 120_000, walk_to: 45_000, act: 5_000, autopilot: 2_000 };
+const DEFAULT_ESTIMATE_MS = { travel: 120_000, walk_to: 45_000, act: 5_000,
+  autopilot: 2_000, faction_join: 10_000, faction_soldier: 150_000,
+  faction_game: 150_000 };
 
 /** The padded window this errand wants, from the steps it is about to run. */
 export function estimateFor(steps = []) {
@@ -122,11 +132,12 @@ export async function runErrand(broker, intent, { commit = false, holder = null,
 
   // SAY SO BEFORE WALKING, AND SAY SO EVEN IF THE WALK FAILS.
   //
-  // An errand makes a character look stalled to everything watching it: the keeper is
-  // inert by design for the length of it, and `ms_since_moved` measures the KEEPER, so it
-  // climbs while the character is moving perfectly well. The harness's own supervisor
-  // reads that as a stall and restarts the keeper out from under the errand — and every
-  // line of both logs looks like success.
+  // An errand makes a character look stalled to everything watching it: while `busy`, the
+  // keeper still owns death, danger and recovery but yields before directional work, and
+  // `ms_since_moved` measures the KEEPER, so it climbs while the character is moving
+  // perfectly well. The harness's own supervisor would otherwise read that as a stall and
+  // restart the keeper out from under the errand — and every line of both logs would look
+  // like success.
   //
   // `busy` is the harness's answer to that: it is leased, only the faculty holder may set
   // it, and it makes every stall detector in the fleet step over the character. The claim
@@ -145,12 +156,14 @@ export async function runErrand(broker, intent, { commit = false, holder = null,
       label: intent.orders.label ?? errand,
       why: note ?? intent.why, lease_ms: Math.round(ms),
     }).catch(e => ({ error: e.message }));
-    if (said?.error) results.push({ tool: 'autopilot', args: { action: 'busy', lease_ms: Math.round(ms) },
+    if (said?.error || said?.refused) results.push({ tool: 'autopilot', args: { action: 'busy', lease_ms: Math.round(ms) },
       result: said,
-      why: 'could not mark the character busy — a stall detector may restart its keeper mid-errand' });
+      why: 'could not mark the character busy — the keeper still has directional control, so the errand must not walk' });
     return said;
   };
-  await claimBusy(lease, `${intent.why} (expects about ${Math.round(lease / 1000)}s)`);
+  const announced = await claimBusy(lease, `${intent.why} (expects about ${Math.round(lease / 1000)}s)`);
+  if (announced?.error || announced?.refused)
+    stopped = `could not mark busy (${announced.error ?? announced.refused})`;
 
   for (let i = 0; i < steps.length; i++) {
     const step = steps[i];
@@ -166,7 +179,11 @@ export async function runErrand(broker, intent, { commit = false, holder = null,
     // walking a hundred squares.
     if (i > 0 && !stopped) {
       const left = estimateFor(steps.slice(i));
-      if (left > 15_000) await claimBusy(left, `${intent.why} (${steps.length - i} step(s) left)`);
+      if (left > 15_000) {
+        const extended = await claimBusy(left, `${intent.why} (${steps.length - i} step(s) left)`);
+        if (extended?.error || extended?.refused)
+          stopped = `could not extend busy (${extended.error ?? extended.refused})`;
+      }
     }
     if (stopped && !step.always) {
       results.push({ tool: step.tool, skipped: true, why: `after ${stopped}` });
@@ -175,7 +192,7 @@ export async function runErrand(broker, intent, { commit = false, holder = null,
     // A STEP WITH NO TARGET IS SKIPPED, NOT SENT. The return leg's destination is the
     // room the character came from, and a board row that did not report a room number
     // would otherwise become `travel to undefined`.
-    if (Object.values(step.args ?? {}).some(v => v === undefined || v === null)) {
+    if (Object.values(step.args ?? {}).some(v => v === undefined || (v === null && !step.allow_null))) {
       results.push({ tool: step.tool, skipped: true, why: 'an argument was not known' });
       continue;
     }
@@ -216,6 +233,7 @@ export async function runErrand(broker, intent, { commit = false, holder = null,
     acted: commit, kind: commit ? 'errand' : 'dry-run-errand',
     errand, agent, sent: steps.map(s => ({ tool: s.tool, args: s.args })),
     results, transcript, stopped,
+    context: intent.orders?.context ?? null,
     why: intent.why,
   };
 }
@@ -229,7 +247,7 @@ export async function runErrand(broker, intent, { commit = false, holder = null,
  */
 export function readErrand(applied, { at, memory = {} }) {
   const spec = ERRANDS[applied?.errand];
-  if (!spec || !applied.acted) return null;
+  if (!spec?.record || !applied.acted) return null;
   // The PRE-errand snapshot, and the topic comes from the registry rather than from the
   // caller: a tick naming the topic itself would have to be edited every time an errand
   // is added, and the failure of forgetting is that the new errand's memory is merged

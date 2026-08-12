@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { shareOut, shortfalls, mootFleetRules } from '../src/decide/rules/moot.mjs';
 import { RuleSet, decide } from '../src/decide/engine.mjs';
 import { apply } from '../src/act/orders.mjs';
-import { fleetIntentAgents, fleetPlanAgents } from '../src/loop/tick.mjs';
+import { ensureFleetIntentClaim, fleetIntentAgents, fleetPlanAgents } from '../src/loop/tick.mjs';
 
 const test = globalThis.__dumTest;
 
@@ -78,6 +78,11 @@ test('moot: claim targets distinguish a destination room from a recipient agent'
   ]), ['a', 'b']);
 });
 
-test('fleet tick: an errand claims its actor without requiring a fleet plan', () => {
-  assert.deepEqual(fleetIntentAgents({ kind: 'errand', agent: 'scout', plan: null }), ['scout']);
+test('fleet tick: an errand claims its actor before apply without requiring a fleet plan', async () => {
+  const claimed = [];
+  const agents = await ensureFleetIntentClaim({
+    ensureClaim: async names => claimed.push(...names),
+  }, { kind: 'errand', agent: 'scout', plan: null });
+  assert.deepEqual(agents, ['scout']);
+  assert.deepEqual(claimed, ['scout']);
 });

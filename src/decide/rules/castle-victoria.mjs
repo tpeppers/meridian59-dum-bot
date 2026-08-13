@@ -24,6 +24,28 @@ export function castleAssignments(rows = [], doctrine = {}, fleetObs = { charact
     const spreading = strategyEnabled(fleetObs, doctrine, row.agent, STRATEGY_IDS.SPREAD_OUT);
     let to = null;
     let maxBotsPerSafeSpot = null;
+    // A RETIRED ROOM IS THE SHIFT'S DECISION, NOT SPREAD OUT'S — and it used to be
+    // unreachable without it.
+    //
+    // The division of labour is: the shift owns WHICH room the fleet works; Spread Out
+    // owns the occupancy cap and the balancing across two of them. But `to` was only ever
+    // set inside the `spreading` branch, so on a doctrine with Spread Out off — which this
+    // one is, deliberately — nobody was assigned anywhere, `effectiveRoom` fell back to
+    // wherever the character already stood, and the quarry was derived from that.
+    //
+    // The visible consequence is that moving `upstairs_share` to 0 or 1 DID NOTHING: the
+    // fleet stayed in the room it was already in and went on hunting that room's prey,
+    // while the doctrine said otherwise and every journal line agreed with the doctrine.
+    // Found when retargeting the Castle fleet off the level-60 battered skeleton, which it
+    // had outgrown, onto the level-75 skeleton downstairs — the whole change would have
+    // been silently inert.
+    //
+    // A share of 0 or 1 names exactly one room, so there is nothing to balance and no need
+    // for Spread Out to be involved. `maxBotsPerSafeSpot` stays null: the wall cap really
+    // is Spread Out's, and naming a room must not start pinning walls as a side effect.
+    const onlyRoom = cv.upstairs_share >= 1 ? cv.rooms.upstairs
+      : cv.upstairs_share <= 0 ? cv.rooms.downstairs : null;
+    if (!spreading && onlyRoom != null) to = onlyRoom;
     if (spreading) {
       const settings = strategySettings(fleetObs, doctrine, row.agent, STRATEGY_IDS.SPREAD_OUT);
       maxBotsPerSafeSpot = settings.max_bots_per_safe_spot;
@@ -44,7 +66,15 @@ export function castleAssignments(rows = [], doctrine = {}, fleetObs = { charact
       if (to != null) counts.set(to, (counts.get(to) ?? 0) + 1);
     }
 
-    const effectiveRoom = to ?? row.room;
+    // A RETIRED ROOM ALSO DECIDES THE QUARRY, even for a character with no assignment.
+    //
+    // `to` is null whenever the occupancy cap is already met, and the fallback to
+    // `row.room` then reads the quarry off wherever the character is standing — which,
+    // during a migration, is the room being retired. So the last few characters over the
+    // cap would keep hunting the old prey in the old room, indefinitely and invisibly,
+    // because every other signal says the fleet was retargeted. `onlyRoom` sits ahead of
+    // the fallback so a one-room doctrine answers for them too.
+    const effectiveRoom = to ?? onlyRoom ?? row.room;
     const upstairs = effectiveRoom !== cv.rooms.downstairs;
     // Downstairs targets skeletons. Upstairs (and a unit still travelling there) uses
     // a stable 2:1 battered-skeleton/zombie mix.

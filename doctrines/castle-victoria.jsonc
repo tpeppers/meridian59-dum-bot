@@ -49,10 +49,32 @@
   "castle_victoria": {
     "shift": true,
     "rooms": { "downstairs": 38, "upstairs": 39 },
-    // The downstairs room currently has no keeper-detectable safe wall. Live samples
-    // sent its level-57 cohort through a fight/recover loop with no kills; upstairs has
-    // proven walls and level-60 prey that still advances the whole fleet.
-    "upstairs_share": 1,
+    // DOWNSTAIRS (38), FOR THE FULL LEVEL-75 SKELETON. This was 1 — everybody upstairs —
+    // on the grounds that "downstairs has no keeper-detectable safe wall; upstairs has
+    // proven walls and level-60 prey that still advances the whole fleet". Both halves of
+    // that have stopped being true, so it is corrected here rather than left standing as a
+    // comment nobody re-measured.
+    //
+    // A KILL PAYS ONLY WHILE THE CREATURE'S LEVEL IS STRICTLY ABOVE MAX HEALTH, and max
+    // health IS the level here. Eighteen of twenty-one characters are now at exactly 60,
+    // which is the battered skeleton's level — so upstairs pays those eighteen NOTHING,
+    // indefinitely, while reporting kills the whole time. That is precisely the failure
+    // `yieldCheck` exists to name: everything works and none of it is worth anything. The
+    // full skeleton is level 75 and still advances every character here.
+    //
+    // AND THE SAFE-WALL CLAIM IS NOW BACKWARDS. Measured against
+    // substrate/m59-safespots.json on 2026-08-13: room 39 has 132 squares tested and ZERO
+    // that held without later failing; room 38 has 147 tested and three still standing
+    // (24,4 / 12,4 / 27,4). Neither room is comfortable — a discredited square is
+    // discredited for ever, so both records are mostly wreckage — but downstairs is the
+    // one with anything left.
+    //
+    // THE PRECONDITION IS THE ENGAGEMENT CEILING, and it is enforced rather than assumed:
+    // `refuseEngagement` refuses a creature whose level exceeds round(max_health * 1.5), so
+    // a level-75 skeleton needs max health >= 50. The whole fleet clears it (lowest 53).
+    // A YOUNGER FLEET MUST SET THIS BACK TO 1 — under 50 max health every character would
+    // refuse the only prey its assigned room generates and stand in it doing nothing.
+    "upstairs_share": 0,
     "retreat_to": 52,
     "rest_below": 0.75,
     "flee_below": 0.35,

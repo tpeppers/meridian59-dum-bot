@@ -125,6 +125,19 @@ export function validate(c) {
   // ---- prey and placement
   if (!num(c.prey?.max_threat_over) || c.prey.max_threat_over < 0)
     say('prey.max_threat_over', 'must be a non-negative number of levels');
+  // The ceiling the harness actually consults. Validated as a POSITIVE percentage rather
+  // than a non-negative one: zero would refuse every fight, which reads as a broken keeper
+  // rather than as a cautious policy, and 100 already means "nothing above my own level".
+  // The ceiling the harness actually consults, in either shape.
+  if (c.prey?.threat_ceiling !== undefined) {
+    const tc = c.prey.threat_ceiling;
+    if (!tc || typeof tc !== 'object' || !['percent', 'flat'].includes(tc.mode ?? 'percent'))
+      say('prey.threat_ceiling', 'must be {mode:"percent"|"flat", value:N}');
+    else if (!num(tc.value) || tc.value < 0 || ((tc.mode ?? 'percent') === 'percent' && tc.value <= 0))
+      say('prey.threat_ceiling.value', (tc.mode === 'flat')
+        ? 'a flat band is a non-negative number of levels above max health'
+        : 'a percentage must be positive — 150 lets a character fight up to 1.5x its own level');
+  }
   if (!Array.isArray(c.placement?.rooms)) say('placement.rooms', 'must be a list of room numbers');
   else if (c.placement.rooms.some(r => !Number.isInteger(r)))
     say('placement.rooms', 'room numbers are integers — names are not stable across a map rebuild');

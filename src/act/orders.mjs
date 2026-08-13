@@ -60,6 +60,10 @@ export const ORDER_FIELDS = {
   decide_ms:         { policy: 'decideMs' },
   resync_ms:         { policy: 'resyncMs' },
   max_threat_over:   { policy: 'maxThreatOver' },
+  // The engagement ceiling, as a percentage of max health. Supersedes max_threat_over,
+  // which the harness still accepts and no longer consults — a flat number of levels is a
+  // different bet at each end of a roster, and this one is the same everywhere.
+  threat_ceiling:    { policy: 'threatCeiling', compare: sameObject },
   break_out_via_logoff: { policy: 'breakOutViaLogoff' },
   vault_items:        { policy: 'vaultItems', compare: sameList },
   protect_items:      { policy: 'protectedItems', compare: sameList },

@@ -8,7 +8,7 @@
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { sanitise } from './memory.mjs';
-import { FACTION_CATALOG, QUEST_LIMIT_MS, SOLDIER_STAGE_LIMIT_MS, factionId }
+import { FACTION_CATALOG, QUEST_LIMIT_MS, SOLDIER_STAGE_LIMIT_MS, LOYALTY_LIMIT_MS, factionId }
   from '../factions/catalog.mjs';
 
 const STATUSES = new Set(['queued', 'acquiring', 'complete', 'cancelled']);
@@ -63,6 +63,40 @@ const cleanSoldierGoal = value => {
   };
 };
 
+// KEEPING A FACTION IS A THIRD KIND OF GOAL, AND ITS CLOCK IS THE SERVER'S, NOT OURS.
+//
+// A join goal is a standing wish an operator expressed, and so is a soldier goal. A
+// LOYALTY goal is neither: it is created by something the SERVER said, it has a deadline
+// nobody here chose, and it ends by itself whether or not anything is done about it.
+//
+// So it carries two clocks and they must not be collapsed into one. `due_at` is the
+// four-hour grace that began with the warning — when the membership goes if nothing is
+// done. `deadline_at` is the one-hour quest timer that begins with the liege's REPLY, and
+// which is a shorter, harsher clock accepted deliberately in exchange for a chance. One
+// field for both would lose the difference between "there is still time to start" and
+// "the attempt in flight is running out", which are opposite instructions.
+const LOYALTY_STATUSES = new Set(['owed', 'acquiring', 'serving', 'complete', 'failed', 'cancelled']);
+
+const cleanLoyaltyGoal = value => {
+  if (!value || typeof value !== 'object') return null;
+  let faction;
+  try { faction = factionId(value.faction); } catch { return null; }
+  return {
+    faction, status: LOYALTY_STATUSES.has(value.status) ? value.status : 'owed',
+    warned_at: Number(value.warned_at) || null,
+    due_at: Number(value.due_at) || null,
+    deadline_at: Number(value.deadline_at) || null,
+    retry_after: Number(value.retry_after) || null,
+    attempts: Math.max(0, Number(value.attempts) || 0),
+    item: typeof value.item === 'string' ? value.item : null,
+    target: typeof value.target === 'string' ? value.target : null,
+    target_room: Number.isInteger(value.target_room) ? value.target_room : null,
+    previous: value.previous && typeof value.previous === 'object' ? value.previous : null,
+    completed_at: Number(value.completed_at) || null,
+    last_error: typeof value.last_error === 'string' ? value.last_error : null,
+  };
+};
+
 export class FactionGoalStore {
   constructor({ dir = 'var/factions', fleet = null, enabled = true, now = () => Date.now() } = {}) {
     this.dir = resolve(dir);
@@ -74,19 +108,21 @@ export class FactionGoalStore {
   }
 
   read() {
-    if (!existsSync(this.path)) return { version: 2, agents: {}, soldiers: {} };
+    if (!existsSync(this.path)) return { version: 2, agents: {}, soldiers: {}, loyalty: {} };
     try {
       const raw = JSON.parse(readFileSync(this.path, 'utf8'));
       return { version: 2, agents: Object.fromEntries(Object.entries(raw?.agents ?? {})
         .map(([agent, goal]) => [String(agent), cleanGoal(goal)]).filter(([, goal]) => goal)),
         soldiers: Object.fromEntries(Object.entries(raw?.soldiers ?? {})
-          .map(([agent, goal]) => [String(agent), cleanSoldierGoal(goal)]).filter(([, goal]) => goal)) };
+          .map(([agent, goal]) => [String(agent), cleanSoldierGoal(goal)]).filter(([, goal]) => goal)),
+        loyalty: Object.fromEntries(Object.entries(raw?.loyalty ?? {})
+          .map(([agent, goal]) => [String(agent), cleanLoyaltyGoal(goal)]).filter(([, goal]) => goal)) };
     } catch (error) {
       if (!this.warned) {
         process.stderr.write(`factions: ${this.path} did not parse (${error.message}) - using no goals\n`);
         this.warned = true;
       }
-      return { version: 2, agents: {}, soldiers: {} };
+      return { version: 2, agents: {}, soldiers: {}, loyalty: {} };
     }
   }
 
@@ -105,7 +141,64 @@ export class FactionGoalStore {
       .map(agent => [agent, state.agents?.[agent] ?? null])),
       soldiers: Object.fromEntries(agents.filter(Boolean)
         .map(agent => [agent, state.soldiers?.[agent] ?? null])),
+      loyalty: Object.fromEntries(agents.filter(Boolean)
+        .map(agent => [agent, state.loyalty?.[agent] ?? null])),
       updated_at: state.updated_at ?? null };
+  }
+
+  /**
+   * Open, refresh or close a loyalty goal from what the harness observed.
+   *
+   * THE SERVER OPENS THIS GOAL, NOT AN OPERATOR — so unlike `set`, this is driven by the
+   * debt on the board rather than by a selection. A debt that goes away (served, or the
+   * membership lost) closes the goal; a debt that persists refreshes the deadline it was
+   * given without disturbing an attempt already in flight.
+   */
+  syncLoyalty(agent, debt, { at = this.now() } = {}) {
+    if (!this.enabled) throw new Error('faction goal store is read-only');
+    const state = this.read();
+    state.loyalty ??= {};
+    const current = state.loyalty[agent] ?? null;
+
+    if (!debt) {
+      // No debt and an attempt that had reached the liege means it worked. An attempt
+      // that never got that far is just closed — but 'complete' is reserved for the
+      // former, because a board that reports a success nobody watched is worse than one
+      // that reports nothing.
+      if (!current) return null;
+      // A goal that already reached a terminal state keeps it. `complete` and `failed`
+      // are the two records worth having — one says the service was watched succeeding,
+      // the other that the membership was revoked — and overwriting either with the
+      // generic `cancelled` on the next tick would erase exactly the outcome.
+      if (['complete', 'failed', 'cancelled'].includes(current.status)) return current;
+      state.loyalty[agent] = cleanLoyaltyGoal({ ...current,
+        status: current.status === 'serving' ? 'complete' : 'cancelled',
+        completed_at: at, deadline_at: null, retry_after: null });
+      this.write(state);
+      return state.loyalty[agent];
+    }
+
+    // A SOLDIER'S WARNING NEVER BECOMES A DEADLINE, so it is not work. Recorded as owed
+    // with no `due_at` so an operator can still see it, and every rule skips it.
+    const next = cleanLoyaltyGoal(current
+      ? { ...current, due_at: debt.due_at ?? null, warned_at: debt.warned_at ?? current.warned_at }
+      : { faction: debt.faction, status: 'owed', warned_at: debt.warned_at ?? at,
+          due_at: debt.due_at ?? null, attempts: 0 });
+    if (!next) return null;
+    state.loyalty[agent] = next;
+    this.write(state);
+    return next;
+  }
+
+  patchLoyalty(agent, values = {}) {
+    if (!this.enabled) throw new Error('faction goal store is read-only');
+    const state = this.read(), current = state.loyalty?.[agent];
+    if (!current) return null;
+    const next = cleanLoyaltyGoal({ ...current, ...values });
+    if (!next) return null;
+    state.loyalty[agent] = next;
+    this.write(state);
+    return next;
   }
 
   states(agents = []) {
@@ -181,8 +274,63 @@ export class FactionGoalStore {
     return next;
   }
 
+  /**
+   * What a loyalty errand achieved, read off the harness's answer rather than off the
+   * fact that a call was made.
+   *
+   * EVERY REFUSAL HERE IS A SENTENCE OR A SILENCE, NEVER AN ERROR — the merchant that had
+   * none, the liege who was too far to hear, the offer the NPC did not take. So each
+   * branch keys on the field the harness set by MEASURING (`bought` from the pack,
+   * `assigned` from the parsed reply, `served` from the confirmation) and treats a call
+   * that merely completed as a failure with a reason.
+   */
+  recordLoyaltyErrand(applied, { at = this.now() } = {}) {
+    const current = this.read().loyalty?.[applied.agent];
+    if (!current) return null;
+    const result = (applied.results ?? []).find(row => row.tool === 'faction_loyalty')?.result ?? null;
+    const failed = reason => this.patchLoyalty(applied.agent, { status: 'owed',
+      attempts: current.attempts + 1, retry_after: at + 5 * 60_000,
+      last_error: reason ?? errandFailure(applied, 'the loyalty errand stopped before the liege') });
+
+    if (!result) return failed(null);
+
+    if (applied.errand === 'loyalty-acquire')
+      return result.bought
+        ? this.patchLoyalty(applied.agent, { status: 'owed', retry_after: null, last_error: null })
+        : failed(result.reason ?? result.note ?? 'nothing was bought');
+
+    if (applied.errand === 'loyalty-request') {
+      if (!result.assigned) return failed(result.reason ?? result.note ??
+        'the word was spoken and no assignment came back');
+      // THE ONE-HOUR CLOCK STARTS HERE, and it is a different clock from the four-hour
+      // grace this goal was opened with. Both are kept.
+      return this.patchLoyalty(applied.agent, { status: 'serving',
+        attempts: current.attempts + 1, item: result.assigned.item,
+        target: result.assigned.target, target_room: result.assigned.room,
+        deadline_at: at + (result.assigned.time_limit_ms ?? LOYALTY_LIMIT_MS),
+        retry_after: null, last_error: null,
+        previous: applied.context?.previous ?? current.previous });
+    }
+
+    if (applied.errand === 'loyalty-offer') {
+      if (result.served) return this.patchLoyalty(applied.agent, { status: 'complete',
+        completed_at: at, deadline_at: null, retry_after: null, last_error: null });
+      // A REVOKED MEMBERSHIP IS TERMINAL AND MUST NOT BE RETRIED. The quest node is gone,
+      // the character is neutral, and another trip to the liege would ask a stranger for
+      // work. `failed` is a resting state, not a backoff.
+      if (result.failed) return this.patchLoyalty(applied.agent, { status: 'failed',
+        completed_at: at, deadline_at: null, retry_after: null,
+        last_error: 'the liege revoked the membership' });
+      return failed(result.reason ?? result.note ?? 'the offer was not accepted');
+    }
+
+    return null;
+  }
+
   recordErrand(applied, { at = this.now() } = {}) {
-    if (!applied?.acted || !['faction-request', 'faction-offer', 'soldier-request',
+    if (!applied?.acted) return null;
+    if (applied.errand?.startsWith('loyalty-')) return this.recordLoyaltyErrand(applied, { at });
+    if (!['faction-request', 'faction-offer', 'soldier-request',
       'soldier-hunt', 'soldier-report'].includes(applied.errand)) return null;
     if (applied.errand.startsWith('soldier-')) {
       const result = (applied.results ?? []).find(row => row.tool === 'faction_soldier')?.result ?? null;

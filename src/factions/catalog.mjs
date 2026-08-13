@@ -46,6 +46,100 @@ export const FACTION_CATALOG = Object.freeze([
   }),
 ]);
 
+// ---------------------------------------------------------------------------
+// LOYALTY SERVICE — the subscription, not the sign-up.
+//
+// A member that has not served its liege for 20 hours is warned, and at 24 hours it is
+// expelled (`FACTION_WARN_TIME`/`FACTION_RESIGN_TIME`, blakston.khd:2325). That leaves a
+// FOUR-HOUR window, and the quest it is spent on has a ONE-HOUR timer of its own whose
+// failure penalty is `QN_PRIZE_FACTION_NEUTRAL` — expulsion, immediately.
+//
+// So the order of operations is the whole design, and it is the opposite of the join
+// quest's. Join: ask, then go and find what was asked for. Loyalty: BE HOLDING IT
+// ALREADY, then ask. Asking first converts a comfortable four-hour deadline into a tight
+// one-hour one for no gain, and if the shopping trip goes wrong the character loses the
+// membership it was trying to keep. The harness refuses the request for that reason; this
+// table is what lets DUM satisfy the precondition before it asks.
+export const LOYALTY_LIMIT_MS = 60 * 60_000;
+
+export const LOYALTY_CATALOG = Object.freeze({
+  // Node 197 -> 198 (questengine.kod:5671-5704). Same room, same NPC, no delivery leg.
+  rebel: Object.freeze({
+    id: 'rebel', leader: "Jonas D'Accor", room: 371, automated: true,
+    summary: 'Say "loyalty" to Jonas while carrying one piece of equipment he accepts.',
+    accepts: Object.freeze(['helm', "knight's shield", 'gauntlets', 'long sword',
+      'mystic sword', 'scimitar', 'nerudite sword']),
+  }),
+  // Node 8 -> 9 (questengine.kod:2536-2575). The Princess supplies the letter, so there is
+  // nothing to carry in — but there IS a delivery leg to one of five named NPCs.
+  princess: Object.freeze({
+    id: 'princess', leader: 'Princess Kateriina', room: 852, automated: true,
+    summary: 'Say "loyalty" to the Princess and deliver the letter she hands over.',
+    accepts: Object.freeze(['letter']),
+    supplied_by_liege: true,
+  }),
+  // Node 5 -> 6 -> 7. Not automated — the middle leg names a different townsperson each
+  // time, and answering it would mean a speech allowlist covering three towns.
+  duke: Object.freeze({
+    id: 'duke', leader: 'Duke Akardius', room: 952, automated: false,
+    summary: 'Three legs, the middle one a different townsperson each time. Operator work.',
+    accepts: Object.freeze([]),
+  }),
+});
+
+export const loyaltySpec = value =>
+  LOYALTY_CATALOG[factionId(value, { optional: true }) ?? ''] ?? null;
+
+// WHERE THE PAYMENT COMES FROM, AND WHY IT IS A SHOP RATHER THAN A HUNT.
+//
+// A loyalty item may be looted as well as bought, and for a deadline this tight buying is
+// the only source worth planning around: `acquisitionSource` below offers a 5%-per-kill
+// hunt, which is a fine answer for a durable goal and a terrible one for four hours.
+//
+// Rook in Cor Noth (room 154) is the entry that matters. He is `CorNothSergeant`, which
+// does NOT declare `vbSellFromInventory = TRUE` — only `kcshopk.kod:54` and `izzio.kod:54`
+// do — so his list is assembled on demand and he cannot run out of long swords. Izzio
+// stocks two of these and is exactly the merchant that CAN be empty, and wanders besides,
+// so he is recorded second and never planned against.
+export const LOYALTY_MARKETS = Object.freeze({
+  'long sword': Object.freeze([
+    Object.freeze({ merchant: 'Rook', room: 154, finite_stock: false, wanders: false }),
+    Object.freeze({ merchant: 'Izzio', room: 593, finite_stock: true, wanders: true }),
+  ]),
+  helm: Object.freeze([
+    Object.freeze({ merchant: 'Izzio', room: 593, finite_stock: true, wanders: true }),
+  ]),
+  'nerudite sword': Object.freeze([
+    Object.freeze({ merchant: "Ixla cha'Totlak", room: 2003, finite_stock: false, wanders: false }),
+  ]),
+});
+
+/**
+ * The one thing to buy, and where, to satisfy a loyalty debt — or null when nothing on
+ * this liege's list can be bought at a counter that cannot be empty.
+ *
+ * Deliberately refuses a merchant with finite stock or a wandering one: "the shop had
+ * none" is a sentence spoken to the room and never an error on the wire, so a plan
+ * resting on one reports success and comes home empty with the hour gone.
+ */
+export function loyaltyPurchase(faction) {
+  const spec = loyaltySpec(faction);
+  if (!spec?.automated || spec.supplied_by_liege) return null;
+  for (const item of spec.accepts) {
+    const seller = (LOYALTY_MARKETS[item] ?? []).find(m => !m.finite_stock && !m.wanders);
+    if (seller) return { item, ...seller };
+  }
+  return null;
+}
+
+/** Anything in this pack the liege would accept. Always an array — never null. */
+export function loyaltyPayment(faction, items = []) {
+  const spec = loyaltySpec(faction);
+  if (!spec?.automated) return [];
+  return (items ?? []).filter(item =>
+    spec.accepts.includes(String(item?.name ?? item ?? '').trim().toLowerCase()));
+}
+
 export const SOLDIER_CATALOG = Object.freeze({
   duke: Object.freeze([
     Object.freeze({ target: 'rebel soldier', rooms: Object.freeze([568, 557, 547]) }),

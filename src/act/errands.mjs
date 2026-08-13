@@ -69,6 +69,12 @@ export const ERRANDS = {
   'soldier-request': { record: null, topic: null },
   'soldier-hunt': { record: null, topic: null },
   'soldier-report': { record: null, topic: null },
+  // Loyalty service, likewise — and its store branch is the one that must distinguish a
+  // revoked membership from an ordinary failure, because only one of the two is worth
+  // retrying.
+  'loyalty-acquire': { record: null, topic: null },
+  'loyalty-request': { record: null, topic: null },
+  'loyalty-offer': { record: null, topic: null },
   'faction-game-engage': { record: null, topic: null },
   'faction-game-deliver': { record: null, topic: null },
 };

@@ -221,6 +221,41 @@ export async function enrichFactionInventory(broker, rows = []) {
   return rows;
 }
 
+/**
+ * Whether each unit still owes its liege service, and what it is carrying to pay with.
+ *
+ * THE FACT IS ALREADY ON DISK, SO THIS COSTS NOTHING AT THE GAME SERVER. The warning is
+ * `MsgSendUser` prose with no packet behind it; the harness catches it off its own event
+ * stream and writes it beside the membership, so `faction_status` answers from a file.
+ * That is what lets a deadline four hours wide be watched on DUM's five-minute clock
+ * without a per-tick server read — and it is why DUM can react to something the server
+ * SAID without DUM being able to read anything anyone says.
+ *
+ * Inventory is fetched in the same pass and only for units that actually owe: the whole
+ * decision is "is the payment already in the pack", because asking the liege before it is
+ * trades a four-hour deadline for a one-hour one whose penalty is expulsion.
+ */
+export async function enrichFactionLoyalty(broker, rows = []) {
+  for (const row of rows) {
+    try {
+      const status = await broker.call('faction_status', { agent: row.agent });
+      row.faction = status?.faction ?? null;
+      row.faction_soldier = status?.soldier ?? null;
+      // Undefined would be "not asked"; null here is the server-derived "owes nothing".
+      row.loyalty_debt = status?.loyalty_debt ?? null;
+      row.loyalty_error = null;
+      if (row.loyalty_debt && !Array.isArray(row.items)) {
+        const inventory = await broker.call('inventory', { agent: row.agent }).catch(() => null);
+        if (inventory) row.items = Array.isArray(inventory.items) ? inventory.items : [];
+      }
+    } catch (e) {
+      row.loyalty_debt = undefined;         // unread, which is not the same as owing nothing
+      row.loyalty_error = e.message;
+    }
+  }
+  return rows;
+}
+
 /** Inspect only strategy-selected rooms for opposing visible token carriers. */
 export async function enrichFactionGames(broker, rows = []) {
   for (const row of rows) {

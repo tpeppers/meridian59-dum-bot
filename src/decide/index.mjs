@@ -31,8 +31,8 @@ import { mootFleetRules } from './rules/moot.mjs';
 import { weaponFleetRules } from './rules/weapons.mjs';
 import { foodFleetRules } from './rules/food.mjs';
 import { castleVictoriaFleetRules } from './rules/castle-victoria.mjs';
-import { factionCharacterRules, factionActiveFleetRules, factionRequestFleetRules }
-  from './rules/factions.mjs';
+import { factionCharacterRules, factionActiveFleetRules, factionRequestFleetRules,
+  loyaltyFleetRules } from './rules/factions.mjs';
 import { factionGameFleetRules } from './rules/faction-games.mjs';
 import { learningFleetRules } from './rules/learning.mjs';
 
@@ -86,6 +86,17 @@ export const fleetRules = new RuleSet('fleet', [
   // it somewhere the operator did not go. With `swarm.follow` off — the ordinary case —
   // both rules return `pass` on their first line and cost one comparison.
   ...swarmFleetRules,
+  // IMMEDIATELY BELOW THE HUMAN, AND ABOVE EVERY OTHER PERISHABLE THING, BECAUSE THIS IS
+  // THE ONE THAT CANNOT BE RE-EARNED CHEAPLY. A missed token is a token; a missed crate
+  // is a crate; a missed loyalty deadline is the MEMBERSHIP, and getting it back means
+  // the whole join quest over again — an item found rather than bought, plus another
+  // trip, plus a liege that may refuse an outsider outright when the faction is strong.
+  //
+  // The window is four hours, so this is never urgent on any single tick; it is placed
+  // high because what closes is irreplaceable, not because it is imminent. With no warned
+  // member — the ordinary case for a fleet of neutrals — each of these rules finds an
+  // empty list on its first line and costs one comparison.
+  ...loyaltyFleetRules,
   // Explicit token-game PvP has a perishable target and therefore outranks standing
   // faction errands. The broker re-verifies the player before every engagement.
   ...factionGameFleetRules,

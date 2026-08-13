@@ -12,7 +12,7 @@
 // through twenty-one.
 
 import { observeFleet, observeFromBoard, deepen, enrichForMoot, enrichEquipment,
-         enrichMaintenance, enrichFactionInventory, enrichFactionGames } from '../sense/observe.mjs';
+         enrichMaintenance, enrichFactionInventory, enrichFactionGames, enrichFactionLoyalty } from '../sense/observe.mjs';
 import { characterRules, fleetRules, decide } from '../decide/index.mjs';
 import { apply } from '../act/orders.mjs';
 import { verify } from '../act/verify.mjs';
@@ -129,6 +129,31 @@ export async function tickFleet(ctx, { decide: runRules = true } = {}) {
       const waitingForCargo = (obs.characters ?? []).filter(row =>
         factions.agents?.[row.agent]?.status === 'acquiring');
       if (waitingForCargo.length) await enrichFactionInventory(broker, waitingForCargo);
+    }
+    // WHETHER A MEMBERSHIP IS ABOUT TO LAPSE, READ FROM DISK RATHER THAN FROM THE SERVER.
+    //
+    // The warning is prose the server pushes with no packet behind it; the harness catches
+    // it off its own event stream and files it beside the membership. So this is a local
+    // read, and it is what lets a four-hour deadline be watched on a five-minute clock
+    // without a per-tick server request — and what lets DUM react to something the server
+    // SAID while remaining unable to read anything anyone says.
+    //
+    // Gated on the doctrine and off by default: a fleet of neutrals would otherwise pay a
+    // read per character per tick to be told, every time, that nobody owes anything.
+    if (config.factions?.keep_membership === true) {
+      const members = (obs.characters ?? []).filter(row => row.in_game);
+      if (members.length) {
+        await enrichFactionLoyalty(broker, members);
+        // THE SERVER OPENS THIS GOAL, so it is synced from what was observed rather than
+        // from anybody's selection — here, before decide() runs, so the rules read it as
+        // ordinary data and stay pure.
+        for (const row of members) {
+          if (row.loyalty_debt === undefined) continue;    // unread; leave the goal alone
+          try { ctx.factions?.syncLoyalty?.(row.agent, row.loyalty_debt, { at: now }); }
+          catch { /* a read-only store is a legitimate configuration, not a failure */ }
+        }
+        obs.factions = ctx.factions?.snapshot(agents) ?? obs.factions;
+      }
     }
     if (config.graveyard?.shift === true)
       await enrichEquipment(broker, (obs.characters ?? []).filter(r => r.in_game));

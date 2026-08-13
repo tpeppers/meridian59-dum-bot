@@ -247,6 +247,21 @@ export const DEFAULTS = {
   // adjacent to the character that just got it, and one of the two possible monsters is
   // a level-120 narthyl worm that nothing in this fleet may fight. It is worth doing at
   // all only because the fleet is standing in the castle anyway.
+  // KEEPING A FACTION THE FLEET ALREADY HAS. Not joining one — that is a durable goal an
+  // operator sets per unit, and it stays that way.
+  //
+  // Membership decays on a WALL-CLOCK timer that runs while the character is logged out,
+  // and 24 hours after the last service the server revokes it with four hours' notice.
+  // That notice is a sentence with no packet behind it; the harness catches it off its
+  // own event stream and files it beside the membership, and this switch is what makes
+  // DUM look at the file.
+  //
+  // OFF BY DEFAULT, and not out of caution about the errand — it is that the check costs
+  // a read per character per tick and on a fleet of neutrals every one of them returns
+  // "owes nothing". Turn it on for a fleet that has joined something.
+  factions: {
+    keep_membership: false,
+  },
   crate: {
     // ON BY DEFAULT, WHICH IS THE ONE PLACE THIS BLOCK DIFFERS FROM EVERY OTHER OPT-IN
     // HERE, AND IT IS A DECISION RATHER THAN AN OVERSIGHT.

@@ -61,6 +61,18 @@ export const WRITE = new Set([
   // Source-audited promotion and explicitly opt-in token PvP. Both broker tools
   // enforce exact targets and faction/profile preconditions; general fight remains out.
   'faction_soldier', 'faction_game',
+  // KEEPING A FACTION, WHICH IS A DIFFERENT OPERATION FROM GETTING ONE. Membership decays
+  // on a wall-clock timer and is revoked 24 hours after the last service; the only notice
+  // is prose the server sends the player. `faction_loyalty` is the same narrow shape as
+  // `faction_join` — it speaks exactly the one fixed word "loyalty" to the character's
+  // OWN liege, and offers only a source-defined quest item to a source-defined recipient.
+  //
+  // It is this rather than `say` for the reason the whole boundary exists: the trigger is
+  // a sentence the SERVER sent, which the harness catches off its own event stream and
+  // hands to DUM as a field on the row. So DUM still reads no chat, hears no player, and
+  // composes no text — the one word it can cause to be spoken is a constant in the
+  // harness, not a string that travels from here.
+  'faction_loyalty',
   // Provisioning may cast exactly one audited, self-only service spell. The argument
   // guard below keeps widening this surface from also widening DUM into combat magic.
   'cast',

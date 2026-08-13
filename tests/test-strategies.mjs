@@ -275,12 +275,30 @@ test('strategies: Create Food fires only for selected units with spell, mana, an
   assert.deepEqual(callsForFleetPlan(result.plan).map(x => x.tool), ['cast', 'autopilot']);
 });
 
-test('strategies: Castle Victoria only pins rooms and walls when Spread Out is enabled', () => {
-  const doctrine = loadDoctrine({ file: 'doctrines/castle-victoria.jsonc' }).config;
+test('strategies: Spread Out owns the wall cap; the shift owns which room', () => {
+  // THE SUBJECT HERE IS THE DIVISION OF LABOUR, NOT WHICH ROOM THE FLEET IS IN THIS WEEK.
+  // `upstairs_share` is a live tuning knob — it went to 0 the day the fleet outgrew the
+  // level-60 battered skeleton — so the two-room assertions below set it explicitly rather
+  // than inheriting the shipped value. That value has its own test underneath, where a
+  // change to it is supposed to be noticed rather than absorbed.
+  const doctrine = structuredClone(loadDoctrine({ file: 'doctrines/castle-victoria.jsonc' }).config);
+  doctrine.castle_victoria.upstairs_share = 1;
   const rows = Array.from({ length: 21 }, (_, i) => ({ agent: `a${i + 1}`, in_game: true,
     level: 43 + (i % 9), policy: {}, mode: 'farm' }));
+
+  // A ONE-ROOM DOCTRINE FORCES THE ROOM WITHOUT SPREAD OUT, and this assertion used to say
+  // the opposite. It was wrong in the direction that made a doctrine change inert: with
+  // Spread Out off — which the Castle doctrine deliberately runs with — nothing was ever
+  // assigned a room, so retiring a room retired nothing and the fleet went on hunting
+  // whatever generator it was already standing in.
   const unspread = castleAssignments(rows, doctrine);
-  assert.ok(unspread.every(a => a.to === null && a.max_bots_per_safe_spot === null));
+  assert.ok(unspread.every(a => a.to === 39), 'a retired room is still a room assignment');
+  // The WALL cap really is Spread Out's, and naming a room must not start pinning walls.
+  assert.ok(unspread.every(a => a.max_bots_per_safe_spot === null));
+  // With a genuine two-room split there is something to balance, and that IS Spread Out's.
+  const mixed = structuredClone(doctrine);
+  mixed.castle_victoria.upstairs_share = 0.5;
+  assert.ok(castleAssignments(rows, mixed).every(a => a.to === null && a.max_bots_per_safe_spot === null));
   const obs = { characters: rows, strategies: { agents: Object.fromEntries(rows.map(row =>
     [row.agent, [STRATEGY_IDS.SPREAD_OUT]])) } };
   const assigned = castleAssignments(rows, doctrine, obs);
@@ -304,6 +322,33 @@ test('strategies: Castle Victoria only pins rooms and walls when Spread Out is e
   const zombie = assigned.find(a => a.to === 39 && a.hunt === 'zombie');
   assert.equal(zombie.row.level + zombie.max_threat_over, 60,
     'an upstairs zombie assignment admits the battered skeleton sharing that generator');
+});
+
+test('strategies: the shipped Castle shift hunts the full skeleton, not the battered one', () => {
+  // A KILL PAYS ONLY WHILE THE CREATURE'S LEVEL IS STRICTLY ABOVE MAX HEALTH, and max
+  // health is the level here. The battered skeleton is 60 and most of this fleet is 60, so
+  // upstairs pays them nothing while reporting kills the whole time — the exact shape
+  // `yieldCheck` exists to catch. The full skeleton downstairs is 75.
+  //
+  // Pinned because it is a deliberate choice that looks like a typo: one character in a
+  // JSON file moves twenty-one characters into a harder room.
+  const doctrine = loadDoctrine({ file: 'doctrines/castle-victoria.jsonc' }).config;
+  assert.equal(doctrine.castle_victoria.upstairs_share, 0);
+  const rows = Array.from({ length: 21 }, (_, i) => ({ agent: `a${i + 1}`, in_game: true,
+    level: 60, policy: {}, mode: 'farm' }));
+  const obs = { characters: rows, strategies: { agents: Object.fromEntries(rows.map(row =>
+    [row.agent, [STRATEGY_IDS.SPREAD_OUT]])) } };
+  const assigned = castleAssignments(rows, doctrine, obs);
+  assert.deepEqual(new Set(assigned.map(a => a.hunt)), new Set(['skeleton']),
+    'no zombie and no battered skeleton: neither can advance a level-60 character');
+  assert.equal(assigned.filter(a => a.to === 39).length, 0);
+
+  // The ceiling is sized to the strongest normal spawn in the ASSIGNED room, not to the
+  // quarry — a skeleton hunter downstairs shares that generator with nothing worse, but
+  // sizing it to the quarry is how a unit ends up rejecting its own room.
+  const placed = assigned.filter(a => a.to != null);
+  assert.ok(placed.length > 0);
+  assert.ok(placed.every(a => a.row.level + a.max_threat_over === 75));
 });
 
 test('strategies: Castle policy diff includes live maintenance fields', () => {

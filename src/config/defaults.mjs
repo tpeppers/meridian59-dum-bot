@@ -143,6 +143,12 @@ export const DEFAULTS = {
     // this. Mirrors the keeper's maxThreatOver so DUM does not order a fight the
     // keeper will correctly refuse.
     max_threat_over: 6,
+    // Percent of max health a unit may fight up to. 150 is the harness default and the
+    // same bet at every level; max_threat_over above is kept only so an older doctrine
+    // still parses, and no longer decides anything.
+    // Either {mode:'percent', value:150} or {mode:'flat', value:25}. Percent by default:
+    // a flat band is a different bet at each end of a roster.
+    threat_ceiling: { mode: 'percent', value: 150 },
   },
 
   placement: {

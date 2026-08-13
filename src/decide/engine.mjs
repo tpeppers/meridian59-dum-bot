@@ -150,6 +150,23 @@ export function decide(ruleSet, obs, doctrine) {
  * and the only symptom is somebody waiting for a partner that is now doing something
  * else. The harness publishes exactly this as `commitment`; DUM's job is to read it.
  */
+// IS THIS CHARACTER FREE TO BE GIVEN ORDERS?
+//
+// ASK THIS, NEVER `!row.commitment`. The harness's own note is explicit: consumers ask
+// `isTakeable(committed)`, because a bot CLAIM is ownership rather than an operation and
+// is marked `takeable: true` with "nothing is mid-flight" spelled out in its detail. DUM
+// claims every character it steers, so a rule testing the field for truthiness blocks on
+// DUM's own claim and can never act on anybody — it reports the whole fleet as busy while
+// nothing is happening, which reads as "the retarget landed" when it has not started.
+//
+// `partner` is a standing arrangement rather than a journey: it does not block a change
+// of orders, only a relocation, and the rules that relocate check it themselves.
+export const takeable = row => {
+  const c = row?.commitment;
+  if (!c || !c.kind) return true;
+  return c.takeable === true || c.kind === 'partner';
+};
+
 export const respectCommitment = {
   id: 'respect-commitment',
   faculty: 'work',

@@ -262,6 +262,15 @@ export const DEFAULTS = {
   factions: {
     keep_membership: false,
   },
+  // THE MARION CRYPT SHIFT. Off by default like every other shift: it pins characters to
+  // two specific rooms, and a doctrine that has not asked for that must not get it.
+  crypt: {
+    shift: false,
+    rest_below: 0.75,
+    flee_below: 0.35,
+    fight_above_vigor: 180,
+    use_safe_spots: true,
+  },
   crate: {
     // ON BY DEFAULT, WHICH IS THE ONE PLACE THIS BLOCK DIFFERS FROM EVERY OTHER OPT-IN
     // HERE, AND IT IS A DECISION RATHER THAN AN OVERSIGHT.

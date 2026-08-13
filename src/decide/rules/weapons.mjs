@@ -7,6 +7,20 @@ const sameList = (a, b) => Array.isArray(a) && Array.isArray(b) &&
 const selectedFor = (fleetObs, doctrine, id) => (fleetObs.characters ?? [])
   .filter(r => r.in_game && strategyEnabled(fleetObs, doctrine, r.agent, id));
 
+// ONE HOME FOR "WHICH ORDER DOES THIS UNIT EQUIP IN", because it was resolved in two
+// places and adding a third preset to only one of them is exactly how the two would
+// disagree — a unit provisioned against one order and equipped by another.
+//
+// SHORT SWORDING WINS OVER VS SKELETONS when somebody has both selected, and the tie has
+// to be broken somewhere rather than left to declaration order. Short swording is the more
+// specific instruction: vsSkeletons is a damage ranking that suits a shift, while short
+// swording is a deliberate trade of damage now for a proficiency later, and a unit told to
+// train the skill should not have a hammer put in its hand by a second opinion.
+const presetFor = (fleetObs, doctrine, agent, cfg) =>
+  strategyEnabled(fleetObs, doctrine, agent, STRATEGY_IDS.SHORT_SWORDING) ? 'shortSwording'
+    : strategyEnabled(fleetObs, doctrine, agent, STRATEGY_IDS.VS_SKELETONS) ? 'vsSkeletons'
+    : cfg.preset;
+
 export const weaponFleetRules = [{
   id: 'maintain-qualifying-weapons',
   faculty: 'economy',
@@ -25,10 +39,17 @@ export const weaponFleetRules = [{
 
     const create = selectedFor(fleetObs, doctrine, STRATEGY_IDS.CREATE_WEAPONS);
     const skeleton = selectedFor(fleetObs, doctrine, STRATEGY_IDS.VS_SKELETONS);
+    // SHORT SWORDING HAD A PRESET AND NOTHING WIRED TO IT. `shortSwording` has been in
+    // decide/weapons.mjs the whole time, with an alias table that already resolves this
+    // strategy's own id — but nothing ever read STRATEGY_IDS.SHORT_SWORDING, so selecting
+    // the strategy changed no character's weapon order and said nothing about it. Same
+    // family as a doctrine knob only read inside a branch that never runs.
+    const shortSword = selectedFor(fleetObs, doctrine, STRATEGY_IDS.SHORT_SWORDING);
     // Backward compatibility for doctrines written before composable strategies.
     const creators = create.length || fleetObs.strategies
       ? create : (cfg.provision?.enabled ? live : []);
-    const involved = [...new Map([...creators, ...skeleton].map(r => [r.agent, r])).values()];
+    const involved = [...new Map([...creators, ...skeleton, ...shortSword]
+      .map(r => [r.agent, r])).values()];
     if (!involved.length) return { kind: 'pass', why: 'no live unit has a weapon strategy enabled' };
 
     if (cfg.provision?.staging_only !== false && creators.length) {
@@ -40,8 +61,7 @@ export const weaponFleetRules = [{
     }
 
     const policies = involved.flatMap(r => {
-      const preset = strategyEnabled(fleetObs, doctrine, r.agent, STRATEGY_IDS.VS_SKELETONS)
-        ? 'vsSkeletons' : cfg.preset;
+      const preset = presetFor(fleetObs, doctrine, r.agent, cfg);
       const priority = keeperWeaponPriority(preset, cfg.presets);
       return sameList(r.policy?.weaponPriority, priority) ? [] : [{
         do: 'weapon-policy', agent: r.agent, priority,
@@ -63,8 +83,7 @@ export const weaponFleetRules = [{
 
     const groups = new Map();
     for (const row of creators) {
-      const preset = strategyEnabled(fleetObs, doctrine, row.agent, STRATEGY_IDS.VS_SKELETONS)
-        ? 'vsSkeletons' : cfg.preset;
+      const preset = presetFor(fleetObs, doctrine, row.agent, cfg);
       if (!groups.has(preset)) groups.set(preset, []);
       groups.get(preset).push(row);
     }

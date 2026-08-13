@@ -232,7 +232,8 @@ test('loyalty: the delivery goes to the exact named item and recipient, inside t
 test('loyalty: a committed or piloted character is left alone', () => {
   const goal = { faction: 'rebel', status: 'owed', due_at: NOW + 3 * HOUR };
   const armed = { items: [{ id: 9, name: 'long sword' }] };
-  for (const block of [{ commitment: 'loot run' }, { piloted: true }, { parked: true }]) {
+  for (const block of [{ commitment: { kind: 'errand', takeable: false, label: 'loot run' } },
+                       { piloted: true }, { parked: true }]) {
     const intent = fired([row('a', { ...armed, ...block })], { a: goal });
     assert.equal(intent?.kind, 'pass', `${Object.keys(block)[0]} must not be interrupted`);
   }

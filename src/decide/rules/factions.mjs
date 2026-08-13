@@ -5,6 +5,7 @@
 // pure rule. This file only turns the current observation + stored goal into the next
 // bounded action: request, acquire, or offer.
 
+import { takeable } from '../engine.mjs';
 import { NATURAL_TOWN_WAIT_MS, acquisitionSource, factionDefinition,
   loyaltySpec, loyaltyPayment, loyaltyPurchase }
   from '../../factions/catalog.mjs';
@@ -100,7 +101,11 @@ const loyaltyRows = observation => (observation.characters ?? []).flatMap(row =>
 // commitment to somebody else, a pilot at the keyboard, and a unit already in a fight
 // stand in the way — and health does NOT, because a hurt character can still walk to a
 // tavern and the keeper keeps its survival floor throughout.
-const loyaltyBlocked = row => row.commitment || row.parked || row.piloted;
+// `takeable`, NOT `!commitment` — DUM claims every character it steers, and the claim is
+// marked takeable with "nothing is mid-flight" on it. Testing the field for truthiness
+// would block every loyalty errand on DUM's own claim, so the deadline would pass with
+// the board reporting the fleet as busy the whole time.
+const loyaltyBlocked = row => !takeable(row) || row.parked || row.piloted;
 
 export const loyaltyFleetRules = [
   {

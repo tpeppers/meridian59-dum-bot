@@ -82,22 +82,37 @@ export const STRATEGY_CATALOG = Object.freeze([
     group: 'Combat doctrine',
     purpose: 'Equipment loadout — train the short sword on what drops short swords',
     requirements: ['short sword fighting (weaponcraft 2)', 'An engagement ceiling that admits the prey'],
-    description: 'Hunt the Marion crypts for spectral mummies and living statues, wielding a short ' +
-      'sword by preference and anything else when none is to hand. The two prey are chosen for what ' +
-      'they DROP rather than for what they pay: a spectral mummy carries ShortSword 5%, LongSword 4% ' +
-      'and MetalShield 3% — and elderberry and herbs besides — while a statue carries LeatherArmor 2% ' +
-      'and ChainArmor 1%. Pinned to the crypt rooms with roaming off, because the room one door away ' +
-      'generates thrashers at level 150.',
+    description: 'Hunt the Marion crypts wielding a short sword by preference and anything else when ' +
+      'none is to hand. Pinned to the crypt rooms with roaming off, because the room one door away ' +
+      'generates thrashers at level 150.\n' +
+      'A STATUE IS NOT A STANDING QUARRY, and this description used to say it was. Room 2601 places ' +
+      '37 of them and 2600 one — but only from `FirstUserEntered`, and `PlaceStatues` returns early ' +
+      'while any statue is still in the room (marcryp2.kod:161-168). A fleet that occupies the room ' +
+      'never empties it, so once they are dead they never come back. Worse, nothing would say so: ' +
+      'the keeper\'s "this room cannot produce our prey" check reads the SPAWN TABLE, which lists ' +
+      'statues in 2601 for ever, so a character would stand among the corpses hunting nothing and go ' +
+      'on reporting itself healthy. They are an opening bonus of ~38 kills, taken by retaliation.\n' +
+      'The standing quarry is a GENERATOR. 2601 runs skeletons at 80%, cap 25, level 75 — renewable, ' +
+      'and above every character here, so it still advances them. 2600 runs spectral mummies at ' +
+      '100%, cap 10, level 40 — those advance nobody past 40 max health, but they are the only thing ' +
+      'in the crypt that drops the short sword this strategy is named for (ShortSword 5%, LongSword ' +
+      '4%, MetalShield 3%) and both create-food reagents besides.',
     settings: Object.freeze([
-      Object.freeze({ id: 'rooms', title: 'Crypt rooms', type: 'list', default: [2600, 2601],
+      Object.freeze({ id: 'rooms', title: 'Crypt rooms', type: 'number-list', default: [2601, 2600],
         description: '2600 The crypt in Marion generates spectral mummies at 100%, cap 10; statues ' +
           'respawn in 2600 and 2601. Room 2602 is one door off and generates thrashers at level 150 ' +
           '— it is deliberately not in this list and roaming is off so nothing wanders into it.' }),
-      Object.freeze({ id: 'hunt', title: 'Quarry', type: 'list',
-        default: ['spectral mummy', 'statue'],
-        description: 'A statue is level 75, so a character only engages one when the ceiling admits ' +
-          'it — at the default 150% that means 50 max health or better. Anything smaller keeps ' +
-          'hunting mummies in the same room rather than being sent somewhere else.' }),
+      // ORDER IS PREFERENCE, AND ONLY A GENERATOR MAY APPEAR HERE. `statue` is deliberately
+      // absent: naming it would pin a character to a quarry that stops existing after the
+      // first pass through and never reports it. The first entry a unit's engagement
+      // ceiling admits wins, and the room follows from the quarry rather than the other
+      // way round — so changing this to `spectral mummy` moves the fleet to 2600 by itself.
+      Object.freeze({ id: 'hunt', title: 'Quarry', type: 'item-list',
+        default: ['skeleton', 'spectral mummy'],
+        description: 'A skeleton is level 75, so a character engages one only when its ceiling ' +
+          'admits it — at the default 150% that means 50 max health or better. Anything smaller ' +
+          'falls through to the spectral mummy in 2600, which advances nobody past 40 but drops ' +
+          'the short sword. Statues are not listed: they do not come back once cleared.' }),
       Object.freeze({ id: 'town_trips', title: 'Allow town trips', type: 'boolean', default: true,
         description: 'The crypt supplies weapons, shields, armour and both create-food reagents, but ' +
           'not a vendor or a bank — so selling, banking and restocking still happen. Turning this off ' +
@@ -302,6 +317,21 @@ export function validateStrategySettings(id, values = {}, { partial = false } = 
     if (!field) throw new Error(`${id} has no setting named ${key}`);
     if (field.type === 'boolean') {
       if (typeof value !== 'boolean') throw new Error(`${id}.${key} must be true or false`);
+    } else if (field.type === 'number-list') {
+      // ROOM NUMBERS, AND THE VALIDATOR HAD NO TYPE FOR THEM. Two settings declared
+      // `type: 'list'`, which no branch here handled, so they fell through to the numeric
+      // check and every doctrine that set one was refused with "must be a number". Nobody
+      // noticed because nothing read the strategy they belonged to. Integers are enforced
+      // rather than coerced: a room number with a decimal point matches no room, and
+      // silently rounding it would send a fleet somewhere nobody typed.
+      if (!Array.isArray(value)) throw new Error(`${id}.${key} must be a list of numbers`);
+      const clean = value.map(Number);
+      if (clean.some(v => !Number.isInteger(v)))
+        throw new Error(`${id}.${key} must contain only whole numbers`);
+      if (clean.length > (field.max_items ?? 24))
+        throw new Error(`${id}.${key} may contain at most ${field.max_items ?? 24} entries`);
+      out[key] = clean;
+      continue;
     } else if (field.type === 'item-list') {
       if (!Array.isArray(value)) throw new Error(`${id}.${key} must be a list of item names`);
       const clean = [...new Set(value.map(v => String(v).trim()).filter(Boolean))];
@@ -350,4 +380,53 @@ export function strategySettings(observation, doctrine, agent, id) {
 export function strategyRows(observation, doctrine, id) {
   return (observation.characters ?? []).filter(r => r.in_game &&
     strategyEnabled(observation, doctrine, r.agent, id));
+}
+
+// THE CRYPT ROOMS, AS DATA, WITH ONLY THEIR GENERATORS IN THEM.
+//
+// `generates` lists what the room PRODUCES on a timer, so a quarry can be resolved to a
+// room rather than a room to a quarry — which is what makes changing the `hunt` setting
+// move the fleet by itself. Statues are not here for the reason the strategy description
+// gives at length: they are placed once and never replaced while anybody is standing
+// there, so a room would claim to generate something it will not.
+//
+// `threat` is the strongest thing that can be IN the room, which is not the same as the
+// quarry and must not be confused with it. The keeper's ceiling gates the whole room, so
+// sizing it to the quarry is how a unit ends up rejecting the room it was sent to — 2600
+// generates level-40 mummies but has a level-75 statue standing in it.
+export const CRYPT_ROOMS = Object.freeze({
+  2601: Object.freeze({ room: 2601, name: "Resting place of Marion's ancestors", threat: 75,
+    generates: Object.freeze(['skeleton', 'battered skeleton']) }),
+  2600: Object.freeze({ room: 2600, name: 'The crypt in Marion', threat: 75,
+    generates: Object.freeze(['spectral mummy']) }),
+});
+
+// Level of each quarry, for the engagement-ceiling test. Kept beside the rooms because
+// both are read together and a level with two homes ends up with two answers.
+export const CRYPT_QUARRY_LEVEL = Object.freeze({
+  skeleton: 75, 'battered skeleton': 60, 'spectral mummy': 40,
+});
+
+/**
+ * The room a unit should work and the quarry it should hunt there, or null when its
+ * engagement ceiling admits nothing on offer.
+ *
+ * The ceiling is the harness's own rule — `refuseEngagement` refuses a creature whose
+ * level exceeds round(max_health * 1.5) — restated here rather than guessed at, because a
+ * unit sent to hunt something it will refuse stands in the room doing nothing and looks
+ * exactly like one that is working.
+ */
+export function cryptAssignment(hunt = [], rooms = [], maxHealth = 0) {
+  const ceiling = Math.round((Number(maxHealth) || 0) * 1.5);
+  if (!ceiling) return null;
+  const allowed = rooms.map(Number);
+  for (const quarry of hunt) {
+    const level = CRYPT_QUARRY_LEVEL[quarry];
+    if (level == null || level > ceiling) continue;
+    const room = allowed.map(id => CRYPT_ROOMS[id])
+      .find(entry => entry?.generates.includes(quarry));
+    // The ROOM's strongest occupant has to be admitted too, not merely the quarry.
+    if (room && room.threat <= ceiling) return { quarry, ...room };
+  }
+  return null;
 }

@@ -25,6 +25,25 @@ export const WEAPON_PRESETS = Object.freeze({
     why: 'generic-target order from the compendium, sorted by novice maximum damage',
     tiers: NOVICE_DAMAGE_ORDER.map(name => ({ id: name, names: [name] })),
   }),
+  // SHORT SWORD FIRST, THEN ANYTHING. The point of the crypt shift is to train short sword
+  // fighting on the creature that drops short swords, so the preferred weapon is the one
+  // the skill is for rather than the one that hits hardest — a short sword is LAST in the
+  // novice damage order, and choosing it is a deliberate trade of damage now for a
+  // proficiency later.
+  //
+  // "Anything else" is the whole remaining order rather than an empty hand: an unarmed
+  // character punches monsters and does not error, so a preset that ran out of tiers would
+  // fail exactly the silent way this fleet keeps being bitten by. Casting one is the
+  // Create Weapons strategy's job and stays independent of this ranking.
+  shortSwording: Object.freeze({
+    id: 'shortSwording',
+    title: 'shortSwording',
+    why: 'crypt shift order: the short sword the skill is for, then every other weapon',
+    tiers: [
+      { id: 'short sword', names: ['short sword'] },
+      { id: 'other', names: without(NOVICE_DAMAGE_ORDER, new Set(['short sword'])) },
+    ],
+  }),
   vsSkeletons: Object.freeze({
     id: 'vsSkeletons',
     title: 'vsSkeletons',
@@ -43,6 +62,8 @@ const aliases = new Map([
   ['strongesttoweakest', 'strongestToWeakest'],
   ['strongest->weakest', 'strongestToWeakest'],
   ['default', 'strongestToWeakest'],
+  ['shortswording', 'shortSwording'],
+  ['short-swording', 'shortSwording'],
   ['vsskeletons', 'vsSkeletons'],
 ]);
 

@@ -9,6 +9,7 @@
 export const STRATEGY_IDS = Object.freeze({
   CREATE_WEAPONS: 'create-weapons',
   VS_SKELETONS: 'vs-skeletons',
+  SHORT_SWORDING: 'short-swording',
   CHECK_CV_CRATE: 'check-cv-crate',
   CREATE_FOOD: 'create-food',
   SPREAD_OUT: 'spread-out',
@@ -74,6 +75,34 @@ export const STRATEGY_CATALOG = Object.freeze([
     purpose: 'Weapon selection',
     requirements: ['No skill required'],
     description: 'Prefer Hammer, then Mace, then Axe, then swords and other weapons, with an empty hand last.',
+  }),
+  Object.freeze({
+    id: STRATEGY_IDS.SHORT_SWORDING,
+    title: 'Short swording',
+    group: 'Combat doctrine',
+    purpose: 'Equipment loadout — train the short sword on what drops short swords',
+    requirements: ['short sword fighting (weaponcraft 2)', 'An engagement ceiling that admits the prey'],
+    description: 'Hunt the Marion crypts for spectral mummies and living statues, wielding a short ' +
+      'sword by preference and anything else when none is to hand. The two prey are chosen for what ' +
+      'they DROP rather than for what they pay: a spectral mummy carries ShortSword 5%, LongSword 4% ' +
+      'and MetalShield 3% — and elderberry and herbs besides — while a statue carries LeatherArmor 2% ' +
+      'and ChainArmor 1%. Pinned to the crypt rooms with roaming off, because the room one door away ' +
+      'generates thrashers at level 150.',
+    settings: Object.freeze([
+      Object.freeze({ id: 'rooms', title: 'Crypt rooms', type: 'list', default: [2600, 2601],
+        description: '2600 The crypt in Marion generates spectral mummies at 100%, cap 10; statues ' +
+          'respawn in 2600 and 2601. Room 2602 is one door off and generates thrashers at level 150 ' +
+          '— it is deliberately not in this list and roaming is off so nothing wanders into it.' }),
+      Object.freeze({ id: 'hunt', title: 'Quarry', type: 'list',
+        default: ['spectral mummy', 'statue'],
+        description: 'A statue is level 75, so a character only engages one when the ceiling admits ' +
+          'it — at the default 150% that means 50 max health or better. Anything smaller keeps ' +
+          'hunting mummies in the same room rather than being sent somewhere else.' }),
+      Object.freeze({ id: 'town_trips', title: 'Allow town trips', type: 'boolean', default: true,
+        description: 'The crypt supplies weapons, shields, armour and both create-food reagents, but ' +
+          'not a vendor or a bank — so selling, banking and restocking still happen. Turning this off ' +
+          'pins a character to the crypt until its pack is full and then leaves it there.' }),
+    ]),
   }),
   Object.freeze({
     id: STRATEGY_IDS.CHECK_CV_CRATE,

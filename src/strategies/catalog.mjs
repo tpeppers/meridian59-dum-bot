@@ -417,6 +417,16 @@ export const HUNT_ROOMS = Object.freeze({
     generates: Object.freeze(['skeleton', 'zombie']) }),
   39: Object.freeze({ room: 39, name: 'Upstairs in Castle Victoria', threat: 60,
     generates: Object.freeze(['battered skeleton', 'zombie']) }),
+  // THE GRAVEYARD OF TOS IS ONLY A ROOM FOR 35 MINUTES IN EVERY 120. `TryCreateMonster`
+  // is gated on the game hour and generates NOTHING outside the window, so a shift parked
+  // here by day is standing in an empty field — which is why a station on this room must
+  // carry `when: 'night'` and why the doctrine schema refuses one that does not.
+  //
+  // And the mix is worth knowing before choosing it: the skeleton is 15% and the zombie
+  // 85%. The skeleton is level 75 and advances everyone here; the zombie is 55 and
+  // advances nobody past 55. So this is a rich window rather than a rich room.
+  70: Object.freeze({ room: 70, name: 'The Graveyard of Tos', threat: 75, night_only: true,
+    generates: Object.freeze(['skeleton', 'zombie']) }),
 });
 
 // Kept for the crypt-only callers and tests that name it.

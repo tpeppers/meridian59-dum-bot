@@ -84,6 +84,29 @@
   // above max health. It is a legitimate place to put an overflowing character, not a
   // good one — if the valve is opening regularly, the fleet needs a third room, not this.
   //
+  // THE GRAVEYARD STATION EXISTS ONLY WHILE THE GRAVEYARD DOES. Room 70 generates nothing
+  // outside a 35-minute window in every 120 — `TryCreateMonster` is gated on the game hour
+  // — so `when: "night"` is not a preference, it is the difference between a shift and an
+  // empty field. It is FIRST in the list so the window gets its pick while it is open, and
+  // when it closes the station simply is not there and those units are allocated to the
+  // King's Way again on the next fleet tick. Nobody has to do anything at either edge.
+  //
+  // ORDER IS WHO GIVES THE UNITS UP. Allocation runs down this list, so the graveyard is
+  // first and Castle Victoria second — which means the night window draws from the KING'S
+  // WAY contingent and the castle keeps its quarter throughout. With the King's Way listed
+  // second instead, the graveyard came out of the castle's share and left it empty for the
+  // whole window, which is not what "some of the frogman hunters switch" means.
+  //
+  // 35% rather than more, because the room is 85% zombie and only 15% skeleton, and a
+  // zombie is level 55 — it advances nobody here. The window is worth a third of the fleet
+  // for its skeletons, not the whole of it. And the walk is real: at a 120-second fleet
+  // tick a unit spends part of its window travelling, which is the cost of a shift that
+  // re-forms every two hours.
+  //
+  // A NIGHT STATION IS SHUT WHEN THE CLOCK IS UNKNOWN. `world_clock` is null until an
+  // operator has watched a window begin and run `m59-dayclock.mjs --start-now`; that is a
+  // different fact from "it is daytime" and is deliberately not guessed at.
+  //
   // FROGMEN CARRY +80 KARMA AND EVERYTHING ELSE HERE IS NEGATIVE. "Killing someone with
   // 100 karma is a -100 karma act" (player.kod:6559), bounded to 150 a kill, so this
   // shift drives the fleet's karma down. Recorded rather than guarded because karma gates
@@ -92,8 +115,9 @@
   "shift": {
     "on": true,
     "stations": [
-      { "room": 576, "hunt": "frogman", "share": 0.75 },
+      { "room": 70, "hunt": "skeleton", "share": 0.35, "when": "night" },
       { "room": 38, "hunt": "skeleton", "share": 0.25, "max": 8 },
+      { "room": 576, "hunt": "frogman", "share": 0.75 },
       { "room": 39, "hunt": "battered skeleton" }
     ],
     "rest_below": 0.75,

@@ -39,7 +39,28 @@ const sameList = (a, b) => Array.isArray(a) && Array.isArray(b) &&
  * reassigned to the other end of the world because somebody else levelled.
  */
 export function shiftAssignments(rows = [], doctrine = {}, fleetObs = { characters: rows }) {
-  const stations = (doctrine.shift?.stations ?? []).filter(st => st && st.room != null);
+  // A STATION CAN BE OPEN OR SHUT, AND THE CLOCK DECIDES WHICH.
+  //
+  // The undead generators run for 35 minutes in every 120 and produce nothing at all in
+  // between, so a night station is a real room for a quarter of the time and an empty
+  // field for the rest. `when` is what says so, and the whole point is that nobody has to
+  // do anything: the window opens, the station appears, units are allocated to it, and
+  // when it closes they are allocated back.
+  //
+  // A NIGHT STATION IS SHUT WHEN THE CLOCK IS UNKNOWN, NOT OPEN. `world_clock` is null
+  // until an operator has watched a window begin and written the anchor down — which is a
+  // different fact from "it is daytime" — and guessing would park a shift in an empty
+  // graveyard on a schedule nobody verified. Failing shut costs a window; failing open
+  // costs however long it takes somebody to notice a fleet killing nothing.
+  const clock = fleetObs.world_clock ?? null;
+  const open = st => {
+    const when = String(st.when ?? 'always').toLowerCase();
+    if (when === 'always') return true;
+    if (!clock) return false;
+    return when === 'night' ? clock.night === true : clock.night === false;
+  };
+  const stations = (doctrine.shift?.stations ?? [])
+    .filter(st => st && st.room != null).filter(open);
   const ordered = [...rows].sort((a, b) => (a.level ?? 0) - (b.level ?? 0) ||
     String(a.agent).localeCompare(String(b.agent)));
 

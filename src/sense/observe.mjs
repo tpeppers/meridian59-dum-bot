@@ -122,6 +122,15 @@ export async function observeFleet(broker, { now = Date.now(), leaderFile = LEAD
     at: now,
     source: 'fleet',
     characters: rows,
+    // WHAT TIME IT IS IN THE WORLD, from the same free call as the rows. The undead
+    // generators open for 35 minutes in every 120, so a night-gated station needs the
+    // phase — and it arrives as data on the observation for the same reason the clock and
+    // the memory do, because `src/decide/` may not read anything for itself.
+    //
+    // `undefined` from a broker that predates this field and `null` from one with no
+    // anchor declared are both falsy, and both correctly mean "a night station stays
+    // shut". Neither is invented into a phase.
+    world_clock: raw.world_clock ?? null,
     ...swarm,
     // Swarm sensing and scheduled-room sensing answer the same shape. Keep both when a
     // human leader happens to share a shift room, de-duplicated by watcher+room.

@@ -280,21 +280,78 @@ test('shift: the graveyard station opens early by the length of the walk', () =>
   assert.ok(!shiftFleetRules[0].decide(closing, d).plan.some(p => p.to === 70));
 });
 
-test('shift: a measured walk beats the typed lead, and the slowest unit sets it', () => {
+test('shift: a measured walk beats the typed lead, and the slowest of the GOING sets it', () => {
   const d = doctrine();
   const st = d.shift.stations.find(s => s.room === 70);
-  // Everyone is much further away than the doctrine assumed. The station must open on the
-  // real distance, not on the number somebody typed when the fleet lived somewhere else.
-  const far = rows(21).map((r, i) => ({ ...r,
-    travel_to_station: { ms: i === 0 ? 300_000 : 60_000, hops: 9, confidence: 1 } }));
+
+  // Everybody genuinely far: the station must open on the real distance rather than on
+  // the two minutes somebody typed when the fleet lived somewhere else.
+  const far = rows(21).map(r => ({ ...r,
+    travel_to_station: { ms: 300_000, hops: 9, confidence: 1 } }));
   const obs = { characters: far, strategies: { agents: {} },
     world_clock: { night: false, opens_in_ms: 320_000 } };
   assert.ok(shiftFleetRules[0].decide(obs, d).plan.some(p => p.to === 70),
-    'the 5-minute walk opens the station 5 minutes early, not 2');
+    'a five-minute walk opens the station five minutes early, not two');
 
-  // With no estimate at all the typed lead still applies, so a broker that cannot
-  // estimate degrades to the old behaviour rather than to never leaving.
+  // ONE STRAGGLER DOES NOT MOVE THE WINDOW. The station takes seven of twenty-one, so a
+  // single very distant unit is simply not in the shift and its walk is nobody's problem.
+  // This is the correction to the first version, which took the fleet maximum and opened
+  // six minutes early to accommodate a character that was never going to be sent.
+  const oneFar = rows(21).map((r, i) => ({ ...r,
+    travel_to_station: { ms: i === 0 ? 600_000 : 60_000, hops: 4, confidence: 1 } }));
+  const early = { characters: oneFar, strategies: { agents: {} },
+    world_clock: { night: false, opens_in_ms: 300_000 } };
+  assert.equal(shiftFleetRules[0].decide(early, d).plan.filter(p => p.to === 70).length, 0,
+    'the straggler does not drag the whole shift five minutes early');
+  const onTime = { characters: oneFar, strategies: { agents: {} },
+    world_clock: { night: false, opens_in_ms: 66_000 } };
+  assert.equal(shiftFleetRules[0].decide(onTime, d).plan.filter(p => p.to === 70).length, 7,
+    'and the seven near ones still leave on their own walk');
+
+  // With no estimate at all the typed lead applies, so a broker that cannot estimate
+  // degrades to the old behaviour rather than to never leaving.
   const blind = { characters: rows(21), strategies: { agents: {} },
     world_clock: { night: false, opens_in_ms: st.lead_ms - 1000 } };
   assert.ok(shiftFleetRules[0].decide(blind, d).plan.some(p => p.to === 70));
+});
+
+test('shift: a time-limited station takes the NEAREST units, and the lead follows them', () => {
+  // MEASURED LIVE AND THIS IS THE BUG IT FIXES. The nearest character was 19 seconds from
+  // the graveyard and the furthest 322. A lead built on the fleet maximum opened the
+  // station six minutes early, so the near units stood in a dead room for five and a half
+  // of them — the walking time this feature exists to save, re-spent as waiting time.
+  //
+  // So the station takes the nearest, and the lead is the slowest of THOSE.
+  const d = doctrine();
+  const walks = [19, 50, 88, 88, 88, 88, 88, 118, 146, 247, 292, 300, 300, 300, 300,
+                 300, 300, 300, 300, 300, 322];
+  const near = rows(21).map((r, i) => ({ ...r,
+    travel_to_station: { ms: walks[i] * 1000, hops: 4, confidence: 1 } }));
+  // Just inside the lead the 7 nearest should go — 88s is the 7th, so ~97s of lead.
+  const obs = { characters: near, strategies: { agents: {} },
+    world_clock: { night: false, opens_in_ms: 97_000 } };
+  const chosen = shiftFleetRules[0].decide(obs, d).plan.filter(p => p.to === 70);
+  assert.equal(chosen.length, 7);
+  const chosenWalks = chosen
+    .map(p => near.find(r => r.agent === p.agent).travel_to_station.ms / 1000);
+  assert.ok(Math.max(...chosenWalks) <= 88,
+    `the shift is the nearest seven, not the first seven (got ${chosenWalks.join(',')})`);
+
+  // AND THE FAR UNITS DO NOT DRAG THE LEAD OUT. At six minutes before the window — which
+  // the fleet maximum would have opened on — the station must still be shut.
+  const early = { characters: near, strategies: { agents: {} },
+    world_clock: { night: false, opens_in_ms: 340_000 } };
+  assert.equal(shiftFleetRules[0].decide(early, d).plan.filter(p => p.to === 70).length, 0,
+    'the furthest unit in the fleet is not the one the window waits for');
+
+  // A unit with no estimate sorts LAST, so an unknown walk cannot push a known-near unit
+  // out of a shift that is about to leave.
+  const mixed = rows(21).map((r, i) => ({ ...r,
+    travel_to_station: i < 3 ? null : { ms: 60_000, hops: 4, confidence: 1 } }));
+  const picked = shiftFleetRules[0].decide(
+    { characters: mixed, strategies: { agents: {} },
+      world_clock: { night: false, opens_in_ms: 66_000 } }, d).plan.filter(p => p.to === 70);
+  assert.equal(picked.length, 7);
+  assert.ok(picked.every(p => mixed.find(r => r.agent === p.agent).travel_to_station),
+    'the three with no estimate are not chosen ahead of eighteen with one');
 });

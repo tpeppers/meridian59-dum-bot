@@ -44,21 +44,43 @@ const sameList = (a, b) => Array.isArray(a) && Array.isArray(b) &&
 // day somebody wrote it, and the walk changes when the fleet moves, when the router picks
 // a different corridor, and when a door starts refusing. When the harness has supplied a
 // real estimate — the sum of the recorded time for each hop of the ACTUAL planned route —
-// that wins, taken across the units so the shift leaves when the FURTHEST of them needs to.
+// that wins.
 //
-// The slowest, not the average: the point is that the station is populated when the window
-// opens, and a lead set to the mean leaves half the shift walking into an open graveyard.
-// Padded by a tenth, because arriving a few seconds early costs a few seconds of standing
-// about and arriving late costs the walk.
-const leadFor = (station, rows = []) => {
-  const typed = Number(station.lead_ms);
-  const measured = rows
-    .map(r => r.travel_to_station?.ms)
-    .filter(ms => Number.isFinite(ms) && ms > 0);
-  if (!measured.length) return typed;
-  const slowest = Math.max(...measured);
-  return Math.max(Number.isFinite(typed) ? typed : 0, Math.round(slowest * 1.1));
+// AND IT IS THE SLOWEST OF THE UNITS THAT WILL ACTUALLY GO, WHICH IS NOT THE SLOWEST IN
+// THE FLEET. Taking the fleet maximum was the obvious thing and it is wrong in a way that
+// costs exactly what this feature was built to save: measured live, the nearest character
+// was 19 seconds from the graveyard and the furthest 322, so a lead built on the furthest
+// opened the station six minutes early and had the near ones stand in a dead room for five
+// and a half of them. That is the walking time re-spent as waiting time.
+//
+// So the station takes the NEAREST units — `pickOrder` below — and the lead is the k-th
+// smallest walk, where k is how many it is about to take. The slowest of the ones going,
+// and nobody else's problem. Padded a tenth, because arriving a few seconds early costs a
+// few seconds and arriving late costs the walk.
+const walkMs = row => {
+  const ms = row?.travel_to_station?.ms;
+  return Number.isFinite(ms) ? ms : null;
 };
+
+const leadFor = (station, rows = [], take = null) => {
+  const typed = Number(station.lead_ms);
+  const walks = rows.map(walkMs).filter(ms => ms != null && ms > 0).sort((a, b) => a - b);
+  if (!walks.length) return typed;
+  // The k-th smallest, where k is the station's take. Clamped into the array, and falling
+  // back to the whole set when the take is unknown.
+  const k = Number.isFinite(take) && take > 0 ? Math.min(Math.ceil(take), walks.length) : walks.length;
+  const slowestGoing = walks[k - 1];
+  return Math.max(Number.isFinite(typed) ? typed : 0, Math.round(slowestGoing * 1.1));
+};
+
+// A TIME-LIMITED ROOM SHOULD BE WORKED BY WHOEVER IS NEAREST IT. Everywhere else the order
+// is by level then agent, which is stable and fair; here stability matters less than the
+// window, and sending the far units costs the shift minutes it cannot get back. Units with
+// no estimate sort last rather than first — an unknown walk must not push a known-near
+// unit out of the shift.
+const pickOrder = (rows, byDistance) => byDistance
+  ? [...rows].sort((a, b) => (walkMs(a) ?? Infinity) - (walkMs(b) ?? Infinity))
+  : rows;
 
 export function shiftAssignments(rows = [], doctrine = {}, fleetObs = { characters: rows }) {
   // A STATION CAN BE OPEN OR SHUT, AND THE CLOCK DECIDES WHICH.
@@ -91,7 +113,15 @@ export function shiftAssignments(rows = [], doctrine = {}, fleetObs = { characte
     if (on) return true;
     // Not open yet — but is it close enough that leaving now is right? `opens_in_ms` is
     // only present on the phase that is waiting, which is exactly when this applies.
-    const lead = leadFor(st, rows);
+    // How many this station is about to take — so the lead is the slowest of THOSE,
+    // not of the whole fleet.
+    // `Number(undefined)` is NaN and NaN SLIPS PAST `??`, so a station with no `max` was
+    // handing NaN to the lead, which fell all the way back to the fleet maximum — the
+    // exact six-minutes-early bug this was meant to fix, reintroduced by a nullish check
+    // that does not catch NaN. Resolve the cap explicitly.
+    const cap = Number.isFinite(Number(st.max)) ? Number(st.max) : Infinity;
+    const take = Math.round(rows.length * (Number(st.share) || 0)) || rows.length;
+    const lead = leadFor(st, rows, Math.min(take, cap));
     if (!Number.isFinite(lead) || lead <= 0) return false;
     const until = when === 'night' ? clock.opens_in_ms : clock.closes_in_ms;
     return Number.isFinite(until) && until <= lead;
@@ -114,7 +144,11 @@ export function shiftAssignments(rows = [], doctrine = {}, fleetObs = { characte
   const taken = new Set();
   stations.forEach((st, i) => {
     const share = Number(st.share);
-    const pool = opted.filter(row => eligible[i].has(row.agent) && !taken.has(row.agent));
+    // A station with a lead is time-limited, so it takes the nearest rather than the
+    // level-ordered — see pickOrder.
+    const pool = pickOrder(
+      opted.filter(row => eligible[i].has(row.agent) && !taken.has(row.agent)),
+      Number(st.lead_ms) > 0);
     // The last station takes the remainder rather than its own rounded share, so the
     // shares cannot lose or duplicate a unit to rounding.
     // `max` IS A CAPACITY AND IT BEATS THE SHARE, because that is what "overflow" means:

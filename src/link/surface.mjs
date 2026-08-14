@@ -32,6 +32,12 @@ export const READ = new Set([
   'fleet', 'status', 'progress', 'inventory', 'equipment', 'abilities', 'spells',
   'loadout', 'look', 'map', 'safe_spots', 'hunting_grounds', 'prey', 'history', 'post_mortem',
   'who', 'safety', 'merchants', 'signets', 'bank', 'resolve_item_names', 'faction_status',
+  // HOW LONG A WALK TAKES, from the harness's own recorded per-hop times. A pure local
+  // computation over the transit books and the room graph — it sends nothing to the game
+  // server, which is what makes it safe to ask on a tick. The night shift uses it to set
+  // off early enough to be standing in the graveyard when the window opens rather than
+  // walking through the first minute of it.
+  'travel_estimate',
 ]);
 
 // ---------------------------------------------------------------- write

@@ -13,6 +13,7 @@ import { shiftAssignments, shiftFleetRules } from '../src/decide/rules/shift.mjs
 import { HUNT_ROOMS, QUARRY_LEVEL, admits, engagementCeiling, cryptAssignment,
   STRATEGY_IDS } from '../src/strategies/catalog.mjs';
 import { weaponFleetRules } from '../src/decide/rules/weapons.mjs';
+import { presetForQuarry } from '../src/decide/weapons.mjs';
 
 const test = globalThis.__dumTest;
 
@@ -181,4 +182,47 @@ test('shift: the fleet draws blunt weapons first again', () => {
   assert.equal(priority[0], 'hammer');
   assert.ok(priority.includes('mace') && priority.includes('axe'));
   assert.ok(priority.length > 3, 'and everything else follows — never an empty hand');
+});
+
+// ---------------------------------------------------------------------------
+// THE WEAPON FOLLOWS THE QUARRY, from the monsters' own resistance tables.
+// ---------------------------------------------------------------------------
+
+test('weapons: the quarry picks the damage type, and the zombie is the only sword case', () => {
+  // A weapon's damage TYPE is what a monster resists, not its name. Short sword, long
+  // sword, mystic sword and gold sword are all ATCK_WEAP_THRUST (shrtswrd.kod:56);
+  // axe and scimitar are SLASH; hammer and mace are BLUDGEON.
+  assert.equal(presetForQuarry('skeleton'), 'vsSkeletons');
+  assert.equal(presetForQuarry('battered skeleton'), 'vsSkeletons',
+    'BatteredSkeleton is Skeleton and declares no resistances of its own');
+  assert.equal(presetForQuarry('fungus beast'), 'vsSkeletons', 'PIERCE 60, THRUST 60');
+  assert.equal(presetForQuarry('groundworm larva'), 'vsSkeletons',
+    'BLUDGEON -30 — it is VULNERABLE to hammers, not merely unprotected');
+
+  // THE ZOMBIE RESISTS NO WEAPON TYPE (zombie.kod:74 lists only spell resistances), so a
+  // short sword is not better against one — it is merely not worse. What that buys is
+  // free proficiency, which is the whole reason to do it.
+  assert.equal(presetForQuarry('zombie'), 'shortSwording');
+
+  // AN UNKNOWN QUARRY GETS NO OPINION, so a creature nobody has looked up cannot silently
+  // inherit the zombie treatment and be fought with the one weapon type most things resist.
+  assert.equal(presetForQuarry('narthyl worm'), null);
+  assert.equal(presetForQuarry(null), null);
+  assert.equal(presetForQuarry(''), null);
+});
+
+test('weapons: the same unit swaps order when its quarry changes, with no doctrine edit', () => {
+  const d = doctrine();
+  const order = hunting => {
+    const live = [{ ...rows(1)[0], hunting, items: [], carry: { load: 0.1 }, provides: [] }];
+    const intent = weaponFleetRules[0].decide(
+      { characters: live, strategies: { agents: {} } }, d);
+    return (intent.plan ?? []).find(p => p.do === 'weapon-policy')?.priority ?? [];
+  };
+  assert.equal(order('skeleton')[0], 'hammer', 'a skeleton takes 120% from bludgeon');
+  assert.equal(order('zombie')[0], 'short sword', 'and a zombie resists nothing');
+  // The strategy is vsSkeletons for both — only the quarry differs, which is the point.
+  assert.equal(order('battered skeleton')[0], 'hammer');
+  // Unknown quarry falls back to the unit's strategy rather than to the sword.
+  assert.equal(order('narthyl worm')[0], 'hammer');
 });

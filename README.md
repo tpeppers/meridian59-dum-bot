@@ -1,6 +1,6 @@
 # meridian59-dum-bot
 
-**DUM — a Deterministic Unattended Mover.**
+**DUM — a Deterministic Unattended Manager.**
 
 A bot that plays a Meridian 59 character, or a fleet of them, with **no language
 model anywhere in it**. Everything it decides comes from an observation of the

@@ -1,7 +1,7 @@
 {
   "extends": "survive.jsonc",
-  "name": "King's Way and Marion crypt shift",
-  "why": "work The King's Way for frogmen with a quarter of the fleet left in the Marion crypts, wielding the short sword the skill is for, with roaming off because both regions have a level-150 room nearby",
+  "name": "King's Way and Castle Victoria shift",
+  "why": "work The King's Way for frogmen with a quarter in Castle Victoria's main room, wielding the short sword the skill is for, with roaming off because a level-150 room sits one door from each destination",
 
   "claim": {
     "movement": "bot",
@@ -59,30 +59,42 @@
     }
   },
 
-  // 75/25: THE KING'S WAY FIRST, THE CRYPT KEPT AS THE SECOND STATION.
+  // 75/25: THE KING'S WAY, WITH THE REMAINDER IN CASTLE VICTORIA'S MAIN ROOM.
   //
   // A frogman is level 70 at rating 510 — above every character here, so it still advances
-  // them, and slightly gentler than the crypt skeleton's 525. Room 576 is also a much
-  // kinder neighbourhood: its worst neighbour is 578 with trolls, where 2601 is one door
-  // from 2602 and thrashers at level 150.
+  // them. 576 is the only King's Way room with frogmen: 575 shares the name and makes
+  // giant rats, and 552 The Great Ocean makes frogmen at 20% alongside mollusk creatures
+  // at level 150, so it is the room somebody reaches for and it is not in HUNT_ROOMS.
   //
-  // TWO ROOMS NAMED "THE KING'S WAY" AND ONLY ONE OF THEM HAS FROGMEN. 575 generates giant
-  // rats and baby spiders, which advance nobody here. And 552 The Great Ocean generates
-  // frogmen too — at 20%, alongside mollusk creatures at level 150 and 80% — so it is the
-  // room somebody reaches for and it is not in HUNT_ROOMS at all.
+  // THE CRYPT STATION IS GONE BECAUSE ITS ROUTE KILLED SOMEBODY, not because 2601 was bad.
+  // The path to the Marion crypts runs through the Ancient Graveyard of Brax, where a
+  // narthyl worm is level 120 — a creature nothing in this fleet may fight, so a character
+  // meeting one on the way can only run, and travel doctrine is "the way out is through".
+  // A level-53 character was killed on that road on 2026-08-13, having survived the
+  // destination perfectly well — the room was never the problem, the corridor was.
   //
-  // FROGMEN CARRY +80 KARMA AND EVERYTHING THIS FLEET HAS KILLED SO FAR WAS NEGATIVE.
-  // "Killing someone with 100 karma is a -100 karma act" (player.kod:6559), bounded to
-  // 150 a kill, so a shift on frogmen drives the whole fleet's karma down. It is recorded
-  // rather than guarded because it costs this fleet nothing: karma gates only Qor and
-  // Shal'ille spells (spell.kod:481-495), and nobody here holds one — the create food and
-  // create weapon everything depends on are Kraanan and ungated. A fleet that later learns
-  // a Shal'ille spell would need this revisited.
+  // 38 IS THE MAIN ROOM AND 39 IS ONLY AN OVERFLOW VALVE. `max` fills 38 first and sends
+  // the rest upstairs, which is what overflow means — a share alone would put a fixed
+  // proportion in each room however crowded the first got. 8 leaves headroom under 38's
+  // skeleton cap of 10 so the room is not being fought over. At the current 75/25 the
+  // valve never opens: five units go to 38 and none to 39.
+  //
+  // AND 39 PAYS ALMOST NOBODY. Its battered skeleton is level 60 and eighteen of these
+  // characters are 60, and a kill advances only while the creature's level is strictly
+  // above max health. It is a legitimate place to put an overflowing character, not a
+  // good one — if the valve is opening regularly, the fleet needs a third room, not this.
+  //
+  // FROGMEN CARRY +80 KARMA AND EVERYTHING ELSE HERE IS NEGATIVE. "Killing someone with
+  // 100 karma is a -100 karma act" (player.kod:6559), bounded to 150 a kill, so this
+  // shift drives the fleet's karma down. Recorded rather than guarded because karma gates
+  // only Qor and Shal'ille spells (spell.kod:481-495) and nobody here holds one; create
+  // food and create weapon are Kraanan and ungated. Revisit if that changes.
   "shift": {
     "on": true,
     "stations": [
       { "room": 576, "hunt": "frogman", "share": 0.75 },
-      { "room": 2601, "hunt": "skeleton", "share": 0.25 }
+      { "room": 38, "hunt": "skeleton", "share": 0.25, "max": 8 },
+      { "room": 39, "hunt": "battered skeleton" }
     ],
     "rest_below": 0.75,
     "flee_below": 0.35,

@@ -59,9 +59,15 @@ export function shiftAssignments(rows = [], doctrine = {}, fleetObs = { characte
     const pool = opted.filter(row => eligible[i].has(row.agent) && !taken.has(row.agent));
     // The last station takes the remainder rather than its own rounded share, so the
     // shares cannot lose or duplicate a unit to rounding.
-    const want = i === stations.length - 1 ? pool.length
+    // `max` IS A CAPACITY AND IT BEATS THE SHARE, because that is what "overflow" means:
+    // fill this room, and when it is full the rest go to the next station. A share alone
+    // cannot say that — it would put a fixed proportion in each room however crowded the
+    // first one got. The last station has no cap and absorbs whatever is left, which is
+    // why it must be the one you are willing to have everybody in.
+    const cap = Number.isFinite(Number(st.max)) ? Number(st.max) : Infinity;
+    const want = Math.min(cap, i === stations.length - 1 ? pool.length
       : Math.round(opted.filter(row => eligible[i].has(row.agent)).length *
-          (Number.isFinite(share) ? share : 0));
+          (Number.isFinite(share) ? share : 0)));
     for (const row of pool.slice(0, Math.max(0, want))) {
       const entry = HUNT_ROOMS[Number(st.room)];
       taken.add(row.agent);
@@ -75,7 +81,12 @@ export function shiftAssignments(rows = [], doctrine = {}, fleetObs = { characte
   // unit too small for the first quarry works the second rather than standing idle.
   for (const row of opted) {
     if (taken.has(row.agent)) continue;
-    const i = stations.findIndex((st, idx) => eligible[idx].has(row.agent));
+    // The fallback honours capacity too, or an overflowed unit would be handed straight
+    // back to the room it overflowed out of.
+    const filled = new Map();
+    for (const a of out.values()) if (a.to != null) filled.set(a.to, (filled.get(a.to) ?? 0) + 1);
+    const i = stations.findIndex((st, idx) => eligible[idx].has(row.agent) &&
+      (filled.get(Number(st.room)) ?? 0) < (Number.isFinite(Number(st.max)) ? Number(st.max) : Infinity));
     if (i < 0) {
       out.set(row.agent, { row, to: null,
         why: `no station admits this unit at ${row.level} max health ` +

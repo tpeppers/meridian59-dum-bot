@@ -406,6 +406,17 @@ export const HUNT_ROOMS = Object.freeze({
     generates: Object.freeze(['skeleton', 'battered skeleton']) }),
   2600: Object.freeze({ room: 2600, name: 'The crypt in Marion', threat: 75,
     generates: Object.freeze(['spectral mummy']) }),
+  // Castle Victoria. 38 is the main room and 39 is the floor above it; 41, the
+  // Underbasement one door below, generates narthyl worms at level 120 and is absent for
+  // the same reason 2602 and 552 are.
+  //
+  // A BATTERED SKELETON IS LEVEL 60 AND MOST OF THIS FLEET IS 60, so 39 advances almost
+  // nobody — a kill pays only while the creature's level is strictly above max health.
+  // It is listed because it is a legitimate overflow, not because it is good.
+  38: Object.freeze({ room: 38, name: 'Castle Victoria', threat: 75,
+    generates: Object.freeze(['skeleton', 'zombie']) }),
+  39: Object.freeze({ room: 39, name: 'Upstairs in Castle Victoria', threat: 60,
+    generates: Object.freeze(['battered skeleton', 'zombie']) }),
 });
 
 // Kept for the crypt-only callers and tests that name it.
@@ -414,7 +425,7 @@ export const CRYPT_ROOMS = HUNT_ROOMS;
 // Level of each quarry, for the engagement-ceiling test. Kept beside the rooms because
 // both are read together and a level with two homes ends up with two answers.
 export const QUARRY_LEVEL = Object.freeze({
-  frogman: 70, centipede: 30,
+  frogman: 70, centipede: 30, zombie: 55,
   skeleton: 75, 'battered skeleton': 60, 'spectral mummy': 40,
 });
 export const CRYPT_QUARRY_LEVEL = QUARRY_LEVEL;

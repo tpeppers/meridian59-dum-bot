@@ -137,15 +137,22 @@
     ],
     "rest_below": 0.75,
     "flee_below": 0.35,
-    // 180 IS A FLOOR ONLY A FED FLEET CAN CLEAR, AND THIS ONE HAS NO HERBS.
-    // Resting caps vigor at 80/200; the only way past is `create food`, which costs 2
-    // elderberry AND 2 herbs. Measured 2026-08-14: herbs were ZERO on all 21 characters
-    // (elderberry 0-5), so not one of them could cast it. Eight sat in room 2 resting at
-    // exactly v80, refusing to fight, indefinitely — a fleet-wide park that reads on the
-    // board as twenty-one healthy characters. 60 leaves a real floor and a working band
-    // above the cap. Put it back to 180 once the herb supply is fixed: the number is not
-    // wrong, the pantry is.
-    "fight_above_vigor": 60,
+    // THE FLEET HAS NO HERBS, AND THAT IS STILL NOT WHY IT RESTS. Measured 2026-08-14:
+    // herbs were ZERO on all 21 characters over two check-ins half an hour apart, and
+    // elderberry was 10 in the whole fleet. `create food` costs 2 of each, so nothing
+    // could cast it and vigor cannot pass the rest threshold of 80 by resting alone.
+    //
+    // I dropped this to 60 on the first of those check-ins, reasoning that a floor of
+    // 180 could never be cleared and so was parking the eight characters then sitting at
+    // exactly v80. THAT WAS WRONG and is reverted. The change never went live — DUM was
+    // not restarted — yet the next reading had three characters at v72-v78 hunting
+    // with the floor still at 180. Characters below the floor fight. Whatever
+    // parks them, it is not this number, and `rest_below: 0.75` is the likelier gate.
+    //
+    // Keep the herb-zero finding, which is real and unfixed; discard the inference drawn
+    // from it. Do not re-lower this without a reading that shows the floor itself
+    // refusing a fight.
+    "fight_above_vigor": 180,
     "use_safe_spots": true
   },
 

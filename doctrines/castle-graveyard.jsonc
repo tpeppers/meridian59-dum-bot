@@ -27,7 +27,29 @@
     // under Castle Victoria and this fleet is no longer anywhere near it. Leaving it
     // selected would send whichever unit came up in the rotation on a walk across the
     // world and back, for a crate whose expected value is about forty shillings.
-    "defaults": ["create-weapons", "vs-skeletons", "create-food", "sell-and-bank", "max-weapons", "buy-food", "buy-weapons", "buy-reagents", "accumulate-in-vault", "farm-cleanup"],
+    // EVERY TOWN TRIP CROSSES UKGOTH, SO THERE ARE NO TOWN TRIPS.
+    //
+    // Room 599, Ukgoth, Holy Land of Trolls: troll level 90, attack rating 750. It sits on
+    // the route from Castle Victoria to BOTH banks — 38->54 goes 2, 599, 598, 597, 596, 61
+    // and 38->376 goes 2, 599, 589, 579, 578 — and the danger-aware router already returns
+    // the safest of those. There is no way round it.
+    //
+    // A level-90 troll is ABOVE this fleet's band. Max healths are 53-56 now, so the
+    // engagement ceiling is 79-84 and `refuseEngagement` refuses the fight: a character
+    // meeting one can only run, and travel doctrine is that a planned trip is completed
+    // through whatever attacks it. Measured 2026-08-14: ten deaths in one half hour, SEVEN
+    // of them in Ukgoth, and three characters died there more than once in that window —
+    // one of them three times.
+    //
+    // So the selling, banking and restocking strategies are off. The fleet keeps what it
+    // kills until its pack fills and then drops the cheapest thing, which costs shillings;
+    // crossing Ukgoth twice a trip costs characters, and this fleet has already fallen
+    // from 60-61 max health to 53-56. Create Food covers vigor from reagents already
+    // carried, so nothing here depends on a shop.
+    //
+    // Turn these back on when the fleet can fight a troll — that is 60 max health for the
+    // ceiling to reach 90 — or when it works somewhere with a road that avoids 599.
+    "defaults": ["create-weapons", "vs-skeletons", "create-food", "max-weapons", "accumulate-in-vault", "farm-cleanup"],
     "settings": {
       "sell-and-bank": {
         "bank_above": 3000,

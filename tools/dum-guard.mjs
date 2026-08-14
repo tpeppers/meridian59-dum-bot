@@ -56,7 +56,8 @@ const SOURCES = [
 //
 //   secret     an account password. Bounded, matched EVERYWHERE including code, and
 //              never printed — only its file and line are.
-//   character  an in-world name. Matched everywhere, without exception.
+//   character  an in-world name. Matched everywhere, with ONE exception: the NATO
+//              phonetic alphabet, which names nobody and collides with ordinary words.
 //   handle     an agent/account name. Only a couple of characters long, so bounded
 //              and checked in prose and data rather than in source.
 //   fleet      a roster name. Bounded and prose-only, for the same reason.
@@ -73,6 +74,29 @@ const SOURCES = [
 // THE SAME RUN ALSO FOUND THAT THE DOCUMENTATION ITSELF WAS THE LEAK. This comment used
 // to illustrate "short handles" with two real ones, which on this fleet are two real
 // passwords. There are no literal examples here now, and that is why.
+// THE NATO PHONETIC ALPHABET IS NOT AN IDENTITY.
+//
+// A character called Alpha or Delta names nobody: the set is fixed, public, twenty-six
+// words long, and chosen precisely because it carries no information. Publishing one
+// tells a reader that a fleet exists, which the repository says on its front page.
+//
+// They have to be exempt rather than merely tolerated, because every one of them is also
+// an ordinary English word that appears throughout source and prose — `echo` in a shell
+// script, `delta` in a comment about timing. A roster using them turned this guard into
+// eleven false positives across files nobody had touched, and a guard that cries wolf on
+// its own documentation is one people start passing --no-verify to. That is a worse
+// outcome than the leak it was protecting against.
+//
+// This exempts the NAME only. The account, password and host of a NATO-named character
+// are as secret as anybody's and are still matched everywhere.
+const NATO_PHONETIC = new Set([
+  'alfa', 'alpha', 'bravo', 'charlie', 'delta', 'echo', 'foxtrot', 'golf', 'hotel',
+  'india', 'juliett', 'juliet', 'kilo', 'lima', 'mike', 'november', 'oscar', 'papa',
+  'quebec', 'romeo', 'sierra', 'tango', 'uniform', 'victor', 'whiskey', 'xray',
+  'x-ray', 'yankee', 'zulu',
+]);
+const isNato = (name) => NATO_PHONETIC.has(String(name ?? '').trim().toLowerCase());
+
 const found = { secret: new Set(), character: new Set(), handle: new Set(),
                 fleet: new Set(), host: new Set() };
 const readFrom = [];
@@ -108,7 +132,7 @@ const LOOPBACK = /^(127\.\d+\.\d+\.\d+|::1|0\.0\.0\.0|localhost)$/i;
         const c = row.credentials;
         if (agent) found.handle.add(agent);
         if (c.account) found.handle.add(c.account);
-        if (c.character) found.character.add(c.character);
+        if (c.character && !isNato(c.character)) found.character.add(c.character);
         if (c.password) found.secret.add(c.password);
         if (c.host && !LOOPBACK.test(String(c.host))) found.host.add(c.host);
       }
@@ -133,7 +157,7 @@ const LOOPBACK = /^(127\.\d+\.\d+\.\d+|::1|0\.0\.0\.0|localhost)$/i;
       for (const f of fs.readdirSync(dir).filter(f => f.endsWith('.json'))) {
         const s = readJson(path.join(dir, f));
         for (const c of s?.characters ?? []) {
-          if (c.character) found.character.add(c.character);
+          if (c.character && !isNato(c.character)) found.character.add(c.character);
           if (c.agent) found.handle.add(c.agent);
           n++;
         }

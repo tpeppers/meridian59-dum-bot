@@ -70,12 +70,12 @@ test('shift: the shipped doctrine puts the whole fleet in Castle Victoria', () =
   assert.equal(intent.kind, 'act');
   assert.equal(intent.plan.length, 21);
   const byRoom = intent.plan.reduce((m, p) => ({ ...m, [p.to]: (m[p.to] ?? 0) + 1 }), {});
-  assert.deepEqual(byRoom, { 38: 21 }, 'everyone at 60 max health clears the skeleton ceiling');
+  assert.deepEqual(byRoom, { 2601: 21 }, 'the densest skeleton generator takes the fleet');
   assert.deepEqual([...new Set(intent.plan.map(p => p.hunt))], ['skeleton']);
   // ROAMING OFF IS THE SAFETY PROPERTY. 41, the Underbasement, is one door below 38 and
   // generates narthyl worms at level 120.
   assert.ok(intent.plan.every(p => p.roam === false));
-  assert.ok(intent.plan.every(p => p.max_threat_over === 15), '38 threat 75 against level 60');
+  assert.ok(intent.plan.every(p => p.max_threat_over === 15), '2601 threat 75 against level 60');
   assert.ok(intent.plan.every(p => p.purpose === 'advance' && p.goals?.length));
   // THE SHIFT DOES NOT SET A WEAPON ORDER. `maintain-qualifying-weapons` owns that, and
   // the shift carrying its own copy is how a stale preset gets reimposed on a fleet that
@@ -92,7 +92,7 @@ test('shift: the engagement ceiling sorts the fleet, with no health threshold wr
     ...rows(3).map((r, i) => ({ ...r, agent: `s${i}`, level: 36 }))];  // ceiling 54
   const assigned = shiftAssignments(mixed, doctrine(), obsOf(mixed));
   const at = lvl => assigned.filter(a => a.row.level === lvl);
-  assert.ok(at(60).every(a => a.to === 38), 'ceiling 90 takes the level-75 skeleton');
+  assert.ok(at(60).every(a => a.to === 2601), 'ceiling 90 takes the level-75 skeleton');
   assert.ok(at(45).every(a => a.to === 39), 'ceiling 68 falls through to the battered skeleton');
   // UNDER 40 MAX HEALTH THERE IS NOTHING IN THE CASTLE — 39's own threat is 60 and its
   // zombie is 55, both above a ceiling of 54 — so those fall to the floor station rather
@@ -108,10 +108,10 @@ test('shift: a capacity is what makes overflow mean anything', () => {
   // `max` beats the share, because "fill this room, then use the next" is not something a
   // proportion can express.
   const d = doctrine();
-  d.shift.stations.find(st => st.room === 38).max = 5;
+  d.shift.stations.find(st => st.room === 2601).max = 5;
   const intent = fire(rows(21), d);
   const byRoom = intent.plan.reduce((m, p) => ({ ...m, [p.to]: (m[p.to] ?? 0) + 1 }), {});
-  assert.deepEqual(byRoom, { 38: 5, 39: 16 }, 'the surplus goes upstairs');
+  assert.deepEqual(byRoom, { 2601: 5, 38: 16 }, 'the surplus goes to the next station');
   assert.equal(intent.plan.length, 21);
   assert.equal(new Set(intent.plan.map(p => p.agent)).size, 21, 'nobody lost or duplicated');
 });
@@ -149,24 +149,24 @@ test('shift: DUM\'s own claim does not count as busy', () => {
 
 test('shift: a unit already holding its orders is not re-sent every tick', () => {
   // Holding the orders AND standing in the room: nothing to do.
-  const settled = rows(21).map(r => ({ ...r, room: 38,
-    policy: { assignedRoom: 38, hunt: 'skeleton', roam: false, purpose: 'advance' } }));
+  const settled = rows(21).map(r => ({ ...r, room: 2601,
+    policy: { assignedRoom: 2601, hunt: 'skeleton', roam: false, purpose: 'advance' } }));
   assert.equal(fire(settled).kind, 'pass', 'a fleet already on station is left alone');
 
   // ORDERS MATCHING IS NOT BEING THERE. The same orders, standing somewhere else and
   // idle, must produce a walk — this is the case that had eleven characters holding safe
   // walls in a dead room for hours while every signal read healthy.
-  const stranded = rows(21).map(r => ({ ...r, room: 2601, activity: 'holding a untested safe spot',
-    policy: { assignedRoom: 38, hunt: 'skeleton', roam: false, purpose: 'advance' } }));
+  const stranded = rows(21).map(r => ({ ...r, room: 71, activity: 'holding a untested safe spot',
+    policy: { assignedRoom: 2601, hunt: 'skeleton', roam: false, purpose: 'advance' } }));
   const walk = fire(stranded);
   assert.equal(walk.kind, 'act');
-  assert.ok(walk.plan.every(p => p.do === 'relocate' && p.to === 38));
+  assert.ok(walk.plan.every(p => p.do === 'relocate' && p.to === 2601));
 
   // But a keeper already travelling or fighting is making its own progress and must not
   // have a second journey started underneath it.
   for (const activity of ['travelling', 'fighting from a proven safe spot', 'resting']) {
-    const busy = rows(21).map(r => ({ ...r, room: 2601, activity,
-      policy: { assignedRoom: 38, hunt: 'skeleton', roam: false, purpose: 'advance' } }));
+    const busy = rows(21).map(r => ({ ...r, room: 71, activity,
+      policy: { assignedRoom: 2601, hunt: 'skeleton', roam: false, purpose: 'advance' } }));
     assert.equal(fire(busy).kind, 'pass', `${activity} is left alone`);
   }
 });

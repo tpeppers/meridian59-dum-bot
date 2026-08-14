@@ -245,7 +245,29 @@ export const shiftFleetRules = [{
       if (!takeable(a.row) || a.row.parked || a.row.piloted ||
           activeFactionWork(observation, a.row)) { busy += 1; return []; }
       const orders = { to: a.to, hunt: a.hunt };
-      if (!needsOrders(a.row, orders)) return [];
+      // ORDERS MATCHING IS NOT THE SAME AS BEING THERE, and conflating the two is how a
+      // shift quietly stops working. `deploy` sets the assignment and leaves the walk to
+      // the keeper, which is correct — movement is a one-second decision and the keeper
+      // knows about walls and doorways. But when the keeper does not walk, every signal
+      // in the system still reads healthy: the policy is right, the board is green, and
+      // DUM reports "the rest hold their station orders".
+      //
+      // Measured: eleven characters stood on safe walls in room 2601 for hours, all
+      // carrying `assignedRoom: 38`, in a room whose generator was dead because 26 surviving
+      // statues held it over its cap. Nothing was wrong with the orders and nothing was
+      // going to fix it.
+      //
+      // So a unit whose orders are right but which is somewhere else gets walked. Only
+      // when it is genuinely idle: a keeper mid-travel or mid-fight is making progress of
+      // its own and must not have a second journey started underneath it.
+      if (!needsOrders(a.row, orders)) {
+        const settled = a.row.room != null && a.row.room !== a.to;
+        const busyDoing = /travel|fight|pull|rest|recover|park|eat/i.test(String(a.row.activity ?? ''));
+        if (settled && !busyDoing)
+          return [{ do: 'relocate', agent: a.row.agent, to: a.to,
+            why: `orders say ${a.to} and it is standing in ${a.row.room} — walk it there` }];
+        return [];
+      }
       return [{
         do: 'deploy', agent: a.row.agent, to: a.to, hunt: a.hunt,
         roam: false, purpose: 'advance',

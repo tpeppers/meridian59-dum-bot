@@ -148,9 +148,27 @@ test('shift: DUM\'s own claim does not count as busy', () => {
 });
 
 test('shift: a unit already holding its orders is not re-sent every tick', () => {
-  const settled = rows(21).map(r => ({ ...r,
+  // Holding the orders AND standing in the room: nothing to do.
+  const settled = rows(21).map(r => ({ ...r, room: 38,
     policy: { assignedRoom: 38, hunt: 'skeleton', roam: false, purpose: 'advance' } }));
-  assert.equal(fire(settled).kind, 'pass', 'a fleet already holding its orders is left alone');
+  assert.equal(fire(settled).kind, 'pass', 'a fleet already on station is left alone');
+
+  // ORDERS MATCHING IS NOT BEING THERE. The same orders, standing somewhere else and
+  // idle, must produce a walk — this is the case that had eleven characters holding safe
+  // walls in a dead room for hours while every signal read healthy.
+  const stranded = rows(21).map(r => ({ ...r, room: 2601, activity: 'holding a untested safe spot',
+    policy: { assignedRoom: 38, hunt: 'skeleton', roam: false, purpose: 'advance' } }));
+  const walk = fire(stranded);
+  assert.equal(walk.kind, 'act');
+  assert.ok(walk.plan.every(p => p.do === 'relocate' && p.to === 38));
+
+  // But a keeper already travelling or fighting is making its own progress and must not
+  // have a second journey started underneath it.
+  for (const activity of ['travelling', 'fighting from a proven safe spot', 'resting']) {
+    const busy = rows(21).map(r => ({ ...r, room: 2601, activity,
+      policy: { assignedRoom: 38, hunt: 'skeleton', roam: false, purpose: 'advance' } }));
+    assert.equal(fire(busy).kind, 'pass', `${activity} is left alone`);
+  }
 });
 
 test('shift: it is off unless a doctrine asks, and the old shifts stay off', () => {

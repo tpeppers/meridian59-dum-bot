@@ -125,6 +125,20 @@ export function callsForFleetPlan(plan = [], why = null) {
       }, why: step.why ?? why });
       continue;
     }
+    // WALK THERE. `deploy` sets the assignment and trusts the keeper to act on it, which
+    // is right nearly always — the keeper owns movement at one second and knows about
+    // walls, monsters in doorways and its own health. But when it does NOT act, nothing
+    // else in the system notices: the orders read correct, the board reads healthy, and
+    // the character stands still. Measured: eleven characters held safe walls in a room
+    // whose generator was dead for hours, every one of them carrying `assignedRoom: 38`.
+    //
+    // Background, so a fleet pass does not block behind twenty walks.
+    if (step.do === 'relocate') {
+      const agent = need(step, 'agent');
+      calls.push({ tool: 'travel', args: { agent, to: Number(step.to), background: true },
+        why: step.why ?? why });
+      continue;
+    }
     if (step.do === 'stand-down') {
       const agent = need(step, 'agent'), assigned_room = need(step, 'assigned_room');
       calls.push({ tool: 'autopilot', args: { agent, action: 'start', mode: 'idle',

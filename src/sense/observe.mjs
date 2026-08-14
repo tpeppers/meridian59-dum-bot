@@ -265,6 +265,38 @@ export async function enrichFactionLoyalty(broker, rows = []) {
   return rows;
 }
 
+/**
+ * How long the walk to a station is, from the fleet's own recorded transit times.
+ *
+ * A MEASURED LEAD, NOT A TYPED ONE. The alternative is a number in the doctrine that was
+ * right on the day somebody wrote it — and the walk changes when the fleet moves, when the
+ * router picks a different corridor, and when a door starts refusing. This asks the
+ * harness, which sums the recorded time for each hop of the actual planned route.
+ *
+ * Cheap on purpose: the estimate is pure local computation in the harness (no game-server
+ * traffic), and it is asked once per DISTINCT current room rather than once per character,
+ * because the answer depends on where a unit is standing and not on which unit it is.
+ */
+export async function enrichTravelEstimates(broker, rows = [], to, { basis = 'p90' } = {}) {
+  const byRoom = new Map();
+  for (const row of rows) {
+    if (!Number.isInteger(row.room) || row.room === to) continue;
+    if (!byRoom.has(row.room)) byRoom.set(row.room, null);
+  }
+  for (const from of byRoom.keys()) {
+    const est = await broker.call('travel_estimate', { from, to, basis }).catch(() => null);
+    if (est?.ms != null) byRoom.set(from, est);
+  }
+  for (const row of rows) {
+    const est = byRoom.get(row.room);
+    // Undefined when the unit is already there, null when the estimate failed. A caller
+    // must not read either as "no walk" — see the shift rule, which falls back to the
+    // doctrine's own lead rather than to zero.
+    row.travel_to_station = row.room === to ? { ms: 0, hops: 0, confidence: 1 } : est ?? null;
+  }
+  return rows;
+}
+
 /** Inspect only strategy-selected rooms for opposing visible token carriers. */
 export async function enrichFactionGames(broker, rows = []) {
   for (const row of rows) {

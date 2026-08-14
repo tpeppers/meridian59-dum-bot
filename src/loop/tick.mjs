@@ -12,7 +12,7 @@
 // through twenty-one.
 
 import { observeFleet, observeFromBoard, deepen, enrichForMoot, enrichEquipment,
-         enrichMaintenance, enrichFactionInventory, enrichFactionGames, enrichFactionLoyalty } from '../sense/observe.mjs';
+         enrichMaintenance, enrichFactionInventory, enrichFactionGames, enrichFactionLoyalty, enrichTravelEstimates } from '../sense/observe.mjs';
 import { characterRules, fleetRules, decide } from '../decide/index.mjs';
 import { apply } from '../act/orders.mjs';
 import { verify } from '../act/verify.mjs';
@@ -155,6 +155,24 @@ export async function tickFleet(ctx, { decide: runRules = true } = {}) {
         obs.factions = ctx.factions?.snapshot(agents) ?? obs.factions;
       }
     }
+    // HOW FAR THE NEXT WINDOW IS, IN WALKING TIME. Only for a station that is waiting to
+    // open and only when it is close enough for the answer to change a decision — the
+    // estimate is free of game-server traffic but it is still a call per distinct room,
+    // and asking two hours out would be asking about a walk nobody is about to make.
+    const waiting = (config.shift?.stations ?? []).find(st => {
+      if (!Number.isFinite(Number(st?.lead_ms)) || Number(st.lead_ms) <= 0) return false;
+      const when = String(st.when ?? 'always').toLowerCase();
+      if (when === 'always') return false;
+      const clock = obs.world_clock;
+      if (!clock) return false;
+      const until = when === 'night' ? clock.opens_in_ms : clock.closes_in_ms;
+      // Twice the lead: enough warning to have a fresh number before the moment it is
+      // needed, without polling all cycle.
+      return Number.isFinite(until) && until <= Number(st.lead_ms) * 2;
+    });
+    if (waiting)
+      await enrichTravelEstimates(broker, (obs.characters ?? []).filter(r => r.in_game),
+                                  Number(waiting.room));
     if (config.graveyard?.shift === true)
       await enrichEquipment(broker, (obs.characters ?? []).filter(r => r.in_game));
     if (config.moot?.hold === true || config.weapons?.provision?.enabled === true) {

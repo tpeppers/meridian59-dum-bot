@@ -103,6 +103,16 @@
   // tick a unit spends part of its window travelling, which is the cost of a shift that
   // re-forms every two hours.
   //
+  // `lead_ms` IS A FLOOR, NOT THE ANSWER. The station opens this much BEFORE the window so
+  // the walk happens on the fleet's own time rather than the graveyard's — 35 minutes is
+  // short enough that a 90-second stroll is a twentieth of it, every cycle, for ever. When
+  // the harness can supply a real number — the recorded time for each hop of the actual
+  // route, taken across the shift so the SLOWEST unit is the one that fits — that wins and
+  // this is only the minimum. Two minutes is roughly the King's Way walk plus margin.
+  //
+  // It is only ever EARLY. The station still closes exactly when the room stops
+  // generating, because arriving late wastes a walk and staying late wastes the fleet.
+  //
   // A NIGHT STATION IS SHUT WHEN THE CLOCK IS UNKNOWN. `world_clock` is null until an
   // operator has watched a window begin and run `m59-dayclock.mjs --start-now`; that is a
   // different fact from "it is daytime" and is deliberately not guessed at.
@@ -115,7 +125,7 @@
   "shift": {
     "on": true,
     "stations": [
-      { "room": 70, "hunt": "skeleton", "share": 0.35, "when": "night" },
+      { "room": 70, "hunt": "skeleton", "share": 0.35, "when": "night", "lead_ms": 120000 },
       { "room": 38, "hunt": "skeleton", "share": 0.25, "max": 8 },
       { "room": 576, "hunt": "frogman", "share": 0.75 },
       { "room": 39, "hunt": "battered skeleton" }

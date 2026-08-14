@@ -264,8 +264,19 @@ export const DEFAULTS = {
   },
   // THE MARION CRYPT SHIFT. Off by default like every other shift: it pins characters to
   // two specific rooms, and a doctrine that has not asked for that must not get it.
-  crypt: {
-    shift: false,
+  // THE HUNTING SHIFT: which rooms the fleet works, and in what proportion.
+  //
+  // Off by default like every other shift — it pins characters to specific rooms, and a
+  // doctrine that has not asked for that must not get it. A station's `room` must appear
+  // in HUNT_ROOMS and its `hunt` must be something that room actually GENERATES, or the
+  // station is refused rather than approximated: that guard is what keeps a fleet out of
+  // 2602 (thrashers, 150) and 552 (mollusks, 150), and off prey that does not respawn.
+  //
+  // `share` is a fraction of the units each station can actually take, not of the whole
+  // fleet, and the last station takes the remainder so rounding cannot lose anybody.
+  shift: {
+    on: false,
+    stations: [],
     rest_below: 0.75,
     flee_below: 0.35,
     fight_above_vigor: 180,

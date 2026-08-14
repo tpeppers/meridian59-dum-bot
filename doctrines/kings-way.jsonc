@@ -1,7 +1,7 @@
 {
   "extends": "survive.jsonc",
-  "name": "Marion crypt short-sword shift",
-  "why": "hold the Marion crypts on a renewable generator, wielding the short sword the skill is for, with roaming off because the next room along is thrashers at level 150",
+  "name": "King's Way and Marion crypt shift",
+  "why": "work The King's Way for frogmen with a quarter of the fleet left in the Marion crypts, wielding the short sword the skill is for, with roaming off because both regions have a level-150 room nearby",
 
   "claim": {
     "movement": "bot",
@@ -59,8 +59,31 @@
     }
   },
 
-  "crypt": {
-    "shift": true,
+  // 75/25: THE KING'S WAY FIRST, THE CRYPT KEPT AS THE SECOND STATION.
+  //
+  // A frogman is level 70 at rating 510 — above every character here, so it still advances
+  // them, and slightly gentler than the crypt skeleton's 525. Room 576 is also a much
+  // kinder neighbourhood: its worst neighbour is 578 with trolls, where 2601 is one door
+  // from 2602 and thrashers at level 150.
+  //
+  // TWO ROOMS NAMED "THE KING'S WAY" AND ONLY ONE OF THEM HAS FROGMEN. 575 generates giant
+  // rats and baby spiders, which advance nobody here. And 552 The Great Ocean generates
+  // frogmen too — at 20%, alongside mollusk creatures at level 150 and 80% — so it is the
+  // room somebody reaches for and it is not in HUNT_ROOMS at all.
+  //
+  // FROGMEN CARRY +80 KARMA AND EVERYTHING THIS FLEET HAS KILLED SO FAR WAS NEGATIVE.
+  // "Killing someone with 100 karma is a -100 karma act" (player.kod:6559), bounded to
+  // 150 a kill, so a shift on frogmen drives the whole fleet's karma down. It is recorded
+  // rather than guarded because it costs this fleet nothing: karma gates only Qor and
+  // Shal'ille spells (spell.kod:481-495), and nobody here holds one — the create food and
+  // create weapon everything depends on are Kraanan and ungated. A fleet that later learns
+  // a Shal'ille spell would need this revisited.
+  "shift": {
+    "on": true,
+    "stations": [
+      { "room": 576, "hunt": "frogman", "share": 0.75 },
+      { "room": 2601, "hunt": "skeleton", "share": 0.25 }
+    ],
     "rest_below": 0.75,
     "flee_below": 0.35,
     "fight_above_vigor": 180,

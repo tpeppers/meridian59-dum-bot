@@ -427,6 +427,18 @@ export const HUNT_ROOMS = Object.freeze({
   // advances nobody past 55. So this is a rich window rather than a rich room.
   70: Object.freeze({ room: 70, name: 'The Graveyard of Tos', threat: 75, night_only: true,
     generates: Object.freeze(['skeleton', 'zombie']) }),
+  // THE FLOOR. A character that has been ground down far enough refuses everything in the
+  // castle — at 36 max health the ceiling is 54, and even the zombies upstairs are 55 — so
+  // without somewhere gentler it is left unplaced and wanders.
+  //
+  // 544 is the gentlest room in the world that still PAYS such a character: a fungus beast
+  // is level 50 against difficulty 1, which is an attack rating of 210 and the softest
+  // fight in the game, and 50 is comfortably above a decayed character's max health so the
+  // kills still advance it. The groundworm larva sharing the room is level 35 at 285. It
+  // also has five safe squares that have held and never failed, which is more than the
+  // castle rooms between them can say.
+  544: Object.freeze({ room: 544, name: 'Valley of Ileria', threat: 50,
+    generates: Object.freeze(['fungus beast', 'groundworm larva']) }),
 });
 
 // Kept for the crypt-only callers and tests that name it.
@@ -436,6 +448,7 @@ export const CRYPT_ROOMS = HUNT_ROOMS;
 // both are read together and a level with two homes ends up with two answers.
 export const QUARRY_LEVEL = Object.freeze({
   frogman: 70, centipede: 30, zombie: 55,
+  'fungus beast': 50, 'groundworm larva': 35,
   skeleton: 75, 'battered skeleton': 60, 'spectral mummy': 40,
 });
 export const CRYPT_QUARRY_LEVEL = QUARRY_LEVEL;

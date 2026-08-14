@@ -1,0 +1,134 @@
+{
+  "extends": "survive.jsonc",
+  "name": "Castle Victoria and graveyard shift",
+  "why": "hold Castle Victoria on its skeleton generator, with the Tos graveyard worked during its night window, blunt weapons first, and roaming off",
+
+  "claim": {
+    "movement": "bot",
+    "work": "bot",
+    "economy": "bot",
+    "lease_ms": 600000
+  },
+
+  "cadence": {
+    "character_ms": 30000,
+    "fleet_ms": 120000,
+    "backoff_ms": 60000
+  },
+
+  "strategies": {
+    "enabled": true,
+    // `vs-skeletons` is deliberately gone and `short-swording` replaces it. They are both
+    // weapon orders and a unit holding both would be told two things; short swording wins
+    // the tie in code, but selecting both would still be a doctrine that cannot say what
+    // it wants.
+    //
+    // `check-cv-crate` is gone with the rest of the Castle Victoria work: the crate is
+    // under Castle Victoria and this fleet is no longer anywhere near it. Leaving it
+    // selected would send whichever unit came up in the rotation on a walk across the
+    // world and back, for a crate whose expected value is about forty shillings.
+    "defaults": ["create-weapons", "vs-skeletons", "create-food", "sell-and-bank", "max-weapons", "buy-food", "buy-weapons", "buy-reagents", "accumulate-in-vault", "farm-cleanup"],
+    "settings": {
+      "sell-and-bank": {
+        "bank_above": 3000,
+        "walking_money": 1000,
+        "max_carry": 50,
+        "sell_at_load": 0.95,
+        "sell_when_broke": false,
+        "broke_under": 500,
+        "broke_stacks": 8
+      },
+      "accumulate-in-vault": {
+        "items": [
+          "dark angel feather",
+          "Inky-cap mushroom",
+          "blue dragon scale",
+          "arrows",
+          "nerudite arrows"
+        ]
+      }
+    }
+  },
+
+  // BACK TO CASTLE VICTORIA, AND THE KING'S WAY IS GONE. It cost 69 deaths in a day —
+  // 23 at the destination to frogmen, which swarm to a cap of 9, and 32 more in the troll
+  // corridors it can only be reached through (36 kills by trolls, more than the frogmen
+  // managed). Neither half was survivable at this fleet's size and the two compounded:
+  // every trip out and back crossed rating-750 rooms to reach a room that ganged up.
+  //
+  // The stations are ordered by preference and a unit takes the first its ENGAGEMENT
+  // CEILING admits — `refuseEngagement` refuses a creature above round(max_health * 1.5),
+  // and it gates the whole room, not just the quarry. That single rule does the sorting
+  // the operator asked for without a health threshold written anywhere:
+  //
+  //     >= 50 max health  ->  ceiling >= 75  ->  38 Castle Victoria, skeletons
+  //     40 to 49          ->  ceiling 60-74  ->  39 Upstairs, battered skeletons
+  //     under 40          ->  544 Valley of Ileria, fungus beasts
+  //
+  // A HEALTH NUMBER IN THE DOCTRINE WOULD BE A SECOND ANSWER TO THAT QUESTION, and this
+  // repository's whole history is quantities with two homes disagreeing. The ceiling is
+  // already the thing the keeper enforces; duplicating it here as "> 60" would also have
+  // selected NOBODY, because a day in the King's Way took the whole fleet under 61.
+  //
+  // 39 CARRIES AN EXPLICIT SHARE OF 1.0 SO IT TAKES THE CASTLE'S OVERFLOW, and 544 —
+  // being last — would otherwise absorb it: the allocator hands the final station whatever
+  // is left so that rounding cannot lose a unit, which is right until the final station is
+  // a floor nobody should be sent to. With 39 claiming everything it can admit, 544's pool
+  // is exactly the units 39 refused.
+  //
+  // 544 IS THE FLOOR AND IT IS THERE FOR THE CASUALTIES. A day in the King's Way took one
+  // character from 53 max health to 36, and at 36 the ceiling is 54 — below the zombies
+  // upstairs, so the castle has nothing it may fight. A fungus beast is rating 210, the
+  // softest fight in the game, and still level 50, so the kills advance it back up. It is
+  // last, so nobody who can work the castle is sent there.
+  //
+  // 70 is first so the night window gets its pick while it is open — see below.
+  "shift": {
+    "on": true,
+    "stations": [
+      { "room": 70, "hunt": "skeleton", "share": 0.35, "when": "night", "lead_ms": 120000 },
+      { "room": 38, "hunt": "skeleton", "share": 1.0 },
+      { "room": 39, "hunt": "battered skeleton", "share": 1.0 },
+      { "room": 544, "hunt": "fungus beast" }
+    ],
+    "rest_below": 0.75,
+    "flee_below": 0.35,
+    "fight_above_vigor": 180,
+    "use_safe_spots": true
+  },
+
+  // EVERY CASTLE VICTORIA EFFORT IS OFF, and all three of these have to be off together.
+  // The shift assigns rooms 38/39, the crate walks a unit to room 41, and the placement
+  // spread pins the same two castle rooms — leaving any one of them on would drag part of
+  // the fleet back across the world while the crypt rule sent it the other way, and the
+  // two would fight every tick.
+  "castle_victoria": { "shift": false },
+  "crate": { "check": false },
+  "placement": { "spread": false, "rooms": [] },
+
+  "weapons": {
+    "preset": "vsSkeletons",
+    "provision": {
+      "enabled": false,
+      "threshold": "axe",
+      "room": null,
+      "staging_only": false,
+      "cast_when_mana": true,
+      "mana_cost": 15
+    }
+  },
+
+  "food": {
+    "min_items": 1,
+    "mana_cost": 10,
+    "elderberry_per_cast": 2,
+    "herbs_per_cast": 2
+  },
+
+  "record": {
+    "full_observations": false
+  },
+
+  "graveyard": { "shift": false },
+  "prey": { "choose": false, "flee_below": 0.35 }
+}

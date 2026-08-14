@@ -16,7 +16,7 @@ import { weaponFleetRules } from '../src/decide/rules/weapons.mjs';
 
 const test = globalThis.__dumTest;
 
-const doctrine = () => loadDoctrine({ file: 'doctrines/kings-way.jsonc' }).config;
+const doctrine = () => loadDoctrine({ file: 'doctrines/castle-graveyard.jsonc' }).config;
 const rows = (n = 21, over = {}) => Array.from({ length: n }, (_, i) => ({
   agent: `t${i + 1}`, in_game: true, level: 60, room: 39, mode: 'farm',
   policy: {}, commitment: null, parked: null, piloted: null, ...over,
@@ -64,58 +64,55 @@ test('shift: the ceiling is the room, not the quarry', () => {
   assert.equal(admits(46, 576, 'frogman'), false);
 });
 
-test('shift: the shipped doctrine splits 75/25 between the King\'s Way and the crypt', () => {
+test('shift: the shipped doctrine puts the whole fleet in Castle Victoria', () => {
   const intent = fire(rows(21));
   assert.equal(intent.kind, 'act');
   assert.equal(intent.plan.length, 21);
   const byRoom = intent.plan.reduce((m, p) => ({ ...m, [p.to]: (m[p.to] ?? 0) + 1 }), {});
-  assert.deepEqual(byRoom, { 576: 16, 38: 5 },
-    '75% of 21 rounds to 16; the remaining 5 fit inside the cap of 8, so the valve stays shut');
-  assert.deepEqual([...new Set(intent.plan.filter(p => p.to === 576).map(p => p.hunt))], ['frogman']);
-  assert.deepEqual([...new Set(intent.plan.filter(p => p.to === 38).map(p => p.hunt))], ['skeleton']);
-  // ROAMING OFF IS THE SAFETY PROPERTY, at both stations, always.
+  assert.deepEqual(byRoom, { 38: 21 }, 'everyone at 60 max health clears the skeleton ceiling');
+  assert.deepEqual([...new Set(intent.plan.map(p => p.hunt))], ['skeleton']);
+  // ROAMING OFF IS THE SAFETY PROPERTY. 41, the Underbasement, is one door below 38 and
+  // generates narthyl worms at level 120.
   assert.ok(intent.plan.every(p => p.roam === false));
-  // Sized per room: 576 threat 70, 2601 threat 75, against level 60.
-  assert.ok(intent.plan.filter(p => p.to === 576).every(p => p.max_threat_over === 10));
-  assert.ok(intent.plan.filter(p => p.to === 38).every(p => p.max_threat_over === 15));
-  // `purpose` without `goals` is not an audit — yieldCheck answers "nothing can be checked".
+  assert.ok(intent.plan.every(p => p.max_threat_over === 15), '38 threat 75 against level 60');
   assert.ok(intent.plan.every(p => p.purpose === 'advance' && p.goals?.length));
-  assert.ok(intent.plan.every(p => p.weapon_priority?.[0] === 'short sword'));
+  // THE SHIFT DOES NOT SET A WEAPON ORDER. `maintain-qualifying-weapons` owns that, and
+  // the shift carrying its own copy is how a stale preset gets reimposed on a fleet that
+  // has changed weapon doctrine.
+  assert.equal(intent.plan.every(p => p.weapon_priority === undefined), true);
 });
 
-test('shift: a share is a share of who can work the station, not of the fleet', () => {
-  // Allocating across everybody and filtering afterwards silently shrinks the fleet, and
-  // the units that drop out are the small ones — exactly the ones somebody is watching.
-  // Here four units are below the frogman floor, so 75% is 75% of the seventeen that
-  // qualify, and the four fall through to the one room their ceiling does admit.
-  const mixed = [...rows(17), ...rows(4).map((r, i) => ({ ...r, agent: `s${i}`, level: 44 }))];
+test('shift: the engagement ceiling sorts the fleet, with no health threshold written down', () => {
+  // `refuseEngagement` refuses a creature above round(max_health * 1.5) and it gates the
+  // WHOLE room. That one rule does the sorting without a number in the doctrine — and a
+  // number would be a second answer to a question the keeper already answers.
+  const mixed = [...rows(14),
+    ...rows(4).map((r, i) => ({ ...r, agent: `m${i}`, level: 45 })),   // ceiling 68
+    ...rows(3).map((r, i) => ({ ...r, agent: `s${i}`, level: 36 }))];  // ceiling 54
   const assigned = shiftAssignments(mixed, doctrine(), obsOf(mixed));
-  const small = assigned.filter(a => a.row.level === 44);
-  assert.equal(small.length, 4);
-  // 44 max health is a ceiling of 66: too small for the King's Way (room threat 70) and
-  // for Castle Victoria's main room (75), but upstairs is 60 and takes them. THAT IS WHAT
-  // AN OVERFLOW ROOM IS FOR — and it is also why upstairs earns its place despite paying
-  // a level-60 character nothing: it is the only station a small character can work.
-  assert.ok(small.every(a => a.to === 39), 'the small units land upstairs, not nowhere');
-  const big = assigned.filter(a => a.row.level === 60);
-  assert.equal(big.filter(a => a.to === 576).length, 13, '75% of 17');
-  assert.equal(big.filter(a => a.to === 38).length, 4);
+  const at = lvl => assigned.filter(a => a.row.level === lvl);
+  assert.ok(at(60).every(a => a.to === 38), 'ceiling 90 takes the level-75 skeleton');
+  assert.ok(at(45).every(a => a.to === 39), 'ceiling 68 falls through to the battered skeleton');
+  // UNDER 40 MAX HEALTH THERE IS NOTHING IN THE CASTLE — 39's own threat is 60 and its
+  // zombie is 55, both above a ceiling of 54 — so those fall to the floor station rather
+  // than being left unplaced to wander. A fungus beast is rating 210, the softest fight in
+  // the game, and still level 50, so it advances a decayed character back up.
+  assert.ok(at(36).every(a => a.to === 544));
+  assert.ok(at(36).every(a => a.hunt === 'fungus beast'));
+  // The floor is LAST: nobody who can work the castle is sent to it.
+  assert.equal(assigned.filter(a => a.to === 544).length, 3, 'only the three that need it');
 });
 
 test('shift: a capacity is what makes overflow mean anything', () => {
   // `max` beats the share, because "fill this room, then use the next" is not something a
-  // proportion can express. With the cap lowered below the crypt station's allocation the
-  // surplus must appear upstairs rather than being crammed in or dropped.
+  // proportion can express.
   const d = doctrine();
-  // By room, not by index — the station list grows at the front when a night window is
-  // added, and a positional test would silently start capping a different room.
-  d.shift.stations.find(st => st.room === 38).max = 2;
+  d.shift.stations.find(st => st.room === 38).max = 5;
   const intent = fire(rows(21), d);
   const byRoom = intent.plan.reduce((m, p) => ({ ...m, [p.to]: (m[p.to] ?? 0) + 1 }), {});
-  assert.deepEqual(byRoom, { 576: 16, 38: 2, 39: 3 }, 'three overflow upstairs');
-  // And nobody is lost or duplicated by the overflow.
+  assert.deepEqual(byRoom, { 38: 5, 39: 16 }, 'the surplus goes upstairs');
   assert.equal(intent.plan.length, 21);
-  assert.equal(new Set(intent.plan.map(p => p.agent)).size, 21);
+  assert.equal(new Set(intent.plan.map(p => p.agent)).size, 21, 'nobody lost or duplicated');
 });
 
 test('shift: the assignment is stable, so nobody is walked across the world by a level-up', () => {
@@ -151,237 +148,37 @@ test('shift: DUM\'s own claim does not count as busy', () => {
 
 test('shift: a unit already holding its orders is not re-sent every tick', () => {
   const settled = rows(21).map(r => ({ ...r,
-    policy: { assignedRoom: 576, hunt: 'frogman', roam: false, purpose: 'advance' } }));
-  const intent = fire(settled);
-  // The crypt quarter still needs moving, so this is an act — but the sixteen already at
-  // the King's Way must not be in it.
-  const moved = new Set((intent.plan ?? []).map(p => p.agent));
-  assert.equal([...moved].length, 5, 'only the crypt station is re-tasked');
+    policy: { assignedRoom: 38, hunt: 'skeleton', roam: false, purpose: 'advance' } }));
+  assert.equal(fire(settled).kind, 'pass', 'a fleet already holding its orders is left alone');
 });
 
-test('shift: it is off unless a doctrine asks, and Castle Victoria is off with it', () => {
+test('shift: it is off unless a doctrine asks, and the old shifts stay off', () => {
   assert.equal(shiftFleetRules[0].enabled({}), false, 'no shift block means no shift');
   assert.equal(shiftFleetRules[0].enabled({ shift: { on: true } }), true);
 
-  // ALL THREE CASTLE EFFORTS OFF TOGETHER. Any one left on drags part of the fleet back
-  // across the world while this rule sends it the other way, and the two fight every tick.
   const d = doctrine();
+  // The BESPOKE Castle Victoria rule stays off — this shift owns the castle now, and two
+  // rules assigning rooms 38/39 on different clocks would fight every tick.
   assert.equal(d.castle_victoria.shift, false);
   assert.equal(d.crate.check, false);
   assert.equal(d.placement.spread, false);
-  assert.equal(d.strategies.defaults.includes(STRATEGY_IDS.VS_SKELETONS), false);
-  assert.equal(d.strategies.defaults.includes(STRATEGY_IDS.SHORT_SWORDING), true);
+  // ONE WEAPON ORDER, NOT TWO. vsSkeletons is back and short-swording is gone: a unit
+  // holding both is a doctrine that cannot say what it wants, even though code breaks
+  // the tie.
+  assert.equal(d.strategies.defaults.includes(STRATEGY_IDS.VS_SKELETONS), true);
+  assert.equal(d.strategies.defaults.includes(STRATEGY_IDS.SHORT_SWORDING), false);
   assert.equal(d.strategies.defaults.includes(STRATEGY_IDS.CHECK_CV_CRATE), false);
 });
 
-test('shift: selecting Short swording actually changes the weapon order', () => {
-  // It did not, for as long as the strategy existed: `shortSwording` was defined in
-  // decide/weapons.mjs with an alias for this very id, and nothing read the id.
+test('shift: the fleet draws blunt weapons first again', () => {
+  // A skeleton resists edged weapons, which is what vsSkeletons is for. Short swording
+  // was the crypt's order and went with the crypt.
   const live = rows(1, { items: [], carry: { load: 0.1 }, provides: [] });
   const intent = weaponFleetRules[0].decide({ characters: live, strategies: { agents: {} } },
     doctrine());
   const priority = (intent.plan ?? []).find(p => p.do === 'weapon-policy')?.priority;
-  assert.ok(priority, 'a unit running Short swording is given a weapon policy');
-  assert.equal(priority[0], 'short sword');
-  assert.ok(priority.length > 1, 'and everything else follows — never an empty hand');
-});
-
-// ---------------------------------------------------------------------------
-// THE NIGHT WINDOW — a station that exists for 35 minutes in every 120.
-// ---------------------------------------------------------------------------
-
-const atNight = rows_ => ({ characters: rows_, strategies: { agents: {} },
-  world_clock: { night: true, closes_in_ms: 20 * 60_000, cycle: 36 } });
-const byDay = rows_ => ({ characters: rows_, strategies: { agents: {} },
-  world_clock: { night: false, opens_in_ms: 40 * 60_000, cycle: 36 } });
-
-test('shift: the graveyard station appears at night and vanishes by day', () => {
-  const d = doctrine();
-  const night = shiftFleetRules[0].decide(atNight(rows(21)), d);
-  const inGraveyard = night.plan.filter(p => p.to === 70);
-  assert.equal(inGraveyard.length, 7, '35% of 21');
-  assert.ok(inGraveyard.every(p => p.hunt === 'skeleton'),
-    'the zombie is 85% of that room and level 55 — it advances nobody here');
-
-  // By day the station is not in the list at all, so those units are allocated to the
-  // King's Way instead. Nothing has to be un-done at the edge: the station simply is not
-  // there, and the ordinary allocation runs over what remains.
-  const day = shiftFleetRules[0].decide(byDay(rows(21)), d);
-  assert.equal(day.plan.filter(p => p.to === 70).length, 0);
-  assert.ok(day.plan.filter(p => p.to === 576).length > night.plan.filter(p => p.to === 576).length,
-    'the King\'s Way gets them back when the window closes');
-  // ORDER IS WHO GIVES THE UNITS UP. The window draws from the King's Way, not from
-  // Castle Victoria — the castle keeps its quarter through the night, which is what
-  // "some of the frogman hunters switch" means. Listed the other way round, the castle
-  // emptied for the whole window instead.
-  assert.equal(night.plan.filter(p => p.to === 38).length,
-               day.plan.filter(p => p.to === 38).length,
-               'the castle station is untouched by the night window');
-  assert.equal(day.plan.length, 21);
-  assert.equal(night.plan.length, 21, 'nobody is lost at either edge');
-});
-
-test('shift: a night station is SHUT when the clock is unknown, not open', () => {
-  // `world_clock` is null until an operator has watched a window begin and written the
-  // anchor down. That is a different fact from "it is daytime", and guessing would park a
-  // shift in an empty graveyard on a schedule nobody verified. Failing shut costs one
-  // window; failing open costs however long it takes somebody to notice a fleet killing
-  // nothing — and the fleet board would report it hunting perfectly happily throughout.
-  const d = doctrine();
-  for (const clock of [null, undefined]) {
-    const obs = { characters: rows(21), strategies: { agents: {} }, world_clock: clock };
-    const intent = shiftFleetRules[0].decide(obs, d);
-    assert.equal(intent.plan.filter(p => p.to === 70).length, 0,
-      'no anchor means no night station');
-  }
-});
-
-test('shift: a night-only room is refused a station that does not gate on the window', () => {
-  // The expensive mistake, caught at doctrine load rather than in the field.
-  const d = doctrine();
-  d.shift.stations = [{ room: 70, hunt: 'skeleton', share: 1 }];
-  const bad = validate(d);
-  assert.ok(bad.some(b => /35-minute window/.test(b.why)),
-    'a graveyard station without `when: night` is refused');
-
-  // And the other two silent ones: a room nobody has rated, and a quarry the room does
-  // not generate.
-  assert.ok(validate({ ...d, shift: { on: true, stations: [{ room: 2602, hunt: 'thrasher' }] } })
-    .some(b => /HUNT_ROOMS/.test(b.why)));
-  assert.ok(validate({ ...d, shift: { on: true, stations: [{ room: 576, hunt: 'skeleton' }] } })
-    .some(b => /does not generate/.test(b.why)));
-  // The shipped doctrine passes its own guard.
-  assert.deepEqual(validate(doctrine()).filter(b => b.where.startsWith('shift')), []);
-});
-
-test('shift: the graveyard station opens early by the length of the walk', () => {
-  const d = doctrine();
-  const st = d.shift.stations.find(s => s.room === 70);
-  assert.ok(st.lead_ms > 0, 'the shipped doctrine carries a lead');
-
-  // Not open yet, but inside the lead: the station exists so the walk happens on the
-  // fleet's time rather than the graveyard's.
-  const soon = { characters: rows(21), strategies: { agents: {} },
-    world_clock: { night: false, opens_in_ms: st.lead_ms - 1000 } };
-  assert.ok(shiftFleetRules[0].decide(soon, d).plan.some(p => p.to === 70),
-    'inside the lead, the shift sets off');
-
-  // Outside it, the station is not there — a fleet that left an hour early would spend
-  // the hour standing in an empty field, which is what the window gate is for.
-  const later = { characters: rows(21), strategies: { agents: {} },
-    world_clock: { night: false, opens_in_ms: st.lead_ms * 4 } };
-  assert.equal(later.world_clock.opens_in_ms > st.lead_ms, true);
-  assert.ok(!shiftFleetRules[0].decide(later, d).plan.some(p => p.to === 70));
-
-  // IT IS ONLY EVER EARLY. The lead must not hold the station open past the window —
-  // arriving late wastes a walk, staying late wastes the fleet.
-  const closing = { characters: rows(21), strategies: { agents: {} },
-    world_clock: { night: false, opens_in_ms: 60 * 60_000 } };
-  assert.ok(!shiftFleetRules[0].decide(closing, d).plan.some(p => p.to === 70));
-});
-
-test('shift: a measured walk beats the typed lead, and the slowest of the GOING sets it', () => {
-  const d = doctrine();
-  const st = d.shift.stations.find(s => s.room === 70);
-
-  // Everybody genuinely far: the station must open on the real distance rather than on
-  // the two minutes somebody typed when the fleet lived somewhere else.
-  const far = rows(21).map(r => ({ ...r,
-    travel_to_station: { ms: 300_000, hops: 9, confidence: 1 } }));
-  const obs = { characters: far, strategies: { agents: {} },
-    world_clock: { night: false, opens_in_ms: 320_000 } };
-  assert.ok(shiftFleetRules[0].decide(obs, d).plan.some(p => p.to === 70),
-    'a five-minute walk opens the station five minutes early, not two');
-
-  // ONE STRAGGLER DOES NOT MOVE THE WINDOW. The station takes seven of twenty-one, so a
-  // single very distant unit is simply not in the shift and its walk is nobody's problem.
-  // This is the correction to the first version, which took the fleet maximum and opened
-  // six minutes early to accommodate a character that was never going to be sent.
-  const oneFar = rows(21).map((r, i) => ({ ...r,
-    travel_to_station: { ms: i === 0 ? 600_000 : 60_000, hops: 4, confidence: 1 } }));
-  const early = { characters: oneFar, strategies: { agents: {} },
-    world_clock: { night: false, opens_in_ms: 300_000 } };
-  assert.equal(shiftFleetRules[0].decide(early, d).plan.filter(p => p.to === 70).length, 0,
-    'the straggler does not drag the whole shift five minutes early');
-  const onTime = { characters: oneFar, strategies: { agents: {} },
-    world_clock: { night: false, opens_in_ms: 66_000 } };
-  assert.equal(shiftFleetRules[0].decide(onTime, d).plan.filter(p => p.to === 70).length, 7,
-    'and the seven near ones still leave on their own walk');
-
-  // With no estimate at all the typed lead applies, so a broker that cannot estimate
-  // degrades to the old behaviour rather than to never leaving.
-  const blind = { characters: rows(21), strategies: { agents: {} },
-    world_clock: { night: false, opens_in_ms: st.lead_ms - 1000 } };
-  assert.ok(shiftFleetRules[0].decide(blind, d).plan.some(p => p.to === 70));
-});
-
-test('shift: a time-limited station takes the NEAREST units, and the lead follows them', () => {
-  // MEASURED LIVE AND THIS IS THE BUG IT FIXES. The nearest character was 19 seconds from
-  // the graveyard and the furthest 322. A lead built on the fleet maximum opened the
-  // station six minutes early, so the near units stood in a dead room for five and a half
-  // of them — the walking time this feature exists to save, re-spent as waiting time.
-  //
-  // So the station takes the nearest, and the lead is the slowest of THOSE.
-  const d = doctrine();
-  const walks = [19, 50, 88, 88, 88, 88, 88, 118, 146, 247, 292, 300, 300, 300, 300,
-                 300, 300, 300, 300, 300, 322];
-  const near = rows(21).map((r, i) => ({ ...r,
-    travel_to_station: { ms: walks[i] * 1000, hops: 4, confidence: 1 } }));
-  // Just inside the lead the 7 nearest should go — 88s is the 7th, so ~97s of lead.
-  const obs = { characters: near, strategies: { agents: {} },
-    world_clock: { night: false, opens_in_ms: 97_000 } };
-  const chosen = shiftFleetRules[0].decide(obs, d).plan.filter(p => p.to === 70);
-  assert.equal(chosen.length, 7);
-  const chosenWalks = chosen
-    .map(p => near.find(r => r.agent === p.agent).travel_to_station.ms / 1000);
-  assert.ok(Math.max(...chosenWalks) <= 88,
-    `the shift is the nearest seven, not the first seven (got ${chosenWalks.join(',')})`);
-
-  // AND THE FAR UNITS DO NOT DRAG THE LEAD OUT. At six minutes before the window — which
-  // the fleet maximum would have opened on — the station must still be shut.
-  const early = { characters: near, strategies: { agents: {} },
-    world_clock: { night: false, opens_in_ms: 340_000 } };
-  assert.equal(shiftFleetRules[0].decide(early, d).plan.filter(p => p.to === 70).length, 0,
-    'the furthest unit in the fleet is not the one the window waits for');
-
-  // A unit with no estimate sorts LAST, so an unknown walk cannot push a known-near unit
-  // out of a shift that is about to leave.
-  const mixed = rows(21).map((r, i) => ({ ...r,
-    travel_to_station: i < 3 ? null : { ms: 60_000, hops: 4, confidence: 1 } }));
-  const picked = shiftFleetRules[0].decide(
-    { characters: mixed, strategies: { agents: {} },
-      world_clock: { night: false, opens_in_ms: 66_000 } }, d).plan.filter(p => p.to === 70);
-  assert.equal(picked.length, 7);
-  assert.ok(picked.every(p => mixed.find(r => r.agent === p.agent).travel_to_station),
-    'the three with no estimate are not chosen ahead of eighteen with one');
-});
-
-test('shift: the lead covers a whole fleet tick, or it mostly does not happen', () => {
-  // MEASURED ON THE FIRST LIVE WINDOW. The lead was 97 seconds and the fleet cadence 120,
-  // so the deploy could land anywhere in that 97 seconds — and 19% of the time no tick
-  // falls inside it at all and the shift leaves after the window has already opened. It
-  // fired at T-6s and the characters reached the graveyard 43 seconds into a 35-minute
-  // window. A lead shorter than the tick that consumes it is not a lead.
-  const d = doctrine();
-  const cadence = d.cadence.fleet_ms;
-  const walk = 60_000;
-  const near = rows(21).map(r => ({ ...r,
-    travel_to_station: { ms: walk, hops: 4, confidence: 1 } }));
-  const at = ms => shiftFleetRules[0].decide(
-    { characters: near, strategies: { agents: {} }, world_clock: { night: false, opens_in_ms: ms } },
-    d).plan.filter(p => p.to === 70).length;
-
-  // Open by (the greater of the measured walk and the typed floor) + one cadence, so the
-  // first tick after opening still leaves a full walk before the window. The typed floor
-  // is part of it: `lead_ms` is a minimum, not a suggestion the measurement replaces.
-  const st = d.shift.stations.find(x => x.room === 70);
-  const expected = Math.max(st.lead_ms, Math.round(walk * 1.1)) + cadence;
-  assert.equal(at(expected - 1000), 7, 'inside the lead the shift goes');
-  assert.equal(at(expected + 30_000), 0, 'outside it, the station is not there yet');
-
-  // THE GUARANTEE, stated as the property rather than the arithmetic: however unluckily
-  // the tick falls inside the lead, there is still at least the walk left afterwards.
-  const worstCaseDeploy = expected - cadence;
-  assert.ok(worstCaseDeploy >= walk,
-    'a tick landing at the far end of the lead still leaves time to walk there');
+  assert.ok(priority, 'a unit in the shift is given a weapon policy');
+  assert.equal(priority[0], 'hammer');
+  assert.ok(priority.includes('mace') && priority.includes('axe'));
+  assert.ok(priority.length > 3, 'and everything else follows — never an empty hand');
 });

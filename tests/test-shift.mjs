@@ -244,3 +244,20 @@ test('weapons: the same unit swaps order when its quarry changes, with no doctri
   // Unknown quarry falls back to the unit's strategy rather than to the sword.
   assert.equal(order('narthyl worm')[0], 'hammer');
 });
+
+test('shift: the shipped doctrine leaves the fleet in one room', () => {
+  // EVERY ROAD OUT OF CASTLE VICTORIA CROSSES RATING-750 TROLL COUNTRY. Measured
+  // 2026-08-14: 38 -> 70 is eight hops through 599/598/597 and back again, and 38 -> 826
+  // is six through 599 and 578. So any second station buys its prey with two crossings of
+  // the most dangerous rooms the fleet touches, twice per cycle.
+  //
+  // The numbers that settled it: 210 kills in the half hour the fleet sat in the castle,
+  // 39 in the half hour it spent walking to and from the graveyard, three deaths in rooms
+  // that are neither station, and two characters of twenty-one actually on station.
+  const d = doctrine();
+  const live = d.shift.stations.filter(st => String(st.when ?? 'always').toLowerCase() === 'always');
+  assert.deepEqual(live.map(st => st.room), [38, 39, 544],
+    'castle, its overflow, and the floor for the ground-down — nothing that needs a journey');
+  assert.equal(d.shift.stations.some(st => st.room === 70), false,
+    'the graveyard is off: its corridor costs more than its window returns');
+});

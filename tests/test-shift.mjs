@@ -355,3 +355,33 @@ test('shift: a time-limited station takes the NEAREST units, and the lead follow
   assert.ok(picked.every(p => mixed.find(r => r.agent === p.agent).travel_to_station),
     'the three with no estimate are not chosen ahead of eighteen with one');
 });
+
+test('shift: the lead covers a whole fleet tick, or it mostly does not happen', () => {
+  // MEASURED ON THE FIRST LIVE WINDOW. The lead was 97 seconds and the fleet cadence 120,
+  // so the deploy could land anywhere in that 97 seconds — and 19% of the time no tick
+  // falls inside it at all and the shift leaves after the window has already opened. It
+  // fired at T-6s and the characters reached the graveyard 43 seconds into a 35-minute
+  // window. A lead shorter than the tick that consumes it is not a lead.
+  const d = doctrine();
+  const cadence = d.cadence.fleet_ms;
+  const walk = 60_000;
+  const near = rows(21).map(r => ({ ...r,
+    travel_to_station: { ms: walk, hops: 4, confidence: 1 } }));
+  const at = ms => shiftFleetRules[0].decide(
+    { characters: near, strategies: { agents: {} }, world_clock: { night: false, opens_in_ms: ms } },
+    d).plan.filter(p => p.to === 70).length;
+
+  // Open by (the greater of the measured walk and the typed floor) + one cadence, so the
+  // first tick after opening still leaves a full walk before the window. The typed floor
+  // is part of it: `lead_ms` is a minimum, not a suggestion the measurement replaces.
+  const st = d.shift.stations.find(x => x.room === 70);
+  const expected = Math.max(st.lead_ms, Math.round(walk * 1.1)) + cadence;
+  assert.equal(at(expected - 1000), 7, 'inside the lead the shift goes');
+  assert.equal(at(expected + 30_000), 0, 'outside it, the station is not there yet');
+
+  // THE GUARANTEE, stated as the property rather than the arithmetic: however unluckily
+  // the tick falls inside the lead, there is still at least the walk left afterwards.
+  const worstCaseDeploy = expected - cadence;
+  assert.ok(worstCaseDeploy >= walk,
+    'a tick landing at the far end of the lead still leaves time to walk there');
+});

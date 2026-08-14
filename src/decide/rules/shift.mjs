@@ -62,15 +62,27 @@ const walkMs = row => {
   return Number.isFinite(ms) ? ms : null;
 };
 
-const leadFor = (station, rows = [], take = null) => {
+// A LEAD SHORTER THAN THE TICK IS A LEAD THAT MOSTLY DOES NOT HAPPEN.
+//
+// The rules only run on the fleet cadence, so a station that opens 97 seconds before its
+// window against a 120-second tick is deployed at some uniformly random point in that 97
+// seconds — and 19% of the time no tick lands inside it at all and the shift leaves AFTER
+// the window opened. Measured on the first live window: the lead was 97s, the deploy fired
+// at T-6s, and the shift reached the graveyard 43 seconds into a 35-minute window.
+//
+// So the lead carries one whole cadence on top of the walk. Then the first tick after the
+// station opens is at most one cadence later, which is still at least `walk` before the
+// window — so the shift is always in the room when it opens, rather than usually.
+const leadFor = (station, rows = [], take = null, cadenceMs = 0) => {
   const typed = Number(station.lead_ms);
   const walks = rows.map(walkMs).filter(ms => ms != null && ms > 0).sort((a, b) => a - b);
-  if (!walks.length) return typed;
+  const tick = Number.isFinite(Number(cadenceMs)) ? Number(cadenceMs) : 0;
+  if (!walks.length) return Number.isFinite(typed) ? typed + tick : typed;
   // The k-th smallest, where k is the station's take. Clamped into the array, and falling
   // back to the whole set when the take is unknown.
   const k = Number.isFinite(take) && take > 0 ? Math.min(Math.ceil(take), walks.length) : walks.length;
   const slowestGoing = walks[k - 1];
-  return Math.max(Number.isFinite(typed) ? typed : 0, Math.round(slowestGoing * 1.1));
+  return Math.max(Number.isFinite(typed) ? typed : 0, Math.round(slowestGoing * 1.1)) + tick;
 };
 
 // A TIME-LIMITED ROOM SHOULD BE WORKED BY WHOEVER IS NEAREST IT. Everywhere else the order
@@ -121,7 +133,7 @@ export function shiftAssignments(rows = [], doctrine = {}, fleetObs = { characte
     // that does not catch NaN. Resolve the cap explicitly.
     const cap = Number.isFinite(Number(st.max)) ? Number(st.max) : Infinity;
     const take = Math.round(rows.length * (Number(st.share) || 0)) || rows.length;
-    const lead = leadFor(st, rows, Math.min(take, cap));
+    const lead = leadFor(st, rows, Math.min(take, cap), doctrine.cadence?.fleet_ms);
     if (!Number.isFinite(lead) || lead <= 0) return false;
     const until = when === 'night' ? clock.opens_in_ms : clock.closes_in_ms;
     return Number.isFinite(until) && until <= lead;

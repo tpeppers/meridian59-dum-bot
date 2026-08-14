@@ -58,6 +58,39 @@ export const WEAPON_PRESETS = Object.freeze({
   }),
 });
 
+// WHICH ORDER SUITS WHICH QUARRY, FROM THE MONSTERS' OWN RESISTANCE TABLES.
+//
+// A weapon's damage TYPE is what a monster resists, not its name or its damage figure:
+// `piAttack_type` on the weapon against `plResistances` on the creature. Short sword,
+// long sword, mystic sword and gold sword are all ATCK_WEAP_THRUST; axe and scimitar are
+// SLASH; hammer and mace are BLUDGEON (shrtswrd.kod:56, axe.kod:55, hammer.kod:53).
+//
+//   skeleton            PIERCE 70, THRUST 70, BLUDGEON -20        skel.kod:75
+//   battered skeleton   inherits Skeleton                          batrskel.kod:11
+//   zombie              no weapon resistances at all               zombie.kod:74
+//   fungus beast        PIERCE 60, THRUST 60                       fungbst.kod
+//   groundworm larva    BLUDGEON -30 (vulnerable)                  grdworm.kod
+//
+// A skeleton takes 30% from a thrusting sword and 120% from a hammer — a FOUR-FOLD
+// difference, which is why vsSkeletons exists and why it is the default here.
+//
+// THE ZOMBIE IS THE EXCEPTION AND NOT FOR THE OBVIOUS REASON. It resists no weapon type,
+// so a short sword is not BETTER against one — it is merely not worse. What that buys is
+// free proficiency: the short sword is last in the novice damage order and the skill only
+// improves by being used, so a quarry that punishes nothing is the one chance to train it
+// at no cost. Against anything on the list above it would be a real loss.
+export const QUARRY_PRESET = Object.freeze({
+  zombie: 'shortSwording',
+  skeleton: 'vsSkeletons',
+  'battered skeleton': 'vsSkeletons',
+  'fungus beast': 'vsSkeletons',
+  'groundworm larva': 'vsSkeletons',
+});
+
+/** The order this quarry deserves, or null when nothing is known about it. */
+export const presetForQuarry = quarry =>
+  QUARRY_PRESET[String(quarry ?? '').trim().toLowerCase()] ?? null;
+
 const aliases = new Map([
   ['strongesttoweakest', 'strongestToWeakest'],
   ['strongest->weakest', 'strongestToWeakest'],

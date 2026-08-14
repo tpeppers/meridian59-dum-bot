@@ -1,4 +1,4 @@
-import { keeperWeaponPriority, planWeaponProvisioning } from '../weapons.mjs';
+import { keeperWeaponPriority, planWeaponProvisioning, presetForQuarry } from '../weapons.mjs';
 import { STRATEGY_IDS, strategyEnabled } from '../../strategies/catalog.mjs';
 
 const sameList = (a, b) => Array.isArray(a) && Array.isArray(b) &&
@@ -16,10 +16,21 @@ const selectedFor = (fleetObs, doctrine, id) => (fleetObs.characters ?? [])
 // specific instruction: vsSkeletons is a damage ranking that suits a shift, while short
 // swording is a deliberate trade of damage now for a proficiency later, and a unit told to
 // train the skill should not have a hammer put in its hand by a second opinion.
-const presetFor = (fleetObs, doctrine, agent, cfg) =>
-  strategyEnabled(fleetObs, doctrine, agent, STRATEGY_IDS.SHORT_SWORDING) ? 'shortSwording'
-    : strategyEnabled(fleetObs, doctrine, agent, STRATEGY_IDS.VS_SKELETONS) ? 'vsSkeletons'
-    : cfg.preset;
+//
+// THE QUARRY WINS OVER THE STRATEGY, because it is the more specific fact. A strategy is
+// a standing preference for a unit; what it is about to hit is a property of this shift,
+// and the resistance tables are not a matter of taste — a thrusting sword does 30% to a
+// skeleton and a hammer does 120%. So a unit told to hunt zombies draws the short sword
+// (which costs nothing there and trains the proficiency) and the same unit sent back to
+// the skeletons draws a hammer again, with no doctrine edit in between.
+//
+// An unrecognised quarry falls through to the strategy rather than to a guess: a creature
+// whose resistances nobody has looked up must not silently get the zombie treatment.
+const presetFor = (fleetObs, doctrine, agent, cfg, row = null) =>
+  presetForQuarry(row?.hunting ?? row?.policy?.hunt)
+    ?? (strategyEnabled(fleetObs, doctrine, agent, STRATEGY_IDS.SHORT_SWORDING) ? 'shortSwording'
+      : strategyEnabled(fleetObs, doctrine, agent, STRATEGY_IDS.VS_SKELETONS) ? 'vsSkeletons'
+      : cfg.preset);
 
 export const weaponFleetRules = [{
   id: 'maintain-qualifying-weapons',
@@ -61,7 +72,7 @@ export const weaponFleetRules = [{
     }
 
     const policies = involved.flatMap(r => {
-      const preset = presetFor(fleetObs, doctrine, r.agent, cfg);
+      const preset = presetFor(fleetObs, doctrine, r.agent, cfg, r);
       const priority = keeperWeaponPriority(preset, cfg.presets);
       return sameList(r.policy?.weaponPriority, priority) ? [] : [{
         do: 'weapon-policy', agent: r.agent, priority,
@@ -83,7 +94,7 @@ export const weaponFleetRules = [{
 
     const groups = new Map();
     for (const row of creators) {
-      const preset = presetFor(fleetObs, doctrine, row.agent, cfg);
+      const preset = presetFor(fleetObs, doctrine, row.agent, cfg, row);
       if (!groups.has(preset)) groups.set(preset, []);
       groups.get(preset).push(row);
     }

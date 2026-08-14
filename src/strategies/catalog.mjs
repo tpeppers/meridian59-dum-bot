@@ -382,51 +382,66 @@ export function strategyRows(observation, doctrine, id) {
     strategyEnabled(observation, doctrine, r.agent, id));
 }
 
-// THE CRYPT ROOMS, AS DATA, WITH ONLY THEIR GENERATORS IN THEM.
+// THE HUNTING ROOMS, AS DATA, WITH ONLY THEIR GENERATORS IN THEM.
 //
 // `generates` lists what the room PRODUCES on a timer, so a quarry can be resolved to a
-// room rather than a room to a quarry — which is what makes changing the `hunt` setting
-// move the fleet by itself. Statues are not here for the reason the strategy description
-// gives at length: they are placed once and never replaced while anybody is standing
-// there, so a room would claim to generate something it will not.
+// room rather than a room to a quarry. Statues are not here for the reason the Short
+// swording description gives at length: they are placed once and never replaced while
+// anybody is standing there, so a room listing one would claim to generate something it
+// will not.
 //
 // `threat` is the strongest thing that can be IN the room, which is not the same as the
 // quarry and must not be confused with it. The keeper's ceiling gates the whole room, so
 // sizing it to the quarry is how a unit ends up rejecting the room it was sent to — 2600
-// generates level-40 mummies but has a level-75 statue standing in it.
-export const CRYPT_ROOMS = Object.freeze({
+// generates level-40 mummies and has a level-75 statue standing in it.
+//
+// A ROOM THAT IS NOT IN THIS TABLE CANNOT BE ASSIGNED, which is the guard rail: 2602
+// (thrashers, level 150, one door from 2601) and 552 (mollusk creature, level 150, and it
+// also generates frogmen, so it is exactly the room somebody would reach for) are both
+// absent on purpose and asking for either resolves to nothing.
+export const HUNT_ROOMS = Object.freeze({
+  576: Object.freeze({ room: 576, name: "The King's Way", threat: 70,
+    generates: Object.freeze(['frogman', 'centipede']) }),
   2601: Object.freeze({ room: 2601, name: "Resting place of Marion's ancestors", threat: 75,
     generates: Object.freeze(['skeleton', 'battered skeleton']) }),
   2600: Object.freeze({ room: 2600, name: 'The crypt in Marion', threat: 75,
     generates: Object.freeze(['spectral mummy']) }),
 });
 
+// Kept for the crypt-only callers and tests that name it.
+export const CRYPT_ROOMS = HUNT_ROOMS;
+
 // Level of each quarry, for the engagement-ceiling test. Kept beside the rooms because
 // both are read together and a level with two homes ends up with two answers.
-export const CRYPT_QUARRY_LEVEL = Object.freeze({
+export const QUARRY_LEVEL = Object.freeze({
+  frogman: 70, centipede: 30,
   skeleton: 75, 'battered skeleton': 60, 'spectral mummy': 40,
 });
+export const CRYPT_QUARRY_LEVEL = QUARRY_LEVEL;
+
+// THE HARNESS'S OWN RULE, RESTATED RATHER THAN GUESSED AT. `refuseEngagement` refuses a
+// creature whose level exceeds round(max_health * 1.5). A unit sent to hunt something it
+// will refuse stands in the room doing nothing and looks exactly like one that is working.
+export const engagementCeiling = maxHealth => Math.round((Number(maxHealth) || 0) * 1.5);
+
+/** Can this unit work this station — the quarry AND everything else in the room? */
+export function admits(maxHealth, room, quarry) {
+  const entry = HUNT_ROOMS[room];
+  const level = QUARRY_LEVEL[quarry];
+  const ceiling = engagementCeiling(maxHealth);
+  if (!entry || level == null || !ceiling) return false;
+  if (!entry.generates.includes(quarry)) return false;
+  return level <= ceiling && entry.threat <= ceiling;
+}
 
 /**
  * The room a unit should work and the quarry it should hunt there, or null when its
  * engagement ceiling admits nothing on offer.
- *
- * The ceiling is the harness's own rule — `refuseEngagement` refuses a creature whose
- * level exceeds round(max_health * 1.5) — restated here rather than guessed at, because a
- * unit sent to hunt something it will refuse stands in the room doing nothing and looks
- * exactly like one that is working.
  */
 export function cryptAssignment(hunt = [], rooms = [], maxHealth = 0) {
-  const ceiling = Math.round((Number(maxHealth) || 0) * 1.5);
-  if (!ceiling) return null;
-  const allowed = rooms.map(Number);
   for (const quarry of hunt) {
-    const level = CRYPT_QUARRY_LEVEL[quarry];
-    if (level == null || level > ceiling) continue;
-    const room = allowed.map(id => CRYPT_ROOMS[id])
-      .find(entry => entry?.generates.includes(quarry));
-    // The ROOM's strongest occupant has to be admitted too, not merely the quarry.
-    if (room && room.threat <= ceiling) return { quarry, ...room };
+    const room = rooms.map(Number).find(id => admits(maxHealth, id, quarry));
+    if (room != null) return { quarry, ...HUNT_ROOMS[room] };
   }
   return null;
 }

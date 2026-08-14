@@ -25,7 +25,7 @@ import { economyRules } from './rules/economy.mjs';
 import { placementRules, placementFleetRules } from './rules/placement.mjs';
 import { partyFleetRules } from './rules/party.mjs';
 import { crateFleetRules } from './rules/crate.mjs';
-import { cryptFleetRules } from './rules/crypt.mjs';
+import { shiftFleetRules } from './rules/shift.mjs';
 import { swarmFleetRules } from './rules/swarm.mjs';
 import { graveyardFleetRules } from './rules/graveyard.mjs';
 import { mootFleetRules } from './rules/moot.mjs';
@@ -101,10 +101,10 @@ export const fleetRules = new RuleSet('fleet', [
   // Explicit token-game PvP has a perishable target and therefore outranks standing
   // faction errands. The broker re-verifies the player before every engagement.
   ...factionGameFleetRules,
-  // THE CRYPT SHIFT SITS WHERE THE CASTLE SHIFT DOES, and above the maintenance rules for
+  // THE HUNTING SHIFT SITS WHERE THE CASTLE SHIFT DOES, and above the maintenance rules for
   // the same reason: it establishes the hands-off patrol policy that everything below then
   // maintains. It is `pass` on its first line when `crypt.shift` is off.
-  ...cryptFleetRules,
+  ...shiftFleetRules,
   // A human-led swarm still wins. Once free, an ASSIGNED one-hour faction quest outranks
   // standing maintenance windows. Merely asking for a new assignment is below the farm
   // baseline: a stopped/rejoined character should resume useful work before it records

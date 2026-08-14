@@ -19,7 +19,6 @@
 import { STRATEGY_IDS, strategyEnabled, HUNT_ROOMS, admits, engagementCeiling }
   from '../../strategies/catalog.mjs';
 import { activeFactionWork } from './factions.mjs';
-import { keeperWeaponPriority } from '../weapons.mjs';
 import { takeable } from '../engine.mjs';
 
 const sameList = (a, b) => Array.isArray(a) && Array.isArray(b) &&
@@ -143,10 +142,18 @@ export function shiftAssignments(rows = [], doctrine = {}, fleetObs = { characte
   const ordered = [...rows].sort((a, b) => (a.level ?? 0) - (b.level ?? 0) ||
     String(a.agent).localeCompare(String(b.agent)));
 
-  const opted = ordered.filter(row =>
-    strategyEnabled(fleetObs, doctrine, row.agent, STRATEGY_IDS.SHORT_SWORDING));
-  const out = new Map(ordered.map(row => [row.agent,
-    { row, to: null, why: 'Short swording is not selected for this unit' }]));
+  // THE SHIFT IS NOT A WEAPON STRATEGY AND SHOULD NEVER HAVE BEEN GATED ON ONE.
+  //
+  // This used to require Short swording, because the shift was written for the crypt and
+  // the crypt was that strategy's room. That conflated two unrelated decisions: WHERE the
+  // fleet works and WHICH ORDER it draws weapons in. The cost showed up the moment the
+  // fleet moved back to Castle Victoria on vsSkeletons — every unit fell out of the shift
+  // at once, silently, because it no longer held a strategy about short swords.
+  //
+  // A doctrine that turns the shift on means all of its units, and `enabled` on the rule
+  // is where opting out belongs.
+  const opted = ordered;
+  const out = new Map(ordered.map(row => [row.agent, { row, to: null, why: 'unplaced' }]));
 
   // Per station, who could work it at all. Computed before any allocation so a share is a
   // share of the eligible, and a unit eligible for nothing is named rather than absorbed.
@@ -246,7 +253,11 @@ export const shiftFleetRules = [{
         // "purpose is `advance` but no goals are set, so nothing can be checked" and the
         // row renders as not paying whatever the quarry is.
         goals: [{ kind: 'hp' }],
-        weapon_priority: keeperWeaponPriority('shortSwording', doctrine.weapons?.presets),
+        // NO WEAPON ORDER HERE. `maintain-qualifying-weapons` owns which order a unit
+        // draws in, from its strategies and the doctrine's preset. This used to hardcode
+        // `shortSwording` — a second home for that decision, and one that went stale the
+        // moment the fleet changed weapon doctrine, quietly reimposing short swords on a
+        // shift that had gone back to blunt.
         max_threat_over: a.max_threat_over,
         flee_below: doctrine.shift.flee_below,
         rest_below: doctrine.shift.rest_below,

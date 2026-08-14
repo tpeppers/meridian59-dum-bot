@@ -50,7 +50,36 @@
     }
   },
 
-  // BACK TO CASTLE VICTORIA, AND THE KING'S WAY IS GONE. It cost 69 deaths in a day —
+  // 2601 IS THE PRIMARY, AND THE KEEPER WORKED THAT OUT BEFORE THE DOCTRINE DID.
+  //
+  // `huntingGrounds` ranks it top for skeletons and it is plainly right: 80% of its
+  // generator rolls are skeletons against a shared cap of TWENTY-FIVE, where Castle
+  // Victoria is 40% against a cap of ten. Two and a half times the standing room and
+  // twice the density.
+  //
+  // The doctrine said 38 anyway, so for hours DUM assigned 38, the keeper judged 2601
+  // better and walked back, and the two took turns — with the fleet parked on safe walls
+  // in between. When the keeper and the doctrine disagree about which room is better, and
+  // the keeper is reading the spawn table while the doctrine is reading a decision
+  // somebody made yesterday, the keeper is usually right.
+  //
+  // AND THE ROOM ONLY LOOKED DEAD BECAUSE NOBODY WAS ALLOWED TO STAY IN IT. 26 surviving
+  // statues held it over its cap of 25, so nothing spawned — but the keeper's
+  // clear-the-room logic never ran, because the "leave a room that cannot produce prey"
+  // check fires FIRST and an off-assignment unit leaves before it ever considers clearing.
+  // Making 2601 the assignment removes that, so `capBlockers` finally sees a full room
+  // with no prey in it and starts killing statues. They are level 75 against a ceiling of
+  // 90 and negative karma, so they are fair game and they do not come back.
+  //
+  // The corridor to the Marion crypts is genuinely lethal — it runs through Brax, where a
+  // narthyl worm is level 120 — and that is exactly why this is not a migration. The fleet
+  // is ALREADY standing there. Moving it to Castle Victoria would pay the corridor twice
+  // for a worse room.
+  //
+  // 38 stays as the second station: it is a real skeleton generator and the natural
+  // fallback if 2601 ever has to be abandoned.
+  //
+  // THE KING'S WAY IS GONE. It cost 69 deaths in a day —
   // 23 at the destination to frogmen, which swarm to a cap of 9, and 32 more in the troll
   // corridors it can only be reached through (36 kills by trolls, more than the frogmen
   // managed). Neither half was survivable at this fleet's size and the two compounded:
@@ -87,6 +116,7 @@
     "on": true,
     "stations": [
       { "room": 70, "hunt": "skeleton", "share": 0.35, "when": "night", "lead_ms": 120000 },
+      { "room": 2601, "hunt": "skeleton", "share": 1.0 },
       { "room": 38, "hunt": "skeleton", "share": 1.0 },
       { "room": 39, "hunt": "battered skeleton", "share": 1.0 },
       { "room": 544, "hunt": "fungus beast" }

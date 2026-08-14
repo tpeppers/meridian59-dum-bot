@@ -8,6 +8,7 @@
 
 import assert from 'node:assert/strict';
 import { loadDoctrine } from '../src/config/load.mjs';
+import { validate } from '../src/config/schema.mjs';
 import { shiftAssignments, shiftFleetRules } from '../src/decide/rules/shift.mjs';
 import { HUNT_ROOMS, QUARRY_LEVEL, admits, engagementCeiling, cryptAssignment,
   STRATEGY_IDS } from '../src/strategies/catalog.mjs';
@@ -106,7 +107,9 @@ test('shift: a capacity is what makes overflow mean anything', () => {
   // proportion can express. With the cap lowered below the crypt station's allocation the
   // surplus must appear upstairs rather than being crammed in or dropped.
   const d = doctrine();
-  d.shift.stations[1].max = 2;
+  // By room, not by index — the station list grows at the front when a night window is
+  // added, and a positional test would silently start capping a different room.
+  d.shift.stations.find(st => st.room === 38).max = 2;
   const intent = fire(rows(21), d);
   const byRoom = intent.plan.reduce((m, p) => ({ ...m, [p.to]: (m[p.to] ?? 0) + 1 }), {});
   assert.deepEqual(byRoom, { 576: 16, 38: 2, 39: 3 }, 'three overflow upstairs');
@@ -181,4 +184,72 @@ test('shift: selecting Short swording actually changes the weapon order', () => 
   assert.ok(priority, 'a unit running Short swording is given a weapon policy');
   assert.equal(priority[0], 'short sword');
   assert.ok(priority.length > 1, 'and everything else follows — never an empty hand');
+});
+
+// ---------------------------------------------------------------------------
+// THE NIGHT WINDOW — a station that exists for 35 minutes in every 120.
+// ---------------------------------------------------------------------------
+
+const atNight = rows_ => ({ characters: rows_, strategies: { agents: {} },
+  world_clock: { night: true, closes_in_ms: 20 * 60_000, cycle: 36 } });
+const byDay = rows_ => ({ characters: rows_, strategies: { agents: {} },
+  world_clock: { night: false, opens_in_ms: 40 * 60_000, cycle: 36 } });
+
+test('shift: the graveyard station appears at night and vanishes by day', () => {
+  const d = doctrine();
+  const night = shiftFleetRules[0].decide(atNight(rows(21)), d);
+  const inGraveyard = night.plan.filter(p => p.to === 70);
+  assert.equal(inGraveyard.length, 7, '35% of 21');
+  assert.ok(inGraveyard.every(p => p.hunt === 'skeleton'),
+    'the zombie is 85% of that room and level 55 — it advances nobody here');
+
+  // By day the station is not in the list at all, so those units are allocated to the
+  // King's Way instead. Nothing has to be un-done at the edge: the station simply is not
+  // there, and the ordinary allocation runs over what remains.
+  const day = shiftFleetRules[0].decide(byDay(rows(21)), d);
+  assert.equal(day.plan.filter(p => p.to === 70).length, 0);
+  assert.ok(day.plan.filter(p => p.to === 576).length > night.plan.filter(p => p.to === 576).length,
+    'the King\'s Way gets them back when the window closes');
+  // ORDER IS WHO GIVES THE UNITS UP. The window draws from the King's Way, not from
+  // Castle Victoria — the castle keeps its quarter through the night, which is what
+  // "some of the frogman hunters switch" means. Listed the other way round, the castle
+  // emptied for the whole window instead.
+  assert.equal(night.plan.filter(p => p.to === 38).length,
+               day.plan.filter(p => p.to === 38).length,
+               'the castle station is untouched by the night window');
+  assert.equal(day.plan.length, 21);
+  assert.equal(night.plan.length, 21, 'nobody is lost at either edge');
+});
+
+test('shift: a night station is SHUT when the clock is unknown, not open', () => {
+  // `world_clock` is null until an operator has watched a window begin and written the
+  // anchor down. That is a different fact from "it is daytime", and guessing would park a
+  // shift in an empty graveyard on a schedule nobody verified. Failing shut costs one
+  // window; failing open costs however long it takes somebody to notice a fleet killing
+  // nothing — and the fleet board would report it hunting perfectly happily throughout.
+  const d = doctrine();
+  for (const clock of [null, undefined]) {
+    const obs = { characters: rows(21), strategies: { agents: {} }, world_clock: clock };
+    const intent = shiftFleetRules[0].decide(obs, d);
+    assert.equal(intent.plan.filter(p => p.to === 70).length, 0,
+      'no anchor means no night station');
+  }
+});
+
+test('shift: a night-only room is refused a station that does not gate on the window', () => {
+  // The expensive mistake, caught at doctrine load rather than in the field.
+  const d = doctrine();
+  d.shift.stations = [{ room: 70, hunt: 'skeleton', share: 1 }];
+  const bad = validate(d);
+  assert.ok(bad.some(b => /35-minute window/.test(b.why)),
+    'a graveyard station without `when: night` is refused');
+
+  // And the other two silent ones: a room nobody has rated, and a quarry the room does
+  // not generate.
+  assert.ok(validate({ ...d, shift: { on: true, stations: [{ room: 2602, hunt: 'thrasher' }] } })
+    .some(b => /HUNT_ROOMS/.test(b.why)));
+  assert.ok(validate({ ...d, shift: { on: true, stations: [{ room: 576, hunt: 'skeleton' }] } })
+    .some(b => /does not generate/.test(b.why)));
+  // The shipped doctrine passes its own guard.
+  assert.deepEqual(validate(doctrine()).filter(b => b.where.startsWith('shift')), []);
 });

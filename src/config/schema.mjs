@@ -35,6 +35,8 @@ const num = v => typeof v === 'number' && Number.isFinite(v);
  * @param {object} c effective configuration
  * @returns {{where: string, why: string}[]} empty when usable
  */
+import { HUNT_ROOMS } from '../strategies/catalog.mjs';
+
 export function validate(c) {
   const bad = [];
   const say = (where, why) => bad.push({ where, why });
@@ -216,6 +218,46 @@ export function validate(c) {
       say('castle_victoria.rooms', 'must name integer downstairs and upstairs room numbers');
     if (!num(cv.upstairs_share) || cv.upstairs_share < 0 || cv.upstairs_share > 1)
       say('castle_victoria.upstairs_share', 'must be a fraction from 0 through 1');
+  }
+
+  // ---- the hunting shift
+  //
+  // Only the things whose wrongness is SILENT, which is this file's whole rule. A station
+  // naming a room nobody has rated, or a quarry that room does not generate, produces a
+  // character standing somewhere doing nothing and reporting itself healthy — the exact
+  // failure the statues and the inert room knob both were.
+  if (c.shift?.on === true) {
+    const stations = Array.isArray(c.shift.stations) ? c.shift.stations : [];
+    if (!stations.length)
+      say('shift.stations', 'the shift is on and names no stations, so it will move nobody');
+    stations.forEach((st, i) => {
+      const where = `shift.stations[${i}]`;
+      const room = HUNT_ROOMS[Number(st?.room)];
+      if (!room) {
+        say(where, `room ${st?.room} is not in HUNT_ROOMS. That table is the guard rail that ` +
+          'keeps the fleet out of the level-150 rooms next to its hunting grounds, so a room ' +
+          'is added there — with its threat and what it generates — rather than here');
+        return;
+      }
+      if (!room.generates.includes(st?.hunt))
+        say(where, `${room.name} does not generate "${st?.hunt}" — it makes ` +
+          `${room.generates.join(' or ')}. A quarry a room cannot produce is a character ` +
+          'hunting nothing, and the keeper will not say so because its own room check reads ' +
+          'the spawn table, which lists placed-once residents for ever');
+      // A NIGHT ROOM WITHOUT `when` IS THE EXPENSIVE MISTAKE. The undead generators make
+      // nothing for 85 minutes in every 120, so a station on one without a gate parks a
+      // shift in an empty field for most of the day and looks fine doing it.
+      if (room.night_only && String(st?.when ?? '').toLowerCase() !== 'night')
+        say(where, `${room.name} generates nothing outside its 35-minute window, so this ` +
+          'station needs `"when": "night"` or it will stand in an empty field for most of ' +
+          'every cycle');
+      if (st?.when != null && !['night', 'day', 'always'].includes(String(st.when).toLowerCase()))
+        say(where, `unknown \`when\` "${st.when}" — use night, day, or leave it out`);
+      if (st?.share != null && !(Number(st.share) >= 0 && Number(st.share) <= 1))
+        say(where, '`share` is a fraction between 0 and 1');
+      if (st?.max != null && !(Number.isInteger(Number(st.max)) && Number(st.max) >= 0))
+        say(where, '`max` is a whole number of characters');
+    });
   }
 
   return bad;

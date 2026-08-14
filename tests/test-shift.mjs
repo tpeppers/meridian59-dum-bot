@@ -68,34 +68,51 @@ test('shift: the shipped doctrine splits 75/25 between the King\'s Way and the c
   assert.equal(intent.kind, 'act');
   assert.equal(intent.plan.length, 21);
   const byRoom = intent.plan.reduce((m, p) => ({ ...m, [p.to]: (m[p.to] ?? 0) + 1 }), {});
-  assert.deepEqual(byRoom, { 576: 16, 2601: 5 }, '75% of 21 rounds to 16, the rest take the remainder');
+  assert.deepEqual(byRoom, { 576: 16, 38: 5 },
+    '75% of 21 rounds to 16; the remaining 5 fit inside the cap of 8, so the valve stays shut');
   assert.deepEqual([...new Set(intent.plan.filter(p => p.to === 576).map(p => p.hunt))], ['frogman']);
-  assert.deepEqual([...new Set(intent.plan.filter(p => p.to === 2601).map(p => p.hunt))], ['skeleton']);
+  assert.deepEqual([...new Set(intent.plan.filter(p => p.to === 38).map(p => p.hunt))], ['skeleton']);
   // ROAMING OFF IS THE SAFETY PROPERTY, at both stations, always.
   assert.ok(intent.plan.every(p => p.roam === false));
   // Sized per room: 576 threat 70, 2601 threat 75, against level 60.
   assert.ok(intent.plan.filter(p => p.to === 576).every(p => p.max_threat_over === 10));
-  assert.ok(intent.plan.filter(p => p.to === 2601).every(p => p.max_threat_over === 15));
+  assert.ok(intent.plan.filter(p => p.to === 38).every(p => p.max_threat_over === 15));
   // `purpose` without `goals` is not an audit — yieldCheck answers "nothing can be checked".
   assert.ok(intent.plan.every(p => p.purpose === 'advance' && p.goals?.length));
   assert.ok(intent.plan.every(p => p.weapon_priority?.[0] === 'short sword'));
 });
 
 test('shift: a share is a share of who can work the station, not of the fleet', () => {
-  // Allocating over everybody and filtering afterwards silently shrinks the fleet, and the
-  // units that drop out are the small ones — exactly the ones somebody is watching. Here
-  // four units are below the frogman floor, so 75% is 75% of the seventeen that qualify.
+  // Allocating across everybody and filtering afterwards silently shrinks the fleet, and
+  // the units that drop out are the small ones — exactly the ones somebody is watching.
+  // Here four units are below the frogman floor, so 75% is 75% of the seventeen that
+  // qualify, and the four fall through to the one room their ceiling does admit.
   const mixed = [...rows(17), ...rows(4).map((r, i) => ({ ...r, agent: `s${i}`, level: 44 }))];
   const assigned = shiftAssignments(mixed, doctrine(), obsOf(mixed));
   const small = assigned.filter(a => a.row.level === 44);
   assert.equal(small.length, 4);
-  // 44 max health gives a ceiling of 66: too small for the frogman's room threat of 70,
-  // but the crypt is worse (75), so there is nowhere for them and that is SAID.
-  assert.ok(small.every(a => a.to === null));
-  assert.ok(small.every(a => /no station admits this unit/.test(a.why)));
+  // 44 max health is a ceiling of 66: too small for the King's Way (room threat 70) and
+  // for Castle Victoria's main room (75), but upstairs is 60 and takes them. THAT IS WHAT
+  // AN OVERFLOW ROOM IS FOR — and it is also why upstairs earns its place despite paying
+  // a level-60 character nothing: it is the only station a small character can work.
+  assert.ok(small.every(a => a.to === 39), 'the small units land upstairs, not nowhere');
   const big = assigned.filter(a => a.row.level === 60);
   assert.equal(big.filter(a => a.to === 576).length, 13, '75% of 17');
-  assert.equal(big.filter(a => a.to === 2601).length, 4);
+  assert.equal(big.filter(a => a.to === 38).length, 4);
+});
+
+test('shift: a capacity is what makes overflow mean anything', () => {
+  // `max` beats the share, because "fill this room, then use the next" is not something a
+  // proportion can express. With the cap lowered below the crypt station's allocation the
+  // surplus must appear upstairs rather than being crammed in or dropped.
+  const d = doctrine();
+  d.shift.stations[1].max = 2;
+  const intent = fire(rows(21), d);
+  const byRoom = intent.plan.reduce((m, p) => ({ ...m, [p.to]: (m[p.to] ?? 0) + 1 }), {});
+  assert.deepEqual(byRoom, { 576: 16, 38: 2, 39: 3 }, 'three overflow upstairs');
+  // And nobody is lost or duplicated by the overflow.
+  assert.equal(intent.plan.length, 21);
+  assert.equal(new Set(intent.plan.map(p => p.agent)).size, 21);
 });
 
 test('shift: the assignment is stable, so nobody is walked across the world by a level-up', () => {

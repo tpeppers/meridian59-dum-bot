@@ -38,6 +38,28 @@ const sameList = (a, b) => Array.isArray(a) && Array.isArray(b) &&
  * The order is by level then agent, so it is stable across ticks: a unit must not be
  * reassigned to the other end of the world because somebody else levelled.
  */
+// THE LEAD IS MEASURED WHEN IT CAN BE, AND TYPED WHEN IT CANNOT.
+//
+// `lead_ms` in the doctrine is a floor and a fallback, not the answer: it was right on the
+// day somebody wrote it, and the walk changes when the fleet moves, when the router picks
+// a different corridor, and when a door starts refusing. When the harness has supplied a
+// real estimate — the sum of the recorded time for each hop of the ACTUAL planned route —
+// that wins, taken across the units so the shift leaves when the FURTHEST of them needs to.
+//
+// The slowest, not the average: the point is that the station is populated when the window
+// opens, and a lead set to the mean leaves half the shift walking into an open graveyard.
+// Padded by a tenth, because arriving a few seconds early costs a few seconds of standing
+// about and arriving late costs the walk.
+const leadFor = (station, rows = []) => {
+  const typed = Number(station.lead_ms);
+  const measured = rows
+    .map(r => r.travel_to_station?.ms)
+    .filter(ms => Number.isFinite(ms) && ms > 0);
+  if (!measured.length) return typed;
+  const slowest = Math.max(...measured);
+  return Math.max(Number.isFinite(typed) ? typed : 0, Math.round(slowest * 1.1));
+};
+
 export function shiftAssignments(rows = [], doctrine = {}, fleetObs = { characters: rows }) {
   // A STATION CAN BE OPEN OR SHUT, AND THE CLOCK DECIDES WHICH.
   //
@@ -52,12 +74,27 @@ export function shiftAssignments(rows = [], doctrine = {}, fleetObs = { characte
   // different fact from "it is daytime" — and guessing would park a shift in an empty
   // graveyard on a schedule nobody verified. Failing shut costs a window; failing open
   // costs however long it takes somebody to notice a fleet killing nothing.
+  //
+  // AND A STATION OPENS EARLY BY THE LENGTH OF THE WALK. The graveyard runs for 35 minutes
+  // and the walk to it is a minute and a half from the King's Way — so a shift that sets
+  // off when the window OPENS spends the first twentieth of it in a corridor, every cycle,
+  // for ever. `lead_ms` brings the station into existence that much sooner, which turns
+  // travel time into window time. It is only ever early: the station still closes exactly
+  // when the room stops generating, because arriving late is a wasted walk but STAYING
+  // late is standing in an empty field.
   const clock = fleetObs.world_clock ?? null;
   const open = st => {
     const when = String(st.when ?? 'always').toLowerCase();
     if (when === 'always') return true;
     if (!clock) return false;
-    return when === 'night' ? clock.night === true : clock.night === false;
+    const on = when === 'night' ? clock.night === true : clock.night === false;
+    if (on) return true;
+    // Not open yet — but is it close enough that leaving now is right? `opens_in_ms` is
+    // only present on the phase that is waiting, which is exactly when this applies.
+    const lead = leadFor(st, rows);
+    if (!Number.isFinite(lead) || lead <= 0) return false;
+    const until = when === 'night' ? clock.opens_in_ms : clock.closes_in_ms;
+    return Number.isFinite(until) && until <= lead;
   };
   const stations = (doctrine.shift?.stations ?? [])
     .filter(st => st && st.room != null).filter(open);

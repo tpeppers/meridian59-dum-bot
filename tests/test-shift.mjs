@@ -253,3 +253,48 @@ test('shift: a night-only room is refused a station that does not gate on the wi
   // The shipped doctrine passes its own guard.
   assert.deepEqual(validate(doctrine()).filter(b => b.where.startsWith('shift')), []);
 });
+
+test('shift: the graveyard station opens early by the length of the walk', () => {
+  const d = doctrine();
+  const st = d.shift.stations.find(s => s.room === 70);
+  assert.ok(st.lead_ms > 0, 'the shipped doctrine carries a lead');
+
+  // Not open yet, but inside the lead: the station exists so the walk happens on the
+  // fleet's time rather than the graveyard's.
+  const soon = { characters: rows(21), strategies: { agents: {} },
+    world_clock: { night: false, opens_in_ms: st.lead_ms - 1000 } };
+  assert.ok(shiftFleetRules[0].decide(soon, d).plan.some(p => p.to === 70),
+    'inside the lead, the shift sets off');
+
+  // Outside it, the station is not there — a fleet that left an hour early would spend
+  // the hour standing in an empty field, which is what the window gate is for.
+  const later = { characters: rows(21), strategies: { agents: {} },
+    world_clock: { night: false, opens_in_ms: st.lead_ms * 4 } };
+  assert.equal(later.world_clock.opens_in_ms > st.lead_ms, true);
+  assert.ok(!shiftFleetRules[0].decide(later, d).plan.some(p => p.to === 70));
+
+  // IT IS ONLY EVER EARLY. The lead must not hold the station open past the window —
+  // arriving late wastes a walk, staying late wastes the fleet.
+  const closing = { characters: rows(21), strategies: { agents: {} },
+    world_clock: { night: false, opens_in_ms: 60 * 60_000 } };
+  assert.ok(!shiftFleetRules[0].decide(closing, d).plan.some(p => p.to === 70));
+});
+
+test('shift: a measured walk beats the typed lead, and the slowest unit sets it', () => {
+  const d = doctrine();
+  const st = d.shift.stations.find(s => s.room === 70);
+  // Everyone is much further away than the doctrine assumed. The station must open on the
+  // real distance, not on the number somebody typed when the fleet lived somewhere else.
+  const far = rows(21).map((r, i) => ({ ...r,
+    travel_to_station: { ms: i === 0 ? 300_000 : 60_000, hops: 9, confidence: 1 } }));
+  const obs = { characters: far, strategies: { agents: {} },
+    world_clock: { night: false, opens_in_ms: 320_000 } };
+  assert.ok(shiftFleetRules[0].decide(obs, d).plan.some(p => p.to === 70),
+    'the 5-minute walk opens the station 5 minutes early, not 2');
+
+  // With no estimate at all the typed lead still applies, so a broker that cannot
+  // estimate degrades to the old behaviour rather than to never leaving.
+  const blind = { characters: rows(21), strategies: { agents: {} },
+    world_clock: { night: false, opens_in_ms: st.lead_ms - 1000 } };
+  assert.ok(shiftFleetRules[0].decide(blind, d).plan.some(p => p.to === 70));
+});

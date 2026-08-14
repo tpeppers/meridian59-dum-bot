@@ -98,7 +98,17 @@
   "shift": {
     "on": true,
     "stations": [
-      { "room": 70, "hunt": "skeleton", "share": 0.35, "when": "night", "lead_ms": 120000 },
+      // THE GRAVEYARD IS OFF. Measured 2026-08-14: it costs two migrations per two-hour
+      // cycle and EVERY road out of Castle Victoria crosses rating-750 troll country —
+      // 38 -> 70 is eight hops through 599/598/597, and back again. The window itself is
+      // productive, but the fleet was doing 210 kills a half hour parked in the castle and
+      // 39 in the half hour it spent walking to and from the graveyard, with three deaths
+      // in rooms that are neither station.
+      //
+      // The room is also 85% zombie and 15% skeleton, so the thing being walked to is a
+      // WORSE skeleton generator than the one being left: 38 is 40% skeleton, continuous,
+      // and zero hops away. Re-enable this only if the corridor gets safer or the fleet
+      // gets big enough to survive it.
       { "room": 38, "hunt": "skeleton", "share": 1.0 },
       { "room": 39, "hunt": "battered skeleton", "share": 1.0 },
       { "room": 544, "hunt": "fungus beast" }

@@ -402,8 +402,20 @@ export function strategyRows(observation, doctrine, id) {
 export const HUNT_ROOMS = Object.freeze({
   576: Object.freeze({ room: 576, name: "The King's Way", threat: 70,
     generates: Object.freeze(['frogman', 'centipede']) }),
-  2601: Object.freeze({ room: 2601, name: "Resting place of Marion's ancestors", threat: 75,
-    generates: Object.freeze(['skeleton', 'battered skeleton']) }),
+  // 2601 IS PERMANENTLY DEAD AND THE SPAWN TABLE CANNOT TELL. It is removed rather than
+  // demoted, because `huntingGrounds` ranks it the BEST skeleton room in the game — 80% at
+  // a shared cap of 25 — and any keeper allowed to consider it walks back to it.
+  //
+  // Measured 2026-08-14 by looking at the room: 26 statues standing in it, of which
+  // TWENTY-THREE expose only `look` and no `attack`. They are Monster instances on the
+  // server, so they count toward `piMonster_count` and hold the room over its cap for
+  // ever; they are unkillable from the wire, so no amount of clearing helps; and
+  // `PlaceStatues` refuses to reset the room while any statue remains, so it never
+  // recovers. Nine characters sat on safe walls in it for hours producing nothing.
+  //
+  // The lesson is bigger than one room: the spawn table describes what a room GENERATES,
+  // not what is standing in it, and a room can be permanently full of something that
+  // never appears in it.
   2600: Object.freeze({ room: 2600, name: 'The crypt in Marion', threat: 75,
     generates: Object.freeze(['spectral mummy']) }),
   // Castle Victoria. 38 is the main room and 39 is the floor above it; 41, the

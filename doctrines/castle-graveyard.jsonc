@@ -50,36 +50,19 @@
     }
   },
 
-  // 2601 IS THE PRIMARY, AND THE KEEPER WORKED THAT OUT BEFORE THE DOCTRINE DID.
+  // CASTLE VICTORIA IS THE PRIMARY, and the detour through 2601 is why it is stated
+  // twice. `huntingGrounds` ranks 2601 top for skeletons — 80% at a shared cap of 25
+  // against 38's 40% at a cap of 10 — so the keeper kept walking back to it and the
+  // doctrine kept sending units to 38, with the fleet parked on safe walls in between.
   //
-  // `huntingGrounds` ranks it top for skeletons and it is plainly right: 80% of its
-  // generator rolls are skeletons against a shared cap of TWENTY-FIVE, where Castle
-  // Victoria is 40% against a cap of ten. Two and a half times the standing room and
-  // twice the density.
+  // The keeper's ranking was reading the spawn table, and the spawn table describes what
+  // a room GENERATES rather than what is standing in it. 2601 has 26 statues in it, 23 of
+  // which expose no `attack` verb at all: unkillable from the wire, counted as monsters by
+  // the server, holding the room permanently over its cap. It generates nothing and never
+  // will. It is now out of HUNT_ROOMS entirely, because anything allowed to consider it
+  // will keep choosing it.
   //
-  // The doctrine said 38 anyway, so for hours DUM assigned 38, the keeper judged 2601
-  // better and walked back, and the two took turns — with the fleet parked on safe walls
-  // in between. When the keeper and the doctrine disagree about which room is better, and
-  // the keeper is reading the spawn table while the doctrine is reading a decision
-  // somebody made yesterday, the keeper is usually right.
-  //
-  // AND THE ROOM ONLY LOOKED DEAD BECAUSE NOBODY WAS ALLOWED TO STAY IN IT. 26 surviving
-  // statues held it over its cap of 25, so nothing spawned — but the keeper's
-  // clear-the-room logic never ran, because the "leave a room that cannot produce prey"
-  // check fires FIRST and an off-assignment unit leaves before it ever considers clearing.
-  // Making 2601 the assignment removes that, so `capBlockers` finally sees a full room
-  // with no prey in it and starts killing statues. They are level 75 against a ceiling of
-  // 90 and negative karma, so they are fair game and they do not come back.
-  //
-  // The corridor to the Marion crypts is genuinely lethal — it runs through Brax, where a
-  // narthyl worm is level 120 — and that is exactly why this is not a migration. The fleet
-  // is ALREADY standing there. Moving it to Castle Victoria would pay the corridor twice
-  // for a worse room.
-  //
-  // 38 stays as the second station: it is a real skeleton generator and the natural
-  // fallback if 2601 ever has to be abandoned.
-  //
-  // THE KING'S WAY IS GONE. It cost 69 deaths in a day —
+    // THE KING'S WAY IS GONE. It cost 69 deaths in a day —
   // 23 at the destination to frogmen, which swarm to a cap of 9, and 32 more in the troll
   // corridors it can only be reached through (36 kills by trolls, more than the frogmen
   // managed). Neither half was survivable at this fleet's size and the two compounded:
@@ -116,7 +99,6 @@
     "on": true,
     "stations": [
       { "room": 70, "hunt": "skeleton", "share": 0.35, "when": "night", "lead_ms": 120000 },
-      { "room": 2601, "hunt": "skeleton", "share": 1.0 },
       { "room": 38, "hunt": "skeleton", "share": 1.0 },
       { "room": 39, "hunt": "battered skeleton", "share": 1.0 },
       { "room": 544, "hunt": "fungus beast" }

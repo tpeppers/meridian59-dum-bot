@@ -137,7 +137,15 @@
     ],
     "rest_below": 0.75,
     "flee_below": 0.35,
-    "fight_above_vigor": 180,
+    // 180 IS A FLOOR ONLY A FED FLEET CAN CLEAR, AND THIS ONE HAS NO HERBS.
+    // Resting caps vigor at 80/200; the only way past is `create food`, which costs 2
+    // elderberry AND 2 herbs. Measured 2026-08-14: herbs were ZERO on all 21 characters
+    // (elderberry 0-5), so not one of them could cast it. Eight sat in room 2 resting at
+    // exactly v80, refusing to fight, indefinitely — a fleet-wide park that reads on the
+    // board as twenty-one healthy characters. 60 leaves a real floor and a working band
+    // above the cap. Put it back to 180 once the herb supply is fixed: the number is not
+    // wrong, the pantry is.
+    "fight_above_vigor": 60,
     "use_safe_spots": true
   },
 

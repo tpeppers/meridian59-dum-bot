@@ -15,6 +15,7 @@ export const STRATEGY_IDS = Object.freeze({
   SPREAD_OUT: 'spread-out',
   SELL_AND_BANK: 'sell-and-bank',
   SUPPLY_LIMITED_FARMING: 'supply-limited-farming',
+  INKY_RESERVE: 'inky-reserve',
   GUILD_TITHE: 'guild-tithe',
   MAX_WEAPONS: 'max-weapons',
   BUY_FOOD: 'buy-food',
@@ -204,6 +205,30 @@ export const STRATEGY_CATALOG = Object.freeze([
                      'character has just sold, and it burns down as loot comes in, so reagents ' +
                      'and loot never compete for the same space. Cost per casting does not ' +
                      'change with depth, so the only thing depth buys or loses is trips.' }),
+    ]),
+  }),
+  Object.freeze({
+    id: STRATEGY_IDS.INKY_RESERVE,
+    title: 'Fight on the Inky Reserve',
+    group: 'Economy',
+    purpose: 'Stop a character starving under a floor it cannot reach',
+    requirements: ['Prepared food in the pack — the bigger the item, the more this matters'],
+    description:
+      'Allow farming below the fighting-vigor floor while carrying food too big to eat. ' +
+      '`eat` refuses anything that would carry vigor past the 200 cap and an inky cap is ' +
+      'fifty — the most vigor per unit of stomach in the game, so a well-supplied character ' +
+      'is usually holding one. At 177 with an inky and an empty stomach there is nothing to ' +
+      'eat, nothing to rest for (resting stops at 80), and a floor of 180 it cannot reach. ' +
+      'Measured on this fleet: three characters sat behind proven walls exactly there, at ' +
+      '165, 166 and 177 against a floor of 180 — zero fighting and zero travel, indefinitely, ' +
+      'while reporting themselves healthy. Fighting burns about thirty vigor a minute, which ' +
+      'is what makes room for the reserve, so the way out of the deadlock is to go and swing.',
+    settings: Object.freeze([
+      Object.freeze({ id: 'floor', title: 'Reserve floor', type: 'number', min: 0, max: 200,
+        default: 120,
+        description: 'How far below the fighting floor this may go. It relaxes the wellfed ' +
+                     'floor, never the survival one — a character still will not open a fight ' +
+                     'exhausted, and the exception only applies while a reserve is held.' }),
     ]),
   }),
   Object.freeze({

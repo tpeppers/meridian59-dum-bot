@@ -52,8 +52,8 @@
     "defaults": ["create-weapons", "vs-skeletons", "create-food", "max-weapons", "accumulate-in-vault", "farm-cleanup"],
     "settings": {
       "sell-and-bank": {
-        "bank_above": 3000,
-        "walking_money": 1000,
+        "bank_above": 4000,
+        "walking_money": 2500,
         "max_carry": 50,
         "sell_at_load": 0.95,
         "sell_when_broke": false,

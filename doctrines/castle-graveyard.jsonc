@@ -148,14 +148,29 @@
       // in one room are competing for one capped generator, so most of them are standing
       // about waiting for something to spawn.
       //
-      // 0.6 moves roughly seven characters upstairs. Deliberately not lower: room 39 has
-      // the same shared-cap arithmetic, and its 8.8 per character was measured with FOUR
-      // in it. Piling twelve upstairs would very likely reproduce downstairs' problem in
-      // the other room, and that is the thing to watch at the next check-in.
+      // 0.6 moved seven upstairs, and the next window SETTLED IT — in the other direction
+      // from the guess above. The worry was that room 39 would reproduce downstairs'
+      // crowding once it filled up. It did not:
+      //
+      //   room 39   4 characters -> 8.8 each        11 characters -> 8.7 each, 0 deaths
+      //   room 38  17 characters -> 2.9 each        10 characters -> 1.6 each, 8 deaths
+      //
+      // Room 39 HELD ITS RATE at nearly three times the occupancy, so the shared generator
+      // is not what was binding. And room 38 got WORSE per character after being thinned,
+      // which kills the crowding explanation for it too: the problem is the QUARRY. A
+      // level-75 skeleton at rating 525 is simply a bad fight for a roster of 45-62 max
+      // health, and it produced eight of the last twelve deaths while 39 produced none.
+      //
+      // So 0.25, and the level-ordering is what makes that the right number rather than 0.
+      // Stations take the highest-level eligible first, so a quarter leaves the two or
+      // three LARGEST characters downstairs — and they are exactly the ones who need it,
+      // because advancement wants the creature's level STRICTLY ABOVE max health and a
+      // level-60 battered skeleton stops paying a character that has reached 60. Everyone
+      // else goes where the kills and the survival are.
       //
       // Both rooms are Castle Victoria, one floor apart. This moves nobody through a
       // corridor.
-      { "room": 38, "hunt": "skeleton", "share": 0.6 },
+      { "room": 38, "hunt": "skeleton", "share": 0.25 },
       { "room": 39, "hunt": "battered skeleton", "share": 1.0 },
       { "room": 544, "hunt": "fungus beast" }
     ],

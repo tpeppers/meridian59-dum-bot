@@ -23,7 +23,7 @@
     // Farm delivery is opt-in too. A Castle seller otherwise follows its necessary town
     // loop with an apothecary-and-six-recipient circuit; the bounded local almoner already
     // shares the same reagents without turning a high-yield farmer into a long-haul courier.
-    "defaults": ["create-weapons", "vs-skeletons", "check-cv-crate", "create-food", "sell-and-bank", "max-weapons", "buy-food", "buy-weapons", "buy-reagents", "accumulate-in-vault", "farm-cleanup"],
+    "defaults": ["create-weapons", "vs-skeletons", "check-cv-crate", "create-food", "sell-and-bank", "supply-limited-farming", "max-weapons", "buy-food", "buy-weapons", "buy-reagents", "accumulate-in-vault", "farm-cleanup"],
     "settings": {
       // ONE TRIP, NOT TWO. Read off the counter: elderberry 28sh, herbs 14sh, so shipping
       // out with 40 of each is 1,680sh before a loaf or a piece of armour. At the old

@@ -14,6 +14,7 @@ export const STRATEGY_IDS = Object.freeze({
   CREATE_FOOD: 'create-food',
   SPREAD_OUT: 'spread-out',
   SELL_AND_BANK: 'sell-and-bank',
+  SUPPLY_LIMITED_FARMING: 'supply-limited-farming',
   GUILD_TITHE: 'guild-tithe',
   MAX_WEAPONS: 'max-weapons',
   BUY_FOOD: 'buy-food',
@@ -165,6 +166,39 @@ export const STRATEGY_CATALOG = Object.freeze([
         default: 500, description: 'Cash plus bank balance considered broke.' }),
       Object.freeze({ id: 'broke_stacks', title: 'Broke pack stacks', type: 'integer', min: 1,
         default: 8, description: 'Minimum non-money stacks before a poverty-triggered market trip.' }),
+    ]),
+  }),
+  Object.freeze({
+    id: STRATEGY_IDS.SUPPLY_LIMITED_FARMING,
+    title: 'Supply-Limited Farming',
+    group: 'Economy',
+    purpose: 'Leave the farm rooms when the work runs out, not when the pack fills',
+    requirements: ['Sell Loot and Bank Surplus, whose market trigger this overrides',
+                   'Reagent floor and ceiling set in the character loadout'],
+    description:
+      'Stop treating a part-full pack as a reason to walk to a market. The keeper already ' +
+      'handles fullness where the character stands: makeRoom() sells to any local buyer and ' +
+      'otherwise drops the biggest pile of junk, keeping money, gems and anything in use — ' +
+      'and since a gem is 1 bulk against a mushroom\'s 5, what survives that is the loot ' +
+      'worth carrying home anyway. Being out of elderberry and herbs IS a reason: with no ' +
+      'create food, vigor stops at the 80 the resting cap reaches and the character fights ' +
+      'badly until somebody restocks it. So the reagent floor becomes the trip trigger and ' +
+      'the load fraction stops being one.',
+    settings: Object.freeze([
+      Object.freeze({ id: 'sell_at_load', title: 'Sell at load', type: 'number', min: 0, max: 1,
+        default: 0.95,
+        description: 'Overrides the Sell Loot value. Deliberately high — this is the trigger ' +
+                     'being switched off, not tuned. Not 1.0, because a pack with no room at ' +
+                     'all cannot loot what it kills.' }),
+      Object.freeze({ id: 'reagent_floor', title: 'Reagent floor', type: 'integer', min: 0,
+        default: 6,
+        description: 'Castings left in the pack before a supply trip. THE LOADOUT OWNS THIS ' +
+                     'NUMBER — the keeper reads carry floors from substrate/loadouts, not from ' +
+                     'an order, so this setting records the intent and the loadout enforces it.' }),
+      Object.freeze({ id: 'reagent_ceiling', title: 'Reagent ceiling', type: 'integer', min: 1,
+        default: 80,
+        description: 'What one supply trip refills to, also owned by the loadout. Floor 6 with ' +
+                     'ceiling 80 is 37 castings between trips; the 40 it replaced was 20.' }),
     ]),
   }),
   Object.freeze({

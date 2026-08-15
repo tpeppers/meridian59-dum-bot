@@ -86,7 +86,13 @@ test('shift: the shipped doctrine puts the whole fleet in Castle Victoria', () =
   // characters downstairs returned 2.9 kills each and six deaths in ninety minutes, while
   // four upstairs returned 8.8 each and none. piMonster_count_max is room-wide, so most of
   // a crowd of seventeen is waiting for a generator, not fighting.
-  assert.deepEqual(byRoom, { 38: 13, 39: 8 }, 'the fleet is split, not piled downstairs');
+  // Retuned to 0.25 after the next window's measurement: room 39 HELD 8.7 kills each at
+  // eleven characters (from 8.8 at four), so its generator was never the constraint, while
+  // room 38 fell to 1.6 each after being thinned and produced eight of twelve deaths. The
+  // quarry was the problem, not the crowd. Level-ordering leaves the largest characters
+  // downstairs, which is right: a level-60 battered skeleton stops advancing a character
+  // that has reached 60.
+  assert.deepEqual(byRoom, { 38: 5, 39: 16 }, 'most of the fleet works the softer quarry');
   assert.deepEqual([...new Set(intent.plan.map(p => p.hunt))].sort(),
                    ['battered skeleton', 'skeleton']);
   // ROAMING OFF IS THE SAFETY PROPERTY. 41, the Underbasement, is one door below 38 and

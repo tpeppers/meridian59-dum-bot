@@ -193,7 +193,9 @@ test('strategies: supply-limited farming owns the market trigger, not the purse'
   // with Sell Loot, so enabling this must not quietly re-open banking policy.
   const supplied = rule.decide(obs('supplied'), doctrine).orders;
   assert.equal(supplied.bank_above, 4000);
-  assert.equal(supplied.walking_money, 2500);
+  // The band between these two is what pays for an outfitting, not either number alone.
+  // walking_money is the floor spending refuses to go under, so it stays low.
+  assert.equal(supplied.walking_money, 400);
 });
 
 test('strategies: selling and banking values are independently maintained', () => {
@@ -213,7 +215,7 @@ test('strategies: selling and banking values are independently maintained', () =
   // herbs at 14sh is 1,680 before food or armour, and at the catalog's 1,000 float every
   // re-supply took two round trips.
   assert.equal(intent.orders.bank_above, 4000);
-  assert.equal(intent.orders.walking_money, 2500);
+  assert.equal(intent.orders.walking_money, 400);
   assert.equal(intent.orders.max_carry, 50);
   assert.equal(intent.orders.sell_at_load, 0.95);
   assert.equal(intent.orders.sell_when_broke, false);

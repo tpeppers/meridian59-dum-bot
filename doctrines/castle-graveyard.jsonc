@@ -183,7 +183,24 @@
       //
       // Both rooms are Castle Victoria, one floor apart. This moves nobody through a
       // corridor.
-      { "room": 38, "hunt": "skeleton", "share": 0.25 },
+      // AND NOW SHUT, because at a quarter it was costing lives to produce nothing.
+      // Measured over the following 30 minutes: room 38 held four characters, returned
+      // TWO kills between them, and produced three of the fleet's last six deaths. Room 39
+      // over the same span returned 8.9 per character and killed nobody — its fourth
+      // consecutive reading in that band, now across occupancies of 4, 11, 18 and 17.
+      //
+      // A share of 0 empties the station (checked: the allocation returns 21 upstairs, and
+      // the `|| rows.length` fallback that would have inverted a zero lives on a different
+      // path).
+      //
+      // WHAT THIS GIVES UP, PLAINLY: advancement wants the creature's level STRICTLY above
+      // max health, so a level-60 battered skeleton stops paying anyone who reaches 60 and
+      // this closes the fleet's only route past it. That is a real cost and it is deferred,
+      // not solved. It is affordable today only because the three characters at 61-62 were
+      // already upstairs where the level-75 skeleton could not help them — the split is
+      // roster-ordered, not level-ordered, so room 38 was never serving the characters that
+      // needed it. Re-open it the moment the station list can select on level.
+      { "room": 38, "hunt": "skeleton", "share": 0 },
       { "room": 39, "hunt": "battered skeleton", "share": 1.0 },
       { "room": 544, "hunt": "fungus beast" }
     ],

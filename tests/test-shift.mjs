@@ -92,9 +92,12 @@ test('shift: the shipped doctrine puts the whole fleet in Castle Victoria', () =
   // quarry was the problem, not the crowd. Level-ordering leaves the largest characters
   // downstairs, which is right: a level-60 battered skeleton stops advancing a character
   // that has reached 60.
-  assert.deepEqual(byRoom, { 38: 5, 39: 16 }, 'most of the fleet works the softer quarry');
-  assert.deepEqual([...new Set(intent.plan.map(p => p.hunt))].sort(),
-                   ['battered skeleton', 'skeleton']);
+  // Room 38 is now SHUT (share 0). At a quarter it held four characters, returned two
+  // kills between them and produced three of the fleet's last six deaths, while room 39
+  // returned 8.9 per character and killed nobody for the fourth reading running.
+  assert.deepEqual(byRoom, { 39: 21 }, 'the whole fleet works the softer quarry');
+  // One open station, one quarry.
+  assert.deepEqual([...new Set(intent.plan.map(p => p.hunt))], ['battered skeleton']);
   // ROAMING OFF IS THE SAFETY PROPERTY. 41, the Underbasement, is one door below 38 and
   // generates narthyl worms at level 120.
   assert.ok(intent.plan.every(p => p.roam === false));
@@ -139,11 +142,24 @@ test('shift: the engagement ceiling sorts the fleet, with no health threshold wr
 test('shift: a capacity is what makes overflow mean anything', () => {
   // `max` beats the share, because "fill this room, then use the next" is not something a
   // proportion can express.
-  const d = doctrine();
+  // SHARE PINNED OPEN. `want` is min(capacity, share x eligible), so a station whose share
+  // is 0 takes nobody however large its capacity — which is correct, and which makes this
+  // test vacuous against the shipped doctrine now that 38 is shut. What is under test is
+  // that a CAPACITY overflows into the next station, so the share must not be the binding
+  // constraint.
+  const d = allDownstairs();
   d.shift.stations.find(st => st.room === 38).max = 5;
   const intent = fire(rows(21), d);
   const byRoom = intent.plan.reduce((m, p) => ({ ...m, [p.to]: (m[p.to] ?? 0) + 1 }), {});
   assert.deepEqual(byRoom, { 38: 5, 39: 16 }, 'the surplus goes to the next station');
+
+  // And the other direction, which is what shutting a station relies on: a share of 0
+  // empties it whatever its capacity says.
+  const shut = allDownstairs();
+  const st38 = shut.shift.stations.find(st => st.room === 38);
+  st38.max = 5; st38.share = 0;
+  const none = fire(rows(21), shut).plan.filter(p => p.to === 38);
+  assert.equal(none.length, 0, 'share 0 shuts a station even with capacity to spare');
   assert.equal(intent.plan.length, 21);
   assert.equal(new Set(intent.plan.map(p => p.agent)).size, 21, 'nobody lost or duplicated');
 });
@@ -222,9 +238,14 @@ test('shift: a unit already holding its orders is not re-sent every tick', () =>
   assert.equal(split.kind, 'act');
   assert.ok(split.plan.every(p => ['relocate', 'deploy'].includes(p.do) && [38, 39].includes(p.to)),
             'a stranded fleet is recalled to the castle under either share');
-  assert.ok(split.plan.some(p => p.do === 'relocate' && p.to === 38));
-  assert.ok(split.plan.some(p => p.do === 'deploy' && p.to === 39),
-            'the ones the share moves upstairs are re-ordered, not just walked');
+  // Stated without naming a room, because which rooms are open IS the policy. With 38
+  // shut every unit is re-ordered upstairs, so there is no relocate left to find — naming
+  // 38 here made this assertion fail the moment the station closed, which is a policy
+  // change reading as a code break for the third time in this file.
+  assert.ok(split.plan.every(p => p.to === 39),
+            'with 38 shut the whole fleet is sent upstairs');
+  assert.ok(split.plan.some(p => p.do === 'deploy'),
+            'a unit whose orders change is re-ordered, not merely walked');
 
   // But a keeper already travelling or fighting is making its own progress and must not
   // have a second journey started underneath it.

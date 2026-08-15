@@ -53,7 +53,7 @@
     "settings": {
       "sell-and-bank": {
         "bank_above": 4000,
-        "walking_money": 2500,
+        "walking_money": 400,
         "max_carry": 50,
         "sell_at_load": 0.95,
         "sell_when_broke": false,

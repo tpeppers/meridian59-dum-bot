@@ -161,12 +161,25 @@
       // level-75 skeleton at rating 525 is simply a bad fight for a roster of 45-62 max
       // health, and it produced eight of the last twelve deaths while 39 produced none.
       //
-      // So 0.25, and the level-ordering is what makes that the right number rather than 0.
-      // Stations take the highest-level eligible first, so a quarter leaves the two or
-      // three LARGEST characters downstairs — and they are exactly the ones who need it,
-      // because advancement wants the creature's level STRICTLY ABOVE max health and a
-      // level-60 battered skeleton stops paying a character that has reached 60. Everyone
-      // else goes where the kills and the survival are.
+      // So 0.25 — but NOT for the reason first written here, which was wrong and is worth
+      // recording. That comment said a quarter leaves the LARGEST characters downstairs,
+      // where they belong, because advancement wants the creature's level strictly above
+      // max health and a level-60 battered skeleton stops paying a character that has
+      // reached 60. The reasoning about advancement is right. The mechanism is not:
+      // `pickOrder(rows, false)` RETURNS THE ROWS UNSORTED, so a non-lead station takes
+      // them in roster order and the split is arbitrary with respect to level. Checked
+      // live the moment it deployed: the seven left downstairs measured 50, 50, 52, 53,
+      // 53, 56 and 56 max health, while the three biggest in the fleet — 62, 61 and 61 —
+      // all went upstairs. The opposite of the intent.
+      //
+      // What 0.25 actually buys, then, is only that MOST of the fleet works the softer
+      // quarry. Seven characters are still on the level-75 skeleton by accident of roster
+      // order rather than because they are the ones who need it.
+      //
+      // A share cannot express "the largest stay". `max` is a capacity and beats the share
+      // but is just as blind to level; doing this properly needs the station list to select
+      // on level, which is a code change and not a doctrine one. Until then do not read
+      // this number as targeting anybody in particular.
       //
       // Both rooms are Castle Victoria, one floor apart. This moves nobody through a
       // corridor.

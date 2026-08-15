@@ -131,7 +131,31 @@
       // WORSE skeleton generator than the one being left: 38 is 40% skeleton, continuous,
       // and zero hops away. Re-enable this only if the corridor gets safer or the fleet
       // gets big enough to survive it.
-      { "room": 38, "hunt": "skeleton", "share": 1.0 },
+      // 1.0 HERE MEANT "EVERYONE WHO CAN FIGHT A SKELETON", AND THAT IS SEVENTEEN OF
+      // TWENTY-ONE IN ONE ROOM. `share` is a fraction of the ELIGIBLE units and the last
+      // station takes the remainder, so downstairs took all comers and upstairs got only
+      // the four characters too small to be eligible at all — the ones whose engagement
+      // ceiling (1.5x max health) falls under a skeleton's level 75.
+      //
+      // Measured 2026-08-14, over one 30-minute window:
+      //
+      //   room 38, skeleton     L75 rating 525   17 characters   2.9 kills each   6 deaths
+      //   room 39, batt. skel.  L60 rating 420    4 characters   8.8 kills each   0 deaths
+      //
+      // Three times the yield per character and nobody killed. Two things drive it and
+      // they compound: a level-75 skeleton at rating 525 is a hard fight for a roster of
+      // 45-62 max health, and `piMonster_count_max` IS ROOM-WIDE — seventeen characters
+      // in one room are competing for one capped generator, so most of them are standing
+      // about waiting for something to spawn.
+      //
+      // 0.6 moves roughly seven characters upstairs. Deliberately not lower: room 39 has
+      // the same shared-cap arithmetic, and its 8.8 per character was measured with FOUR
+      // in it. Piling twelve upstairs would very likely reproduce downstairs' problem in
+      // the other room, and that is the thing to watch at the next check-in.
+      //
+      // Both rooms are Castle Victoria, one floor apart. This moves nobody through a
+      // corridor.
+      { "room": 38, "hunt": "skeleton", "share": 0.6 },
       { "room": 39, "hunt": "battered skeleton", "share": 1.0 },
       { "room": 544, "hunt": "fungus beast" }
     ],

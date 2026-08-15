@@ -260,10 +260,24 @@ export const shiftFleetRules = [{
       // So a unit whose orders are right but which is somewhere else gets walked. Only
       // when it is genuinely idle: a keeper mid-travel or mid-fight is making progress of
       // its own and must not have a second journey started underneath it.
+      // A KEEPER MID-JOURNEY OR MID-FIGHT IS LEFT ALONE WHETHER OR NOT ITS ORDERS CHANGED.
+      //
+      // This used to guard only the `orders already right` branch, so a unit whose orders
+      // were REWRITTEN — which is what happens the moment a station's share is retuned —
+      // was deployed on the spot, starting a second journey underneath a character that was
+      // already walking or already swinging. That is the one thing this repository says
+      // must never happen to a trip: a planned journey accepts its risk when it is planned,
+      // and nothing else may cancel it on the character's behalf.
+      //
+      // Deferring costs nothing. `hunting` and `holding` are not in this list, so a unit
+      // takes its new orders at the very next idle moment — which for a fleet on station is
+      // seconds away — and a share change rolls through the fleet instead of interrupting
+      // it all at once.
+      const busyDoing = /travel|fight|pull|rest|recover|park|eat/i.test(String(a.row.activity ?? ''));
+      if (busyDoing) return [];
       if (!needsOrders(a.row, orders)) {
         const settled = a.row.room != null && a.row.room !== a.to;
-        const busyDoing = /travel|fight|pull|rest|recover|park|eat/i.test(String(a.row.activity ?? ''));
-        if (settled && !busyDoing)
+        if (settled)
           return [{ do: 'relocate', agent: a.row.agent, to: a.to,
             why: `orders say ${a.to} and it is standing in ${a.row.room} — walk it there` }];
         return [];

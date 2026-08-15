@@ -24,6 +24,16 @@ const rows = (n = 21, over = {}) => Array.from({ length: n }, (_, i) => ({
 }));
 const obsOf = rows_ => ({ characters: rows_, strategies: { agents: {} } });
 const fire = (rows_, d = doctrine()) => shiftFleetRules[0].decide(obsOf(rows_), d);
+// A doctrine with the downstairs share pinned OPEN. Several tests below are about the
+// sorting MECHANISM — the engagement ceiling, idempotence — and not about how the shipped
+// doctrine happens to divide the fleet today. Riding on the shipped share made all three
+// fail the moment that number was tuned, which is a test telling you the policy changed
+// dressed up as a test telling you the code broke.
+const allDownstairs = () => {
+  const d = doctrine();
+  d.shift.stations.find(st => st.room === 38).share = 1.0;
+  return d;
+};
 
 test('shift: a level-150 room is unreachable however it is asked for', () => {
   // 2602 is thrashers (150, rating 870) one door from 38. 552 The Great Ocean is the
@@ -70,12 +80,24 @@ test('shift: the shipped doctrine puts the whole fleet in Castle Victoria', () =
   assert.equal(intent.kind, 'act');
   assert.equal(intent.plan.length, 21);
   const byRoom = intent.plan.reduce((m, p) => ({ ...m, [p.to]: (m[p.to] ?? 0) + 1 }), {});
-  assert.deepEqual(byRoom, { 38: 21 }, 'the densest skeleton generator takes the fleet');
-  assert.deepEqual([...new Set(intent.plan.map(p => p.hunt))], ['skeleton']);
+  // THE SPLIT IS THE POLICY, AND THIS IS THE ASSERTION THAT SHOULD MOVE WHEN IT DOES.
+  // It used to be { 38: 21 } — everyone downstairs — because station 38 carried share 1.0
+  // and a share is a share of the ELIGIBLE. Measured live on 2026-08-14: seventeen
+  // characters downstairs returned 2.9 kills each and six deaths in ninety minutes, while
+  // four upstairs returned 8.8 each and none. piMonster_count_max is room-wide, so most of
+  // a crowd of seventeen is waiting for a generator, not fighting.
+  assert.deepEqual(byRoom, { 38: 13, 39: 8 }, 'the fleet is split, not piled downstairs');
+  assert.deepEqual([...new Set(intent.plan.map(p => p.hunt))].sort(),
+                   ['battered skeleton', 'skeleton']);
   // ROAMING OFF IS THE SAFETY PROPERTY. 41, the Underbasement, is one door below 38 and
   // generates narthyl worms at level 120.
   assert.ok(intent.plan.every(p => p.roam === false));
-  assert.ok(intent.plan.every(p => p.max_threat_over === 15), '38 threat 75 against level 60');
+  // Sized to the ROOM, so the two rooms give two different bands: 38's threat is 75 and
+  // 39's is 60, against a fixture level of 60.
+  assert.ok(intent.plan.filter(p => p.to === 38).every(p => p.max_threat_over === 15),
+            '38 threat 75 against level 60');
+  assert.ok(intent.plan.filter(p => p.to === 39).every(p => p.max_threat_over === 0),
+            '39 threat 60 against level 60');
   assert.ok(intent.plan.every(p => p.purpose === 'advance' && p.goals?.length));
   // THE SHIFT DOES NOT SET A WEAPON ORDER. `maintain-qualifying-weapons` owns that, and
   // the shift carrying its own copy is how a stale preset gets reimposed on a fleet that
@@ -90,7 +112,11 @@ test('shift: the engagement ceiling sorts the fleet, with no health threshold wr
   const mixed = [...rows(14),
     ...rows(4).map((r, i) => ({ ...r, agent: `m${i}`, level: 45 })),   // ceiling 68
     ...rows(3).map((r, i) => ({ ...r, agent: `s${i}`, level: 36 }))];  // ceiling 54
-  const assigned = shiftAssignments(mixed, doctrine(), obsOf(mixed));
+  // SHARE PINNED OPEN, because this test is about the CEILING doing the sorting and not
+  // about how the shipped doctrine currently divides the fleet. With the live share of 0.6
+  // some ceiling-90 units are sent upstairs on purpose, which would fail the assertion
+  // below while the mechanism it names is working perfectly.
+  const assigned = shiftAssignments(mixed, allDownstairs(), obsOf(mixed));
   const at = lvl => assigned.filter(a => a.row.level === lvl);
   assert.ok(at(60).every(a => a.to === 38), 'ceiling 90 takes the level-75 skeleton');
   assert.ok(at(45).every(a => a.to === 39), 'ceiling 68 falls through to the battered skeleton');
@@ -149,18 +175,50 @@ test('shift: DUM\'s own claim does not count as busy', () => {
 
 test('shift: a unit already holding its orders is not re-sent every tick', () => {
   // Holding the orders AND standing in the room: nothing to do.
+  // Pinned open too: "already on station" has to be built from the SAME allocation the
+  // rule would make, or the fixture is asserting the old policy rather than idempotence.
+  // Under the live 0.6 split a fleet standing entirely in 38 is genuinely NOT on station,
+  // and being re-sent is correct behaviour rather than the churn this test guards against.
   const settled = rows(21).map(r => ({ ...r, room: 38,
     policy: { assignedRoom: 38, hunt: 'skeleton', roam: false, purpose: 'advance' } }));
-  assert.equal(fire(settled).kind, 'pass', 'a fleet already on station is left alone');
+  assert.equal(fire(settled, allDownstairs()).kind, 'pass',
+               'a fleet already on station is left alone');
+
+  // AND THE SPLIT ITSELF MUST BE IDEMPOTENT, which is the property that actually matters
+  // now there are two rooms: feed the rule its own plan back and it must have nothing to
+  // do. An unstable split would walk characters up and down the stairs for ever.
+  const plan = fire(rows(21)).plan;
+  const onStation = rows(21).map(r => {
+    const p = plan.find(x => x.agent === r.agent);
+    return { ...r, room: p.to,
+             policy: { assignedRoom: p.to, hunt: p.hunt, roam: false, purpose: 'advance' } };
+  });
+  assert.equal(fire(onStation).kind, 'pass', 'the 38/39 split does not re-send itself');
 
   // ORDERS MATCHING IS NOT BEING THERE. The same orders, standing somewhere else and
   // idle, must produce a walk — this is the case that had eleven characters holding safe
   // walls in a dead room for hours while every signal read healthy.
   const stranded = rows(21).map(r => ({ ...r, room: 71, activity: 'holding a untested safe spot',
     policy: { assignedRoom: 38, hunt: 'skeleton', roam: false, purpose: 'advance' } }));
-  const walk = fire(stranded);
+  // Share pinned open again: what is under test is that ORDERS MATCHING IS NOT BEING
+  // THERE, not which of the two castle rooms they are sent to.
+  const walk = fire(stranded, allDownstairs());
   assert.equal(walk.kind, 'act');
   assert.ok(walk.plan.every(p => p.do === 'relocate' && p.to === 38));
+
+  // The same property under the LIVE split, stated without naming a room: everybody
+  // stranded is walked to a castle station, whichever one the share gives them.
+  // RELOCATE AND DEPLOY ARE DIFFERENT VERBS AND THE SPLIT USES BOTH. A unit whose orders
+  // already name 38 is RELOCATED to the room its orders name; one the share moves upstairs
+  // has its orders changed, which is a DEPLOY. Asserting relocate for all of them was
+  // wrong, and wrong in the direction that would have hidden the new verb entirely.
+  const split = fire(stranded);
+  assert.equal(split.kind, 'act');
+  assert.ok(split.plan.every(p => ['relocate', 'deploy'].includes(p.do) && [38, 39].includes(p.to)),
+            'a stranded fleet is recalled to the castle under either share');
+  assert.ok(split.plan.some(p => p.do === 'relocate' && p.to === 38));
+  assert.ok(split.plan.some(p => p.do === 'deploy' && p.to === 39),
+            'the ones the share moves upstairs are re-ordered, not just walked');
 
   // But a keeper already travelling or fighting is making its own progress and must not
   // have a second journey started underneath it.

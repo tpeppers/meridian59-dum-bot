@@ -24,7 +24,7 @@ test('strategies: catalogue contains the independently selectable behaviours', (
     STRATEGY_IDS.CREATE_WEAPONS, STRATEGY_IDS.CREATE_FOOD,
     STRATEGY_IDS.VS_SKELETONS, STRATEGY_IDS.SHORT_SWORDING, STRATEGY_IDS.CHECK_CV_CRATE,
     STRATEGY_IDS.SPREAD_OUT, STRATEGY_IDS.SELL_AND_BANK,
-    STRATEGY_IDS.SUPPLY_LIMITED_FARMING, STRATEGY_IDS.GUILD_TITHE,
+    STRATEGY_IDS.SUPPLY_LIMITED_FARMING, STRATEGY_IDS.INKY_RESERVE, STRATEGY_IDS.GUILD_TITHE,
     STRATEGY_IDS.MAX_WEAPONS,
     STRATEGY_IDS.BUY_FOOD, STRATEGY_IDS.BUY_WEAPONS, STRATEGY_IDS.BUY_REAGENTS,
     STRATEGY_IDS.ACCUMULATE_IN_VAULT,
@@ -171,6 +171,25 @@ test('strategies: Spread Out defaults off and its enabled caps preserve the old 
     { agent: 'b', room: 10, policy: { assignedRoom: 11 } },
   ], [10, 11], 1);
   assert.deepEqual(Object.fromEntries(travelling.map(a => [a.row.agent, a.to])), { a: 10, b: 11 });
+});
+
+test('strategies: the inky reserve is opt-in and bounded', () => {
+  const doctrine = loadDoctrine({ file: 'doctrines/castle-victoria.jsonc' }).config;
+  const rule = economyRules.find(r => r.id === 'economy-thresholds');
+  const obs = (agent, picks) => ({ agent, policy: {}, keeper: { policy: {} }, strategies: {
+    agents: { [agent]: picks }, settings: { [agent]: {} } } });
+
+  // Not selected must read as OFF, not as "leave it alone". The keeper's own default is
+  // off, so an absent strategy that silently kept a previous true would be unturnoffable.
+  const without = rule.decide(obs('plain', [STRATEGY_IDS.SELL_AND_BANK]), doctrine).orders;
+  assert.equal(without.inky_reserve, false);
+  assert.equal(without.inky_reserve_floor, undefined);
+
+  const with_ = rule.decide(obs('fed', [STRATEGY_IDS.SELL_AND_BANK, STRATEGY_IDS.INKY_RESERVE]),
+                            doctrine).orders;
+  assert.equal(with_.inky_reserve, true);
+  // Bounded: it relaxes the wellfed floor, it does not remove the survival one.
+  assert.equal(with_.inky_reserve_floor, 120);
 });
 
 test('strategies: supply-limited farming owns the market trigger, not the purse', () => {

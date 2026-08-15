@@ -110,7 +110,7 @@
 
   "strategies": {
     "enabled": true,
-    "defaults": ["sell-and-bank", "supply-limited-farming", "max-weapons", "buy-food", "buy-weapons", "buy-reagents"],
+    "defaults": ["sell-and-bank", "supply-limited-farming", "inky-reserve", "max-weapons", "buy-food", "buy-weapons", "buy-reagents"],
     "settings": {
       "sell-and-bank": {
         "bank_above": 500,

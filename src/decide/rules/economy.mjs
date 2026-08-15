@@ -201,11 +201,20 @@ export const economyRules = [
       const supply = strategyEnabled(obs, doctrine, obs.agent, STRATEGY_IDS.SUPPLY_LIMITED_FARMING)
         ? strategySettings(obs, doctrine, obs.agent, STRATEGY_IDS.SUPPLY_LIMITED_FARMING)
         : null;
+      const inky = strategyEnabled(obs, doctrine, obs.agent, STRATEGY_IDS.INKY_RESERVE)
+        ? strategySettings(obs, doctrine, obs.agent, STRATEGY_IDS.INKY_RESERVE)
+        : null;
       const want = {
         bank_above: e.bank_above,
         walking_money: e.walking_money,
         max_carry: e.max_carry,
         sell_at_load: supply ? supply.sell_at_load : e.sell_at_load,
+        // Fight on the Inky Reserve is its own selectable behaviour, so an operator can
+        // turn the deadlock fix off and watch it come back rather than wondering whether
+        // it ever did anything. Absent means false, not "leave alone": the keeper's own
+        // default is off, and a strategy that is not selected should read as not selected.
+        inky_reserve: inky !== null,
+        ...(inky !== null ? { inky_reserve_floor: inky.floor } : {}),
         sell_when_broke: e.sell_when_broke,
         sell_when_broke_under: e.broke_under,
         sell_when_broke_stacks: e.broke_stacks,
@@ -214,6 +223,7 @@ export const economyRules = [
       const keys = {
         bank_above: 'bankAbove', walking_money: 'walkingMoney', max_carry: 'maxCarry',
         sell_at_load: 'sellAtLoad', sell_when_broke: 'sellWhenBroke',
+        inky_reserve: 'inkyReserve', inky_reserve_floor: 'inkyReserveFloor',
         sell_when_broke_under: 'sellWhenBrokeUnder',
         sell_when_broke_stacks: 'sellWhenBrokeStacks',
       };

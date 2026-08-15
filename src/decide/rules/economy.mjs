@@ -183,17 +183,29 @@ export const economyRules = [
   {
     id: 'economy-thresholds',
     faculty: 'economy',
-    why: 'the Sell Loot and Bank Surplus strategy owns this keeper\'s pack and purse thresholds',
+    why: 'the Sell Loot and Bank Surplus strategy owns this keeper\'s pack and purse thresholds, ' +
+         'and Supply-Limited Farming overrides the market trigger among them when it is selected',
     enabled: doctrine => doctrine.strategies?.enabled === true,
     offWhy: 'DUM strategies are disabled',
     decide(obs, doctrine) {
       if (!strategyEnabled(obs, doctrine, obs.agent, STRATEGY_IDS.SELL_AND_BANK)) return null;
       const e = strategySettings(obs, doctrine, obs.agent, STRATEGY_IDS.SELL_AND_BANK);
+      // SUPPLY-LIMITED FARMING OWNS THE MARKET TRIGGER WHEN IT IS ON.
+      //
+      // Both strategies have an opinion about what sends a character to a market, and two
+      // opinions about one keeper value is how a threshold ends up with two answers. So
+      // this is an override rather than a merge: with Supply-Limited Farming selected the
+      // load fraction stops being a trip trigger at all, and the reagent floor in the
+      // loadout becomes the one that matters. Sell Loot still owns the purse thresholds,
+      // which are a different question and not in dispute.
+      const supply = strategyEnabled(obs, doctrine, obs.agent, STRATEGY_IDS.SUPPLY_LIMITED_FARMING)
+        ? strategySettings(obs, doctrine, obs.agent, STRATEGY_IDS.SUPPLY_LIMITED_FARMING)
+        : null;
       const want = {
         bank_above: e.bank_above,
         walking_money: e.walking_money,
         max_carry: e.max_carry,
-        sell_at_load: e.sell_at_load,
+        sell_at_load: supply ? supply.sell_at_load : e.sell_at_load,
         sell_when_broke: e.sell_when_broke,
         sell_when_broke_under: e.broke_under,
         sell_when_broke_stacks: e.broke_stacks,

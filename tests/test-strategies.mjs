@@ -23,7 +23,8 @@ test('strategies: catalogue contains the independently selectable behaviours', (
     STRATEGY_IDS.PLAY_FACTION_GAMES,
     STRATEGY_IDS.CREATE_WEAPONS, STRATEGY_IDS.CREATE_FOOD,
     STRATEGY_IDS.VS_SKELETONS, STRATEGY_IDS.SHORT_SWORDING, STRATEGY_IDS.CHECK_CV_CRATE,
-    STRATEGY_IDS.SPREAD_OUT, STRATEGY_IDS.SELL_AND_BANK, STRATEGY_IDS.GUILD_TITHE,
+    STRATEGY_IDS.SPREAD_OUT, STRATEGY_IDS.SELL_AND_BANK,
+    STRATEGY_IDS.SUPPLY_LIMITED_FARMING, STRATEGY_IDS.GUILD_TITHE,
     STRATEGY_IDS.MAX_WEAPONS,
     STRATEGY_IDS.BUY_FOOD, STRATEGY_IDS.BUY_WEAPONS, STRATEGY_IDS.BUY_REAGENTS,
     STRATEGY_IDS.ACCUMULATE_IN_VAULT,
@@ -170,6 +171,29 @@ test('strategies: Spread Out defaults off and its enabled caps preserve the old 
     { agent: 'b', room: 10, policy: { assignedRoom: 11 } },
   ], [10, 11], 1);
   assert.deepEqual(Object.fromEntries(travelling.map(a => [a.row.agent, a.to])), { a: 10, b: 11 });
+});
+
+test('strategies: supply-limited farming owns the market trigger, not the purse', () => {
+  const doctrine = loadDoctrine({ file: 'doctrines/castle-victoria.jsonc' }).config;
+  const rule = economyRules.find(r => r.id === 'economy-thresholds');
+  const obs = agent => ({ agent, policy: {}, keeper: { policy: {} }, strategies: {
+    agents: { [agent]: agent === 'supplied'
+      ? [STRATEGY_IDS.SELL_AND_BANK, STRATEGY_IDS.SUPPLY_LIMITED_FARMING]
+      : [STRATEGY_IDS.SELL_AND_BANK] },
+    settings: { [agent]: { [STRATEGY_IDS.SELL_AND_BANK]: { sell_at_load: 0.7 } } },
+  } });
+
+  // Two strategies have an opinion about what sends a character to a market, and one
+  // keeper value to put it in. Selecting Supply-Limited Farming has to WIN that, or the
+  // load fraction it exists to switch off keeps booking trips.
+  assert.equal(rule.decide(obs('plain'), doctrine).orders.sell_at_load, 0.7);
+  assert.equal(rule.decide(obs('supplied'), doctrine).orders.sell_at_load, 0.95);
+
+  // and it takes only that one. The purse thresholds are a different question and stay
+  // with Sell Loot, so enabling this must not quietly re-open banking policy.
+  const supplied = rule.decide(obs('supplied'), doctrine).orders;
+  assert.equal(supplied.bank_above, 4000);
+  assert.equal(supplied.walking_money, 2500);
 });
 
 test('strategies: selling and banking values are independently maintained', () => {

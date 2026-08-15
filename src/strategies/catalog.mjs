@@ -196,9 +196,14 @@ export const STRATEGY_CATALOG = Object.freeze([
                      'NUMBER — the keeper reads carry floors from substrate/loadouts, not from ' +
                      'an order, so this setting records the intent and the loadout enforces it.' }),
       Object.freeze({ id: 'reagent_ceiling', title: 'Reagent ceiling', type: 'integer', min: 1,
-        default: 80,
-        description: 'What one supply trip refills to, also owned by the loadout. Floor 6 with ' +
-                     'ceiling 80 is 37 castings between trips; the 40 it replaced was 20.' }),
+        default: 200,
+        description: 'What one supply trip refills to, also owned by the loadout. 200 is 100 ' +
+                     'castings — hours of farming — and the depth is close to free: the trip is ' +
+                     'the expensive part and what it carries home is not. Peak reagent bulk is ' +
+                     'at the START of a session, when the pack is otherwise empty because the ' +
+                     'character has just sold, and it burns down as loot comes in, so reagents ' +
+                     'and loot never compete for the same space. Cost per casting does not ' +
+                     'change with depth, so the only thing depth buys or loses is trips.' }),
     ]),
   }),
   Object.freeze({

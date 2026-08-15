@@ -163,8 +163,12 @@ export function shiftAssignments(rows = [], doctrine = {}, fleetObs = { characte
   const taken = new Set();
   stations.forEach((st, i) => {
     const share = Number(st.share);
-    // A station with a lead is time-limited, so it takes the nearest rather than the
-    // level-ordered — see pickOrder.
+    // A station with a lead is time-limited, so it takes the NEAREST. Without a lead it
+    // takes them in the order they arrive in — see pickOrder, which returns the rows
+    // untouched. NOT level-ordered: this comment used to say it was, and a doctrine was
+    // written against that belief on the assumption a share would leave the largest
+    // characters on the hardest quarry. It does not. The split is arbitrary with respect
+    // to level, and anything that needs to select on level has to say so itself.
     const pool = pickOrder(
       opted.filter(row => eligible[i].has(row.agent) && !taken.has(row.agent)),
       Number(st.lead_ms) > 0);

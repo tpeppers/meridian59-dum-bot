@@ -183,8 +183,13 @@ test('strategies: selling and banking values are independently maintained', () =
     agents: { banker: [STRATEGY_IDS.SELL_AND_BANK] },
   } };
   const intent = economyRules.find(rule => rule.id === 'economy-thresholds').decide(obs, doctrine);
-  assert.equal(intent.orders.bank_above, 3000);
-  assert.equal(intent.orders.walking_money, 1000);
+  // The doctrine deliberately DIFFERS from the catalog defaults above, which is the whole
+  // point of this test's name. Castle Victoria carries 4,000 before banking and keeps
+  // 2,500 so that one town trip funds a whole outfitting — 40 elderberry at 28sh plus 40
+  // herbs at 14sh is 1,680 before food or armour, and at the catalog's 1,000 float every
+  // re-supply took two round trips.
+  assert.equal(intent.orders.bank_above, 4000);
+  assert.equal(intent.orders.walking_money, 2500);
   assert.equal(intent.orders.max_carry, 50);
   assert.equal(intent.orders.sell_at_load, 0.95);
   assert.equal(intent.orders.sell_when_broke, false);

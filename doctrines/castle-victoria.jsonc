@@ -25,9 +25,20 @@
     // shares the same reagents without turning a high-yield farmer into a long-haul courier.
     "defaults": ["create-weapons", "vs-skeletons", "check-cv-crate", "create-food", "sell-and-bank", "max-weapons", "buy-food", "buy-weapons", "buy-reagents", "accumulate-in-vault", "farm-cleanup"],
     "settings": {
+      // ONE TRIP, NOT TWO. Read off the counter: elderberry 28sh, herbs 14sh, so shipping
+      // out with 40 of each is 1,680sh before a loaf or a piece of armour. At the old
+      // 3000/1000 a character banked down to a float that could not fund that, and every
+      // outfitting became two round trips. Measured across the fleet while that held, only
+      // 23% of active time was spent FIGHTING — nine of twenty-one were in transit or at a
+      // counter at any moment, and kills ran ~18 per 30 minutes against a target of 30.
+      //
+      // The cost is carried risk, and it is the whole content of this number: what is in
+      // the pack drops where a character dies and a bank balance does not. 2,500 kept is
+      // deliberately above the 1,680 an outfitting needs, so a character that has just
+      // banked can still re-supply without earning first.
       "sell-and-bank": {
-        "bank_above": 3000,
-        "walking_money": 1000,
+        "bank_above": 4000,
+        "walking_money": 2500,
         "max_carry": 50,
         "sell_at_load": 0.95,
         "sell_when_broke": false,

@@ -193,6 +193,54 @@ test('strategies: the inky reserve is opt-in and bounded', () => {
   assert.equal(with_.inky_reserve_floor, 120);
 });
 
+// A YIELDED FIELD IS PERMANENT DRIFT, AND PERMANENT DRIFT ABOVE THE LADDER IS A WEDGE.
+//
+// `yield_to` names fields something else writes. planOrders honours it at the sending end;
+// the rule's own convergence test did not, so a yielded field the other writer holds at a
+// different value read as drift that could never clear. The rule returned an intent every
+// tick, the send was empty every tick, and because the table is first-match-wins, `ladder`
+// and `placement` never ran at all.
+//
+// Measured on prod: keeper-parity yields `max_carry`, the rule wanted 14, the keeper held
+// 50. One field — 6,126 intents in a day, zero calls, two days of no work orders.
+test('strategies: a yielded threshold is not drift, and cannot wedge the table', () => {
+  const base = loadDoctrine({ file: 'doctrines/castle-victoria.jsonc' }).config;
+  const rule = economyRules.find(r => r.id === 'economy-thresholds');
+  const agent = 'held';
+  const picks = [STRATEGY_IDS.SELL_AND_BANK];
+  const settled = agrees => ({ agent, policy: {}, keeper: { policy: agrees },
+    strategies: { agents: { [agent]: picks }, settings: { [agent]: {} } } });
+
+  // What the rule wants when nothing is yielded, so the keeper below can be built to
+  // agree with all of it except the one field the operator has given away.
+  const full = rule.decide(settled({}), base).orders;
+  const KEYS = { bank_above: 'bankAbove', walking_money: 'walkingMoney', max_carry: 'maxCarry',
+    sell_at_load: 'sellAtLoad', sell_when_broke: 'sellWhenBroke', inky_reserve: 'inkyReserve',
+    sell_when_broke_under: 'sellWhenBrokeUnder', sell_when_broke_stacks: 'sellWhenBrokeStacks' };
+  const keeper = {};
+  for (const [k, v] of Object.entries(full)) if (KEYS[k]) keeper[KEYS[k]] = v;
+  // The other writer holds max_carry somewhere else, and will go on holding it. Any value
+  // the rule does not want will do; prod's pair was want 14 against a keeper holding 50.
+  keeper.maxCarry = full.max_carry + 1;
+
+  // Without the yield the rule is right to fire: that IS drift it owns.
+  assert.ok(rule.decide(settled(keeper), base),
+            'an unyielded field at a different value is real drift and should fire');
+
+  // With the yield it must go quiet, because it can never make that field true.
+  const yielding = { ...base, yield_to: ['max_carry'] };
+  assert.equal(rule.decide(settled(keeper), yielding), null,
+    'a rule that only disagrees about a YIELDED field must return null — firing every ' +
+    'tick over a field it cannot write starves every rule below it in a first-match table');
+
+  // And it must not have gone quiet by going blind: something it does own still fires.
+  assert.ok(rule.decide(settled({ ...keeper, bankAbove: 1 }), yielding),
+            'yielding one field must not suppress the fields the rule still owns');
+  // The emitted orders no longer mention the yielded field at all.
+  assert.equal(rule.decide(settled({ ...keeper, bankAbove: 1 }), yielding).orders.max_carry,
+               undefined);
+});
+
 // A RULE THAT EMITS A FIELD THE WRITER CANNOT ROUTE IS WORSE THAN A RULE THAT DOES
 // NOTHING, AND THE TEST ABOVE PASSED THROUGHOUT.
 //

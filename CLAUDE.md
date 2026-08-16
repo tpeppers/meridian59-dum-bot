@@ -157,10 +157,26 @@ ladder on the argument that they "return null once the keeper agrees". A rule th
 never agree breaks that argument silently: it fires on every tick, wins the match, and the
 directional rules underneath it never run at all.
 
-`economy-thresholds` emitted `inky_reserve` and `inky_reserve_floor`, which were missing
-from `ORDER_FIELDS`. `planOrders` throws on an unrecognised key **at the end of the diff
-loop**, so one missing row discarded the *whole* intent — `max_carry` included — and the
-drift the rule was correcting never cleared.
+It happened **twice over, from two independent causes**, and the second is the one to
+remember because nothing errored at all.
+
+**The loud one.** `economy-thresholds` emitted `inky_reserve` and `inky_reserve_floor`,
+which were missing from `ORDER_FIELDS`. `planOrders` throws on an unrecognised key **at the
+end of the diff loop**, so one missing row discarded the *whole* intent — `max_carry`
+included — and the drift the rule was correcting never cleared.
+
+**The silent one, still true after that was fixed.** `keeper-parity.jsonc` sets
+`"yield_to": ["rest_below", "max_carry", "roam"]`. `planOrders` honours that at the
+**sending** end: it drops those fields, finds nothing left, and returns `send: null` with a
+perfectly clear `why`. But the rule's own convergence test still compared them — so a
+yielded field the other writer holds at a different value (want 14, keeper 50) is
+**permanent drift by construction**. Intent every tick, empty send every tick, for ever.
+Nothing threw, and the journal showed a healthy rule doing its job.
+
+The fix is in both halves. A rule drops yielded keys from what it emits **and** from what
+it checks (`unyielded()` in `rules/economy.mjs`), so it genuinely agrees about everything
+it owns. And `decide()` turns an intent whose fields are *entirely* yielded into a `pass` —
+the mechanism that already existed for explaining yourself without taking the turn.
 
 Measured on the live fleet 2026-08-16: **6,126 economy-thresholds intents in one day and
 6,126 `not in ORDER_FIELDS` errors, one per intent, none of them ever sent.** `ladder` and
@@ -170,6 +186,10 @@ showed a rule firing every tick and the board looked like a managed fleet.
 
 Three things to take from it:
 
+- **A field you have yielded is a field you may not have an opinion about.** Not at the
+  sending end — by then first-match-wins has already happened. `planOrders` refusing to
+  send is not the same as the rule declining to fire, and only the second one frees the
+  table.
 - **Adding an order field is a TWO-FILE change** and the second file is easy to forget,
   because the emitting rule's own test passes. `tests/test-strategies.mjs` asserted that
   the rule emits `inky_reserve` and went on passing throughout. The contract test that

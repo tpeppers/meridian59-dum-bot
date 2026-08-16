@@ -49,6 +49,25 @@ export const ORDER_FIELDS = {
   sell_when_broke:   { policy: 'sellWhenBroke' },
   sell_when_broke_under: { policy: 'sellWhenBrokeUnder' },
   sell_when_broke_stacks: { policy: 'sellWhenBrokeStacks' },
+  // FIGHT ON THE INKY RESERVE. `economy-thresholds` has emitted both of these since the
+  // strategy was added, and both were missing here — which is not the harmless half of the
+  // failure this table's comment describes. The throw is at the END of the diff loop, so
+  // ONE unknown field discards the WHOLE intent, every other threshold in it included. So
+  // `max_carry` never reached the keeper, the rule saw drift again on the next tick, and
+  // re-fired for ever.
+  //
+  // Measured on the live fleet 2026-08-16: 6,126 economy-thresholds intents in one day and
+  // 6,126 "not in ORDER_FIELDS" errors — one per intent, none of them ever sent. Character
+  // rules are FIRST-MATCH-WINS and economy sits above the ladder, so `ladder` and
+  // `placement` produced ZERO intents across two days: DUM held work, movement and economy
+  // on twenty-one characters and issued not one work order the whole time, while the
+  // journal showed a rule firing every tick and the board looked like a managed fleet.
+  //
+  // The harness has accepted both arguments the whole time (m59-broker.mjs `inky_reserve`,
+  // `inky_reserve_floor` -> `policy.inkyReserve`, `policy.inkyReserveFloor`), so this was
+  // only ever the missing half of a two-file change.
+  inky_reserve:       { policy: 'inkyReserve' },
+  inky_reserve_floor: { policy: 'inkyReserveFloor' },
   roam:              { policy: 'roam' },
   roam_limit:        { policy: 'roamLimit' },
   weapon_priority:   { policy: 'weaponPriority', compare: sameList },

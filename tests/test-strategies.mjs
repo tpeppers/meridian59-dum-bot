@@ -14,6 +14,7 @@ import { loadDoctrine } from '../src/config/load.mjs';
 import { callsForFleetPlan } from '../src/act/fleet-plan.mjs';
 import { fleetRules } from '../src/decide/index.mjs';
 import { canonicalItemSettings } from '../src/link/strategy-control.mjs';
+import { ORDER_FIELDS, planOrders } from '../src/act/orders.mjs';
 
 const test = globalThis.__dumTest;
 
@@ -190,6 +191,44 @@ test('strategies: the inky reserve is opt-in and bounded', () => {
   assert.equal(with_.inky_reserve, true);
   // Bounded: it relaxes the wellfed floor, it does not remove the survival one.
   assert.equal(with_.inky_reserve_floor, 120);
+});
+
+// A RULE THAT EMITS A FIELD THE WRITER CANNOT ROUTE IS WORSE THAN A RULE THAT DOES
+// NOTHING, AND THE TEST ABOVE PASSED THROUGHOUT.
+//
+// It asserts what economy-thresholds EMITS. Nothing asserted that the emitted field could
+// be written, and the two live in different files. `planOrders` throws on the first
+// unrecognised key AFTER diffing the rest, so one missing row discards the whole intent —
+// which means the drift the rule is correcting never clears and the rule re-fires for
+// ever. Character rules are first-match-wins, so a rule wedged like that starves every
+// rule below it: measured live, `ladder` and `placement` produced no intents at all for
+// two days while `economy-thresholds` errored 6,126 times in a single day.
+//
+// So: whatever the rule can emit, under any combination of the strategies that feed it,
+// has to be routable. This is the assertion that ties the two files together.
+test('strategies: every threshold the economy rule can emit is routable by planOrders', () => {
+  const doctrine = loadDoctrine({ file: 'doctrines/castle-victoria.jsonc' }).config;
+  const rule = economyRules.find(r => r.id === 'economy-thresholds');
+  const combos = [
+    [STRATEGY_IDS.SELL_AND_BANK],
+    [STRATEGY_IDS.SELL_AND_BANK, STRATEGY_IDS.INKY_RESERVE],
+    [STRATEGY_IDS.SELL_AND_BANK, STRATEGY_IDS.SUPPLY_LIMITED_FARMING],
+    [STRATEGY_IDS.SELL_AND_BANK, STRATEGY_IDS.SUPPLY_LIMITED_FARMING, STRATEGY_IDS.INKY_RESERVE],
+  ];
+  for (const picks of combos) {
+    const agent = picks.join('+');
+    const obs = { agent, policy: {}, keeper: { policy: {} },
+      strategies: { agents: { [agent]: picks }, settings: { [agent]: {} } } };
+    const intent = rule.decide(obs, doctrine);
+    assert.ok(intent, `${agent}: expected an intent against an empty keeper policy`);
+    const unroutable = Object.keys(intent.orders)
+      .filter(k => k !== 'action' && k !== 'why' && k !== 'batch' && !ORDER_FIELDS[k]);
+    assert.deepEqual(unroutable, [],
+      `${agent}: economy-thresholds emits ${unroutable.join(', ')}, which planOrders would ` +
+      `throw on — discarding the whole intent, including the fields that ARE routable`);
+    // And the round trip itself, because the throw is what actually reaches the journal.
+    assert.doesNotThrow(() => planOrders({ ...intent, agent }, obs));
+  }
 });
 
 test('strategies: supply-limited farming owns the market trigger, not the purse', () => {

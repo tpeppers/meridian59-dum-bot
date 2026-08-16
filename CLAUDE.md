@@ -150,6 +150,38 @@ produces a character that lives in a basement.
   in the commit message, and prefer changing the doctrine over changing the
   default.
 
+### A RULE THAT CANNOT CONVERGE STARVES EVERY RULE BELOW IT, AND LOOKS BUSY DOING IT
+
+Character rules are **first-match-wins**, and the policy-maintenance rules sit above the
+ladder on the argument that they "return null once the keeper agrees". A rule that can
+never agree breaks that argument silently: it fires on every tick, wins the match, and the
+directional rules underneath it never run at all.
+
+`economy-thresholds` emitted `inky_reserve` and `inky_reserve_floor`, which were missing
+from `ORDER_FIELDS`. `planOrders` throws on an unrecognised key **at the end of the diff
+loop**, so one missing row discarded the *whole* intent — `max_carry` included — and the
+drift the rule was correcting never cleared.
+
+Measured on the live fleet 2026-08-16: **6,126 economy-thresholds intents in one day and
+6,126 `not in ORDER_FIELDS` errors, one per intent, none of them ever sent.** `ladder` and
+`placement` produced **zero** intents across two days. DUM held work, movement and economy
+on twenty-one characters and issued **not one work order** the whole time, while `/plan`
+showed a rule firing every tick and the board looked like a managed fleet.
+
+Three things to take from it:
+
+- **Adding an order field is a TWO-FILE change** and the second file is easy to forget,
+  because the emitting rule's own test passes. `tests/test-strategies.mjs` asserted that
+  the rule emits `inky_reserve` and went on passing throughout. The contract test that
+  ties the two together — every field the rule can emit is routable by `planOrders`, under
+  every combination of the strategies that feed it — is now beside it.
+- **The throw is loud into the journal and silent everywhere else.** An error repeating
+  6,126 times with `retriable: false` is not a transient; it is a wedged rule, and nothing
+  said so.
+- **"Returns null once the keeper agrees" is a claim about convergence**, not a comment.
+  If a maintenance rule is placed above work on that basis, something has to check that it
+  actually converges.
+
 ## Do not carry the harness's code over here
 
 If a fix belongs to perception, geometry, safe spots, pacing, or the survival

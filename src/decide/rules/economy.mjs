@@ -24,6 +24,28 @@
 
 import { STRATEGY_IDS, strategyEnabled, strategySettings } from '../../strategies/catalog.mjs';
 
+// A FIELD THE DOCTRINE HAS GIVEN AWAY IS NOT A FIELD THIS RULE MAY HAVE AN OPINION ABOUT.
+//
+// `yield_to` names fields something else writes. `planOrders` honours it at the SENDING
+// end — it drops them and sends what is left — and that is too late for a maintenance
+// rule, because the rule's own convergence test still compares them. A yielded field the
+// other writer holds at a different value therefore reads as permanent drift: the rule
+// returns an intent every tick, the send is empty every tick, and since the rules are
+// first-match-wins, everything below it never runs.
+//
+// That is not hypothetical. `keeper-parity.jsonc` yields `max_carry`; `economy-thresholds`
+// wanted 14 and the keeper holds 50. One field, 6,126 intents in a day, zero calls, and
+// `ladder` and `placement` starved for two days.
+//
+// So a rule drops the yielded keys from BOTH halves — what it emits and what it checks —
+// and then genuinely agrees with the keeper about everything it actually owns.
+export const unyielded = (want, doctrine) => {
+  const give = doctrine?.yield_to;
+  if (!Array.isArray(give) || !give.length) return want;
+  const drop = new Set(give);
+  return Object.fromEntries(Object.entries(want).filter(([k]) => !drop.has(k)));
+};
+
 export const economyRules = [
   {
     id: 'purchase-strategy-policy',
@@ -204,7 +226,7 @@ export const economyRules = [
       const inky = strategyEnabled(obs, doctrine, obs.agent, STRATEGY_IDS.INKY_RESERVE)
         ? strategySettings(obs, doctrine, obs.agent, STRATEGY_IDS.INKY_RESERVE)
         : null;
-      const want = {
+      const want = unyielded({
         bank_above: e.bank_above,
         walking_money: e.walking_money,
         max_carry: e.max_carry,
@@ -218,7 +240,7 @@ export const economyRules = [
         sell_when_broke: e.sell_when_broke,
         sell_when_broke_under: e.broke_under,
         sell_when_broke_stacks: e.broke_stacks,
-      };
+      }, doctrine);
       const live = obs.keeper?.policy ?? obs.policy;
       const keys = {
         bank_above: 'bankAbove', walking_money: 'walkingMoney', max_carry: 'maxCarry',

@@ -73,6 +73,7 @@ export class RuleSet {
  */
 export function decide(ruleSet, obs, doctrine) {
   const considered = [];
+  const yieldSet = new Set(doctrine.yield_to ?? []);
   for (const rule of ruleSet.rules) {
     // A rule may only exercise a faculty the doctrine actually claimed. This is the
     // enforcement point for the whole split: a doctrine that leaves `survival` with
@@ -134,6 +135,42 @@ export function decide(ruleSet, obs, doctrine) {
       why: out.why ?? rule.why,
       evidence: out.evidence ?? {},
     };
+    // A RULE THAT ONLY WANTS FIELDS IT HAS BEEN TOLD IT DOES NOT OWN MUST NOT TAKE THE
+    // TURN — AND THIS IS THE FAILURE THAT WEDGED THE WHOLE TABLE FOR TWO DAYS.
+    //
+    // `yield_to` names fields something else writes. `planOrders` honours it correctly: it
+    // drops them, finds nothing left to send, and says so. But the SENDING half is not
+    // where first-match-wins is decided. A rule whose entire remaining want is yielded
+    // still returned an intent, still won the match, and still stopped the table — and
+    // because nothing was ever sent, the drift it was correcting never cleared, so it
+    // fired again on the next tick, and the next, for ever.
+    //
+    // Measured on prod: `keeper-parity.jsonc` yields `max_carry`, `economy-thresholds`
+    // wants `max_carry: 14`, the keeper has 50 and always will. That one field produced
+    // 6,126 intents in a day and ZERO calls, while `ladder` and `placement` — the rules
+    // directly below it, the ones that decide what the fleet is actually for — produced no
+    // intents at all for two days, with DUM holding work and movement on twenty-one
+    // characters the whole time.
+    //
+    // `pass` is the mechanism that already exists for exactly this: explain yourself
+    // without taking the turn. So the reason goes into `considered` and every rule below
+    // gets its turn. Note this is NOT the same as dropping the field — the rule keeps its
+    // opinion, and the moment it wants something it does own, it fires normally.
+    //
+    // Only `orders` intents are filtered. A `report` carries no fields to write, and a
+    // fleet `plan` is a list of calls rather than a policy diff; neither is yieldable.
+    if (intent.kind === 'orders' && !intent.plan) {
+      const fields = Object.keys(intent.orders)
+        .filter(k => !['action', 'why', 'batch', 'agent'].includes(k));
+      const yielded = fields.filter(k => yieldSet.has(k));
+      if (yielded.length && yielded.length === fields.length) {
+        considered.push({ rule: rule.id, verdict: 'no',
+          why: `everything it wants to set (${yielded.join(', ')}) is yielded to another ` +
+               `writer, so this rule can never make it true — passing rather than taking ` +
+               `the turn, which would starve every rule below it for ever` });
+        continue;
+      }
+    }
     considered.push({ rule: rule.id, verdict: 'fired', why: intent.why });
     return { intent, considered };
   }

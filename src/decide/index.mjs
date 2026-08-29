@@ -25,6 +25,7 @@ import { economyRules } from './rules/economy.mjs';
 import { placementRules, placementFleetRules } from './rules/placement.mjs';
 import { partyFleetRules } from './rules/party.mjs';
 import { crateFleetRules } from './rules/crate.mjs';
+import { sellrunFleetRules } from './rules/sellrun.mjs';
 import { shiftFleetRules } from './rules/shift.mjs';
 import { swarmFleetRules } from './rules/swarm.mjs';
 import { graveyardFleetRules } from './rules/graveyard.mjs';
@@ -112,6 +113,12 @@ export const fleetRules = new RuleSet('fleet', [
   ...factionActiveFleetRules,
   // The crate window closes and the strategy-selected checker is already in the castle.
   ...crateFleetRules,
+  // A full pack cannot pick up the next drop, so a heavy character earns nothing until it
+  // sells. The circuit is an errand (a sequence), gated by a per-character cooldown so it
+  // cannot re-fire every tick; it sits above standing maintenance and below anything with a
+  // closing window (the crate, an assigned faction quest) and below survival, which is the
+  // keeper's regardless.
+  ...sellrunFleetRules,
   // Establish the hands-off patrol policy before its maintenance strategies try to
   // spend mana or hand over equipment. This is also the baseline a finite learning
   // errand returns to. It returns `pass` as soon as the policy agrees, so putting it

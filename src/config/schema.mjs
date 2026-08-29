@@ -179,6 +179,35 @@ export function validate(c) {
           'crate as row 10, col 6 — transposing them walks to a real square that does nothing');
   }
 
+  // ---- the Barloque sell circuit: validated only when it is on, and only for the ways it
+  // would fail SILENTLY. An empty stop list is the load-bearing one — the rule declines with a
+  // true, useless reason and no character ever sells.
+  if (c.sellrun?.on) {
+    if (!Array.isArray(c.sellrun.stops) || !c.sellrun.stops.length)
+      say('sellrun.stops', 'must be a non-empty list of {room, merchant} stops. An empty list ' +
+          'means the circuit is on but routes nowhere, so a heavy pack never sells and the rule ' +
+          'declines for ever with a reason that is true and useless');
+    else c.sellrun.stops.forEach((s, i) => {
+      if (!Number.isInteger(s?.room))
+        say(`sellrun.stops[${i}].room`, 'must be a room number — travel routes to it');
+      if (typeof s?.merchant !== 'string' || !s.merchant.trim())
+        say(`sellrun.stops[${i}].merchant`, 'must name the exact merchant. sell_all resolves it ' +
+            'by name in the room, and selling is an allowlist — the wrong name finds nobody and ' +
+            'sells nothing, in silence');
+      if (s?.max_stack != null && (!Number.isInteger(s.max_stack) || s.max_stack < 1))
+        say(`sellrun.stops[${i}].max_stack`, 'must be a positive integer, or null for no cap. ' +
+            'The jeweler refuses a gem stack over 25 wholesale (bqmerch.kod:113), so that stop ' +
+            'wants 25 — a wrong cap either refuses whole stacks or offers more than the merchant takes');
+    });
+    if (!num(c.sellrun.cooldown_ms) || c.sellrun.cooldown_ms < 60_000)
+      say('sellrun.cooldown_ms', 'must be at least 60000. It is the per-character window that ' +
+          'stops the errand re-firing every tick and marching a character to town for ever; a ' +
+          'short one buys nothing but a character that lives in a shop');
+    const mh = c.sellrun.trigger?.min_health;
+    if (mh != null && (!num(mh) || mh < 0 || mh > 1))
+      say('sellrun.trigger.min_health', 'must be a fraction between 0 and 1');
+  }
+
   // ---- economy: nulls are meaningful and are not defaults
   for (const k of ['bank_above', 'walking_money', 'max_carry']) {
     const v = c.economy?.[k];

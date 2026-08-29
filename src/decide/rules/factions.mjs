@@ -344,6 +344,13 @@ export const factionFleetRules = [
         if (goal.status !== 'queued' && !expired) continue;
         if (goal.retry_after && now < goal.retry_after) continue;
         if (row.commitment || row.parked || row.piloted || row.health?.pct < 0.8) continue;
+        // ARM BEFORE YOU JOURNEY. An unarmed character walked across the world to ask a liege
+        // to join cannot defend itself on the way, and arming it — a Create Weapon cast that
+        // takes one tick in the room it is already standing in — is both safer and the thing it
+        // needs first. Left in, faction-join outranks weapon provisioning in the fleet table and
+        // an unarmed unit is sent on the trip every tick, so it never gets the weapon that would
+        // let it fight when it arrives. Defer the join until it is armed; the goal stays queued.
+        if (row.has_weapon === false) continue;
         // The source's ordinary eligibility path is base max health >= 40. A level-five
         // spell at 40% also qualifies, but that paid ability read is left to the server:
         // under-40 units wait instead of being walked across the world on a guess.

@@ -67,10 +67,17 @@ function doctrine() {
   // against ORDER_FIELDS, because a typo would silently NOT yield the field.
   if (flag('yield-to'))
     overrides['yield_to'] = String(flag('yield-to')).split(',').map(s => s.trim()).filter(Boolean);
-  return loadDoctrine({ file: file === true ? null : file, overrides, agent: agentFlag() });
+  // Per-agent overrides (doctrine.agents.<name>) only make sense for a single named character;
+  // a two-character scope carries no one set of overrides, so pass none in that case.
+  const scope = agentScope();
+  return loadDoctrine({ file: file === true ? null : file, overrides,
+                        agent: scope && scope.length === 1 ? scope[0] : null });
 }
 
 const agentFlag = () => { const a = flag('agent'); return a === true ? null : a; };
+// --agent accepts one name or a comma-list. It scopes the whole run: the per-character rows AND
+// any fleet-scoped intent (the sell circuit, a faction request) that names an agent outside it.
+const agentScope = () => { const a = agentFlag(); return a ? a.split(',').map(s => s.trim()).filter(Boolean) : null; };
 
 function context({ config, commit }) {
   const journal = new Journal({
@@ -117,7 +124,7 @@ function context({ config, commit }) {
   // process as far as the broker is concerned — able to claim, unable to release.
   const holder = `dum/${config.name}@pid-${process.pid}`;
   return { broker, config, journal, memory, strategies, factions, detailStats, strategyServer,
-           commit, holder, only: agentFlag() };
+           commit, holder, only: agentScope() };
 }
 
 // ---------------------------------------------------------------- doctor
@@ -205,7 +212,7 @@ async function plan() {
   for (const n of g.notes) console.log(c.warn('note     ') + n);
   if (!g.held) { console.log(c.bad('nothing to plan against.')); process.exitCode = 1; return; }
 
-  const result = await pass(ctx, { only: agentFlag(), decideFleet: true });
+  const result = await pass(ctx, { only: agentScope(), decideFleet: true });
   printPass(result);
 }
 
@@ -269,7 +276,7 @@ DUM — a Deterministic Unattended Mover for Meridian 59.
   run       the loop. Needs --commit, and --commit needs a matching fleet
 
   --doctrine <file.jsonc>   which doctrine to load
-  --agent <name>            restrict to one character (and apply its overrides)
+  --agent <name[,name]>     restrict the run to these characters (overrides apply only when one)
   --set key.path=value      override one leaf, recorded as "command line"
   --yield-to a,b,c          order fields something else owns — DUM will not write them
   --control <url>           broker control URL (default http://127.0.0.1:8901)

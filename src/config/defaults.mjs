@@ -338,6 +338,47 @@ export const DEFAULTS = {
     walk_timeout_ms: 90_000,
   },
 
+  // THE BARLOQUE SELL CIRCUIT. Off by default like every other opt-in: it walks a character
+  // out of its hunting room across town and back, which a doctrine that has not asked for it
+  // must not get. When on, a character whose pack is heavy is sent to sell ACROSS the Barloque
+  // specialists — the smith (equipment), the jeweler (gems, which refuses a stack over 25), the
+  // herbalist (reagents/mushrooms) — rather than to Roq (110), the universal buyer who pays the
+  // standard rate from behind an unsafe tunnel. See src/decide/rules/sellrun.mjs.
+  sellrun: {
+    on: false,
+    // The ordered stops. Each names the room, the exact merchant, and any per-offer stack cap
+    // (the jeweler, bqmerch.kod:113, refuses a gem stack over 25 wholesale — null means no cap).
+    stops: [
+      { room: 113, merchant: "Fehr'loi Qan", max_stack: null },   // The Royal Blacksmith: equipment
+      { room: 109, merchant: 'Herbutte',      max_stack: 25 },     // Sparkling Stone Shop: gems
+      { room: 104, merchant: 'Joguer',        max_stack: null },   // Herbs and Roots: reagents, mushrooms
+    ],
+    // Never sold. Reagents (create-food stock) and the rares that are worth more kept than the
+    // few shillings a merchant pays. Matched as case-insensitive substrings by sell_all's keep.
+    keep: ['inky', 'dragon scale', 'angel feather', 'wand', 'scroll', 'signet', 'orb of',
+           'potion', 'herb', 'elderberry'],
+    // A sale below this many shillings is cancelled and the item kept — a floor against handing
+    // something valuable to a merchant who lowballs it.
+    min_price: 1,
+    trigger: {
+      // Pack item count at or above which the trip is worth taking.
+      carry_at: 24,
+      // Also go when nearly out of money, if > 0. Off by default: a heavy pack is the trigger.
+      broke_under: 0,
+      // Do not march a hurt character to town. Below this fraction the keeper's survival ladder
+      // is the thing that should be acting, not a sell trip.
+      min_health: 0.8,
+    },
+    // The per-character window that stops the errand re-firing every 30s tick and living in a
+    // shop. Twenty minutes is longer than a full circuit takes. A COMPLETED run waits this long
+    // (the pack is empty); a FAILED one waits only fail_backoff_ms, so a pack that never got sold
+    // is retried soon rather than stranded for the full cooldown.
+    cooldown_ms: 20 * 60_000,
+    fail_backoff_ms: 5 * 60_000,
+    travel_timeout_ms: 240_000,
+    return_home: true,
+  },
+
   escalate: {
     // What to do about a keeper that reports it is stuck. DUM's contribution here is
     // to NOT restart the ones that are deliberately waiting — see

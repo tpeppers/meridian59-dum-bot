@@ -53,6 +53,41 @@
 // that is no longer where the character is.
 
 import { recordCrateCheck } from '../decide/rules/crate.mjs';
+import { recordSellrun } from '../decide/rules/sellrun.mjs';
+
+const sleep = ms => new Promise(res => setTimeout(res, ms));
+
+// WAIT OUT AN ASYNCHRONOUS WALK. Keeper-backed `travel` returns the instant it sets off
+// (`started:true`) and walks in the background — the tool's own note is "poll status — do not
+// re-issue while busy". So an errand's travel step is NOT finished when the call returns, and
+// firing the next travel immediately lands on a character that is still walking and fails
+// "busy: walk to ...", which aborts the whole circuit a second after it began. This polls
+// `status` until the character is standing in `dest`, or a timeout. Every errand here routes to
+// room NUMBERS; a non-numeric destination is not polled (nothing to compare) and is treated as
+// launched. A direct-session travel already blocked and reports `arrived`, so it never gets here.
+async function waitForArrival(broker, agent, dest, timeoutMs) {
+  const target = Number(dest);
+  if (!Number.isFinite(target)) return { ok: true, why: 'destination not a room number; not polled' };
+  // Read the room from the fleet BOARD, not `status`. A keeper-backed character is held INERT
+  // while it travels, and its `status` comes back empty the whole way — so a status poll never
+  // sees arrival and every leg times out. The board keeps reporting the character's room the
+  // whole walk. On the board `room` is the NAME and `room_num` is the number (normalize.mjs).
+  const roomOf = row => {
+    const n = Number(row?.room_num ?? row?.room?.num ?? row?.where?.num);
+    return Number.isFinite(n) ? n : null;
+  };
+  const deadline = Date.now() + Math.max(15_000, timeoutMs || 180_000);
+  let last = null;
+  while (Date.now() < deadline) {
+    await sleep(4000);
+    const fl = await broker.call('fleet').catch(() => null);
+    const rows = fl?.fleet ?? fl?.characters ?? [];
+    const room = roomOf(Array.isArray(rows) ? rows.find(r => r.agent === agent) : null);
+    if (room != null) last = room;
+    if (room === target) return { ok: true, room };
+  }
+  return { ok: false, why: `still at ${last ?? '?'} after ${Math.round((timeoutMs || 180_000) / 1000)}s` };
+}
 
 /**
  * What each errand kind does with the transcript it produced.
@@ -63,6 +98,9 @@ import { recordCrateCheck } from '../decide/rules/crate.mjs';
  */
 export const ERRANDS = {
   'crate-check': { record: recordCrateCheck, topic: 'crate' },
+  // Leaves one fact behind: when this character last ran the Barloque sell circuit, so the
+  // rule's per-character cooldown can gate the next one.
+  'sellrun-circuit': { record: recordSellrun, topic: 'sellrun' },
   // These leave progress in FactionGoalStore rather than the general Memory topics.
   'faction-request': { record: null, topic: null },
   'faction-offer': { record: null, topic: null },
@@ -217,8 +255,23 @@ export async function runErrand(broker, intent, { commit = false, holder = null,
 
     if (step.collect === 'messages' && Array.isArray(r?.messages)) transcript.push(...r.messages);
     if (r?.error) { stopped = `${step.tool} failed: ${r.error}`; continue; }
-    if (step.expect === 'arrived' && r?.arrived === false)
-      stopped = `${step.tool} did not arrive (${r.reason ?? 'no reason given'})`;
+    if (step.expect === 'arrived') {
+      if (r?.started === true) {
+        // The async keeper-backed walk: block here until it actually arrives, or the next
+        // travel step fires into a still-walking character and the errand dies "busy".
+        const reached = await waitForArrival(broker, agent, step.args?.to, step.timeout_ms ?? 180_000);
+        if (!reached.ok) {
+          // CANCEL THE DANGLING WALK. A travel that timed out is still walking toward its
+          // destination in the broker; leaving it running makes this errand's own return leg —
+          // and the NEXT errand's first travel — fail "busy: walk to ...". cancel_movement is a
+          // no-op if nothing is moving.
+          await broker.call('cancel_movement', { agent }).catch(() => {});
+          stopped = `${step.tool} did not arrive at ${step.args?.to} (${reached.why})`;
+        }
+      } else if (r?.arrived === false) {
+        stopped = `${step.tool} did not arrive (${r.reason ?? 'no reason given'})`;
+      }
+    }
   }
 
   // FREE IT IN A `finally`-SHAPED WAY: unconditionally, including after a step failed.
@@ -259,6 +312,9 @@ export function readErrand(applied, { at, memory = {} }) {
   // is added, and the failure of forgetting is that the new errand's memory is merged
   // into the old errand's topic.
   const was = memory?.[spec.topic] ?? {};
-  const { patch, read } = spec.record({ agent: applied.agent, at, transcript: applied.transcript, was });
+  // `stopped` is the failure reason or null on success — a record fn that wants to cool down
+  // a completed run differently from an aborted one (sellrun) reads it; others ignore it.
+  const { patch, read } = spec.record({ agent: applied.agent, at,
+    transcript: applied.transcript, was, stopped: applied.stopped ?? null });
   return { topic: spec.topic, patch, read };
 }

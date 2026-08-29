@@ -99,7 +99,7 @@ export async function tickCharacter(ctx, row) {
  * comes from, and it is free) while the fleet RULES run on a much slower cadence,
  * because each of them stops keepers and walks characters across the world.
  */
-export async function tickFleet(ctx, { decide: runRules = true } = {}) {
+export async function tickFleet(ctx, { decide: runRules = true, only = null } = {}) {
   const { broker, config, journal, commit } = ctx;
   const now = ctx.now?.() ?? Date.now();
   const line = { kind: 'fleet-tick', at: now, decided: runRules };
@@ -126,8 +126,11 @@ export async function tickFleet(ctx, { decide: runRules = true } = {}) {
     const factions = ctx.factions?.snapshot(agents) ?? null;
     const obs = { ...observed, memory, strategies, factions };
     if (factions) {
+      // Scoped like the maintenance enrichment below: a run that manages a handful of
+      // characters must not pay a per-character inventory read for every OTHER character that
+      // happens to be mid faction-acquisition.
       const waitingForCargo = (obs.characters ?? []).filter(row =>
-        factions.agents?.[row.agent]?.status === 'acquiring');
+        (!only || only.has(row.agent)) && factions.agents?.[row.agent]?.status === 'acquiring');
       if (waitingForCargo.length) await enrichFactionInventory(broker, waitingForCargo);
     }
     // WHETHER A MEMBERSHIP IS ABOUT TO LAPSE, READ FROM DISK RATHER THAN FROM THE SERVER.
@@ -173,24 +176,32 @@ export async function tickFleet(ctx, { decide: runRules = true } = {}) {
     if (waiting)
       await enrichTravelEstimates(broker, (obs.characters ?? []).filter(r => r.in_game),
                                   Number(waiting.room));
+    // PAID ENRICHMENT RESPECTS THE RUN'S SCOPE. Each of these reads inventory/spells PER
+    // CHARACTER, one paced server request each — so on a fleet where every unit selects
+    // create-weapons/create-food, an unscoped read is 21 requests a tick and a scoped `--agent`
+    // run was paying all of them for a handful of characters it actually manages. A scoped run
+    // decides over only its in-scope characters (see the decideObs filter below), so it needs
+    // facts for only those; reading the rest is pure cost with nothing downstream to consume it.
+    const inScope = only ? (r => only.has(r.agent)) : (() => true);
+    const live = () => (obs.characters ?? []).filter(r => r.in_game && inScope(r));
     if (config.graveyard?.shift === true)
-      await enrichEquipment(broker, (obs.characters ?? []).filter(r => r.in_game));
+      await enrichEquipment(broker, live());
     if (config.moot?.hold === true || config.weapons?.provision?.enabled === true) {
       const room = config.weapons?.provision?.enabled
         ? config.weapons.provision.room : config.moot.room;
-      const here = (obs.characters ?? []).filter(r => r.in_game && r.room === room);
+      const here = live().filter(r => r.room === room);
       const enough = config.weapons?.provision?.enabled
-        ? here.length === (obs.characters ?? []).filter(r => r.in_game).length
+        ? here.length === live().length
         : here.length >= (config.moot.quorum ?? 2);
       if (enough) await enrichForMoot(broker, here,
         { weapons: config.weapons?.provision?.enabled === true });
     }
     if (config.strategies?.enabled === true) {
-      const needsFacts = (obs.characters ?? []).filter(r => r.in_game &&
+      const needsFacts = live().filter(r =>
         [STRATEGY_IDS.CREATE_WEAPONS, STRATEGY_IDS.CREATE_FOOD].some(id =>
           obs.strategies?.agents?.[r.agent]?.includes(id)));
       if (needsFacts.length) await enrichMaintenance(broker, needsFacts);
-      const factionPlayers = (obs.characters ?? []).filter(r => r.in_game &&
+      const factionPlayers = live().filter(r =>
         obs.strategies?.agents?.[r.agent]?.includes(STRATEGY_IDS.PLAY_FACTION_GAMES));
       if (factionPlayers.length) await enrichFactionGames(broker, factionPlayers);
     }
@@ -212,11 +223,24 @@ export async function tickFleet(ctx, { decide: runRules = true } = {}) {
 
     if (!runRules) return write();
 
-    const { intent, considered } = decide(fleetRules, obs, config);
+    // SCOPE: a run restricted to a set of agents must touch NO other character, including
+    // through a fleet-scoped rule. `--agent` filters the per-character rows in `pass`, but a
+    // fleet rule — the sell circuit, a faction request — iterates the board itself and names its
+    // OWN actor, so a two-character run could otherwise walk a third character it happened to
+    // pick as the heaviest pack or the next queued join. So the fleet rules DECIDE over only the
+    // in-scope characters: nothing outside the set is ever chosen as a target, and — unlike
+    // dropping the finished intent — a lower in-scope rule is not starved by a higher rule that
+    // keeps re-picking an out-of-scope character every tick and never converging. The full board
+    // is still read (above) and still used for the claim, the send and the memory patch; only
+    // the decision input is narrowed. `line.scope` records that it happened.
+    const decideObs = only
+      ? { ...obs, characters: (obs.characters ?? []).filter(r => only.has(r.agent)) }
+      : obs;
+    if (only) line.scope = [...only];
+    const { intent, considered } = decide(fleetRules, decideObs, config);
     line.considered = considered;
     line.intent = intent;
     if (!intent) return write();
-
 
     // An errand has one named actor and no fleet `plan`; a batch act has a plan and may
     // name both sides of a transfer. Claim the shape that was actually emitted. Reading
@@ -298,22 +322,26 @@ export async function ensureFleetIntentClaim(ctx, intent) {
 /**
  * A full pass: the fleet board, then every character the doctrine is responsible for.
  *
- * `only` restricts to one agent, which is what `plan --agent` uses. Restricting is not
- * the same as skipping the board — a single-character plan still reads it, because half
- * of what makes a directional decision correct is what the other twenty characters are
- * doing, and because the board is where the character's own numbers come from.
+ * `only` restricts the run to a SET of agents (one name, a comma-list, or an array), which is
+ * what `--agent` uses. It restricts both halves: the per-character rows below, AND — inside
+ * tickFleet — any fleet-scoped intent that names an agent outside the set, so a scoped run
+ * genuinely touches nobody else. Restricting is not the same as skipping the board: a scoped
+ * plan still reads the whole board, because half of what makes a directional decision correct
+ * is what the other characters are doing, and the board is where a character's own numbers come
+ * from.
  */
 export async function pass(ctx, { only = null, decideFleet = true } = {}) {
-  const fleetLine = await tickFleet(ctx, { decide: decideFleet });
+  const scope = only == null ? null : new Set(Array.isArray(only) ? only : [only]);
+  const fleetLine = await tickFleet(ctx, { decide: decideFleet, only: scope });
   if (fleetLine.stood_down || fleetLine.error) return { fleet: fleetLine, characters: [] };
 
   const rows = (fleetLine.observation?.characters ?? [])
     .filter(r => r.in_game)
-    .filter(r => !only || r.agent === only);
+    .filter(r => !scope || scope.has(r.agent));
 
-  if (only && !rows.length)
+  if (scope && !rows.length)
     return { fleet: fleetLine, characters: [],
-             note: `no character named "${only}" is in game on this fleet` };
+             note: `none of "${[...scope].join(', ')}" is in game on this fleet` };
 
   const characters = [];
   for (const r of rows) characters.push(await tickCharacter(ctx, {

@@ -1,0 +1,67 @@
+{
+  // SELL ACROSS BARLOQUE, NOT TO ROQ — a worked overlay on the parity doctrine.
+  //
+  // This doctrine changes exactly one thing about a fleet: when a character's pack gets heavy,
+  // it is sent to sell across the Barloque specialists rather than to Roq (room 110), the
+  // universal fence. The claim it makes, and can be held to: a full pack sold across the smith,
+  // the jeweler and the herbalist earns more than the same pack dumped on the one NPC who buys
+  // every lane at the standard rate — and Roq's room is behind a tunnel that has been unsafe
+  // enough to ban outright, so the multi-stop route is the only one that is both richer AND
+  // reachable.
+  //
+  // It extends keeper-parity, so everything ELSE is the fleet's own behaviour, verbatim: the
+  // keeper keeps identity, mortality, survival and recovery on its one-second clock, and DUM
+  // holds work, movement and economy but changes nothing until a pack fills. That isolation is
+  // the point — if kills-per-hour or deaths move under this doctrine, it is the sell circuit
+  // that moved them, because nothing else is different.
+  //
+  // NO FLEET NAME HERE, deliberately — tools/dum-guard.mjs refuses one. Merchant and room names
+  // are the game's, not a roster's, and are safe to write down. To run it against a live fleet,
+  // extend it in doctrines/local/ with a "fleet:" line, or pass --set fleet=<name>.
+
+  "extends": "keeper-parity.jsonc",
+
+  "name": "barloque sell circuit",
+  "why": "test whether routing a full pack across the Barloque specialists beats selling it to Roq, on shillings banked per hour, changing nothing else",
+
+  "sellrun": {
+    "on": true,
+
+    // The ordered stops. Each buys only its own lane, so the pack is routed across them; a
+    // merchant handed the wrong lane answers with silence (docs/m59-economy.md), which is why
+    // each stop names the exact NPC and sell_all verifies the sale by a purse delta rather than
+    // trusting the handshake.
+    "stops": [
+      // The Royal Blacksmith of Barloque — body armour, shields, weapons. Singletons, so no cap.
+      { "room": 113, "merchant": "Fehr'loi Qan", "max_stack": null },
+      // Sparkling Stone Shop — gems and sundries. Refuses a stack OVER 25 wholesale
+      // (bqmerch.kod:113), so a bigger gem stack is sold 25 at a time.
+      { "room": 109, "merchant": "Herbutte", "max_stack": 25 },
+      // Joguer's Herbs and Roots — loot mushrooms and other reagents. No cap.
+      { "room": 104, "merchant": "Joguer", "max_stack": null }
+    ],
+
+    // Never sold, however heavy the pack. The create-food reagents (herb, elderberry) and the
+    // rares worth more kept than the handful of shillings a merchant pays. Matched as
+    // case-insensitive substrings, so "wand" covers every wand and "orb of" every orb.
+    "keep": ["inky", "dragon scale", "angel feather", "wand", "scroll", "signet",
+             "orb of", "potion", "herb", "elderberry"],
+
+    "min_price": 1,
+
+    "trigger": {
+      // A pack of this many items is worth the trip. Tune against the fleet's real carry
+      // allowance — the parity fleet runs a low max_carry, so this may want to be lower there.
+      "carry_at": 24,
+      // Leave the "go when broke" trigger off; a heavy pack is the reason to go.
+      "broke_under": 0,
+      // Do not march a hurt character across town — below this the keeper's ladder should act.
+      "min_health": 0.8
+    },
+
+    // The per-character cooldown that keeps the errand from re-firing every 30s tick.
+    "cooldown_ms": 1200000,
+    "travel_timeout_ms": 240000,
+    "return_home": true
+  }
+}

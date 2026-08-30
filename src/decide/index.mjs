@@ -22,6 +22,7 @@ import { RuleSet, respectCommitment } from './engine.mjs';
 import { ladderRules } from './rules/ladder.mjs';
 import { escalateRules } from './rules/escalate.mjs';
 import { economyRules } from './rules/economy.mjs';
+import { throttleRules } from './rules/throttle.mjs';
 import { placementRules, placementFleetRules } from './rules/placement.mjs';
 import { partyFleetRules } from './rules/party.mjs';
 import { crateFleetRules } from './rules/crate.mjs';
@@ -61,6 +62,9 @@ export const characterRules = new RuleSet('character', [
   // Strategy-backed policy maintenance returns null once the keeper agrees, so it can
   // run ahead of the ladder without starving ordinary work decisions.
   ...economyRules.filter(r => !isFleet(r)),
+  // The throttle is policy maintenance of the same shape: it sets fight_above_vigor from the
+  // doctrine's target vigor and returns null once the keeper holds it.
+  ...throttleRules.filter(r => !isFleet(r)),
   // The ladder is the directional decision. Everything after it is a refinement of the
   // orders it produced.
   ...ladderRules.filter(r => !isFleet(r)),

@@ -179,6 +179,12 @@ export const DEFAULTS = {
   },
 
   // ---------------------------------------------------------------- weapons
+  // THE THROTTLE — the fraction of max vigor (200) the fleet maintains before it will fight.
+  // null leaves fight_above_vigor to the ladder/keeper; a number in [0,1] makes the
+  // throttle-vigor rule set fight_above_vigor = round(throttle * 200). 1.0 is full throttle
+  // (park and eat Create Food up toward ~200 before each fight); ~0.4 fights off the rest cap.
+  throttle: null,
+
   // The named order is always usable; provisioning is opt-in because casting and
   // handing items between characters are fleet operations, not keeper preferences.
   weapons: {

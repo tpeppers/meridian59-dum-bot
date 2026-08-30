@@ -94,6 +94,18 @@ test('factions: a queued goal waits for town service, then emits only the bounde
   assert.equal(intent.orders.steps[1].args.faction, 'rebel');
 });
 
+test('factions: an unarmed unit is not walked off to join — it arms first', () => {
+  const rule = factionFleetRules.find(r => r.id === 'request-faction-join');
+  const goals = { agents: { a: { desired: 'rebel', status: 'queued', requested_at: NOW } } };
+  const armed = rule.decide({ at: NOW + 3000,
+    characters: [row('a', { has_weapon: true, town_service_at: NOW + 2000 })], factions: goals });
+  assert.equal(armed.orders.errand, 'faction-request', 'an armed unit still goes');
+  const unarmed = rule.decide({ at: NOW + 3000,
+    characters: [row('a', { has_weapon: false, town_service_at: NOW + 2000 })], factions: goals });
+  assert.notEqual(unarmed?.orders?.errand, 'faction-request',
+    'an unarmed unit is deferred so weapon provisioning can arm it, not sent across the world unarmed');
+});
+
 test('factions: an assignment hunts a safe source, protects cargo, and offers the exact item', () => {
   const goal = { desired: 'rebel', status: 'acquiring', requested_at: NOW,
     item: 'scimitar', target: "Jonas D'Accor", target_room: 371,

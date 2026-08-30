@@ -412,6 +412,36 @@ test('strategies: Create Food fires only for selected units with spell, mana, an
   assert.deepEqual(callsForFleetPlan(result.plan).map(x => x.tool), ['cast', 'autopilot']);
 });
 
+test('strategies: one unread cook does not block Create Food for the readable ones', () => {
+  // THE REGRESSION THIS PINS. At 21 characters an inventory read times out on most ticks, so
+  // one cook's items come back null. The rule used to bail the WHOLE fleet to a report on any
+  // single unread unit, and the fleet made zero food for an afternoon. Now the readable cook is
+  // served and the unread one carries to the next tick.
+  const doctrine = loadDoctrine({ file: 'doctrines/castle-victoria.jsonc' }).config;
+  const readable = agent => ({ agent, in_game: true, items: [
+    { name: 'elderberry', amount: 2 }, { name: 'herb', amount: 2 },
+  ], provides: ['create food'], mana: { value: 10 } });
+  const unread = agent => ({ agent, in_game: true, items: null, provides: ['create food'], mana: { value: 10 } });
+  const obs = { characters: [readable('cook'), unread('blind')], strategies: { agents: {
+    cook: [STRATEGY_IDS.CREATE_FOOD], blind: [STRATEGY_IDS.CREATE_FOOD],
+  } } };
+  const result = foodFleetRules[0].decide(obs, doctrine);
+  assert.equal(result.kind, 'act', 'a readable cook is worked despite an unread fleet-mate');
+  assert.deepEqual(result.plan.map(p => p.agent), ['cook']);
+  assert.match(result.why, /1 unread this tick: blind/);
+});
+
+test('strategies: an entirely blind fleet is a report, not a silent pass', () => {
+  const doctrine = loadDoctrine({ file: 'doctrines/castle-victoria.jsonc' }).config;
+  const unread = agent => ({ agent, in_game: true, items: null, provides: null });
+  const obs = { characters: [unread('a'), unread('b')], strategies: { agents: {
+    a: [STRATEGY_IDS.CREATE_FOOD], b: [STRATEGY_IDS.CREATE_FOOD],
+  } } };
+  const result = foodFleetRules[0].decide(obs, doctrine);
+  assert.equal(result.kind, 'report');
+  assert.deepEqual(result.evidence.unread, ['a', 'b']);
+});
+
 test('strategies: Spread Out owns the wall cap; the shift owns which room', () => {
   // THE SUBJECT HERE IS THE DIVISION OF LABOUR, NOT WHICH ROOM THE FLEET IS IN THIS WEEK.
   // `upstairs_share` is a live tuning knob — it went to 0 the day the fleet outgrew the

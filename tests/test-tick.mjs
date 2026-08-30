@@ -133,7 +133,45 @@ test('tick: an unknown --agent says so rather than silently doing nothing', asyn
   const broker = fakeBroker({ board: [row('role-a')] });
   const result = await pass({ broker, config: fx.doctrine(), journal: quietJournal(), commit: false },
                             { only: 'nobody' });
-  assert.match(result.note, /no character named "nobody"/);
+  assert.match(result.note, /none of "nobody"/);
+});
+
+test('tick: --agent accepts a list and keeps every named character', async () => {
+  const broker = fakeBroker({
+    board: [row('role-a'), row('role-b'), row('role-c')],
+    status: { 'role-a': statusFor(), 'role-b': statusFor() },
+  });
+  const result = await pass({ broker, config: fx.doctrine(), journal: quietJournal(), commit: false },
+                            { only: ['role-a', 'role-b'] });
+  assert.deepEqual(result.characters.map(c => c.agent).sort(), ['role-a', 'role-b']);
+});
+
+test('tick: a fleet rule never targets a character outside the scope', async () => {
+  // role-c has the heavy pack that trips the sell circuit; role-a and role-b do not. The
+  // circuit is a FLEET rule that names its own actor, so this is the two-character test's whole
+  // safety property: with role-c out of scope, the circuit must pick nobody rather than walk it.
+  const sellrun = {
+    on: true, stops: [{ room: 113, merchant: 'A Smith', max_stack: null }],
+    keep: [], min_price: 1, trigger: { carry_at: 24, broke_under: 0, min_health: 0.8 },
+    cooldown_ms: 1_200_000, travel_timeout_ms: 240_000, return_home: true,
+  };
+  const board = () => [row('role-a'), row('role-b'), row('role-c', { carrying: 40 })];
+
+  // CONTROL: unscoped, the circuit really does target role-c — so a green scoped case below is
+  // the scope working, not a fixture that never fired.
+  const open = fakeBroker({ board: board(), status: { 'role-c': statusFor() } });
+  const openResult = await pass({ broker: open, config: fx.doctrine({ sellrun }),
+                                  journal: quietJournal(), commit: false });
+  assert.equal(openResult.fleet.intent?.agent, 'role-c', 'unscoped, the heavy character gets the trip');
+
+  // SCOPED to the other two: role-c is never chosen and never written to.
+  const scoped = fakeBroker({ board: board(), status: { 'role-a': statusFor(), 'role-b': statusFor() } });
+  const result = await pass({ broker: scoped, config: fx.doctrine({ sellrun }),
+                             journal: quietJournal(), commit: false },
+                            { only: ['role-a', 'role-b'] });
+  const touchedC = scoped.calls.filter(([t, a]) => String(t).startsWith('write:') && a?.agent === 'role-c');
+  assert.equal(touchedC.length, 0, 'role-c is out of scope and must not be written to');
+  assert.notEqual(result.fleet.intent?.agent, 'role-c', 'no fleet intent may name role-c');
 });
 
 test('tick: fleet rules can be skipped while the board is still read', async () => {

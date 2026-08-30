@@ -431,6 +431,36 @@ test('strategies: one unread cook does not block Create Food for the readable on
   assert.match(result.why, /1 unread this tick: blind/);
 });
 
+test('food provision: cooks only for spell-holders standing in the staging room', () => {
+  // Room-gated provisioning — the whole reason it exists is to cook off-shift without competing
+  // with the shift placement. A cook at the staging room works; an identical cook out at the
+  // graveyard does not, so this rule can never win the tick where the shift needs to move people.
+  const doctrine = { food: { min_items: 1, mana_cost: 10, elderberry_per_cast: 2, herbs_per_cast: 2,
+    provision: { enabled: true, room: 52, min_items: 8 } } };
+  const cook = (agent, room) => ({ agent, in_game: true, room, provides: ['create food'],
+    mana: { value: 10 }, items: [{ name: 'elderberry', amount: 2 }, { name: 'herb', amount: 2 }] });
+  const obs = { characters: [cook('at', 52), cook('away', 70)], strategies: { agents: {} } };
+  const result = foodFleetRules[0].decide(obs, doctrine);
+  assert.equal(result.kind, 'act', 'the cook at the staging room works');
+  assert.deepEqual(result.plan.map(p => p.agent), ['at'], 'only the one at room 52, not the one at 70');
+});
+
+test('food provision: its own flag enables it with strategies off, and it is off otherwise', () => {
+  assert.equal(foodFleetRules[0].enabled({ strategies: { enabled: false }, food: { provision: { enabled: true } } }), true);
+  assert.equal(foodFleetRules[0].enabled({ strategies: { enabled: false } }), false);
+});
+
+test('food provision: an unreadable staged cook PASSES, never reports — a report would starve the shift', () => {
+  // The regression: provisioning sits below the graveyard placement, and a report wins the tick and
+  // stops the table. A single unreadable staged cook must not strand the rest of the team outside the GY.
+  const doctrine = { food: { min_items: 1, mana_cost: 10, elderberry_per_cast: 2, herbs_per_cast: 2,
+    provision: { enabled: true, room: 52, min_items: 8 } } };
+  const blind = { agent: 't17', in_game: true, room: 52, provides: ['create food'], items: null };
+  const result = foodFleetRules[0].decide({ characters: [blind], strategies: { agents: {} } }, doctrine);
+  assert.equal(result.kind, 'pass', 'provisioning defers rather than reporting, so the shift below still runs');
+  assert.match(result.why, /cannot starve the shift/);
+});
+
 test('strategies: an entirely blind fleet is a report, not a silent pass', () => {
   const doctrine = loadDoctrine({ file: 'doctrines/castle-victoria.jsonc' }).config;
   const unread = agent => ({ agent, in_game: true, items: null, provides: null });

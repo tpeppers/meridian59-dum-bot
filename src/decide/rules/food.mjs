@@ -29,12 +29,31 @@ export const foodFleetRules = [{
   scope: 'fleet',
   why: 'selected Kraanan cooks turn their own reagent pairs into food whenever their ' +
        'larder is empty, leaving the keeper to decide when the stomach and vigor need it',
-  enabled: doctrine => doctrine.strategies?.enabled === true,
-  offWhy: 'composable DUM strategies are off',
+  enabled: doctrine => doctrine.strategies?.enabled === true || doctrine.food?.provision?.enabled === true,
+  offWhy: 'composable DUM strategies and food provisioning are both off',
 
   decide(fleetObs, doctrine) {
-    const selected = strategyRows(fleetObs, doctrine, STRATEGY_IDS.CREATE_FOOD);
-    if (!selected.length) return { kind: 'pass', why: 'no live unit has Create Food to keep Fed enabled' };
+    const f = doctrine.food ?? {};
+    const prov = f.provision;
+    const roomGated = prov?.enabled === true;
+    // Provisioning carries its own larder floor, so a deep off-shift stockpile does not require
+    // raising the fleet-wide default.
+    const fEff = roomGated && prov.min_items != null ? { ...f, min_items: prov.min_items } : f;
+
+    // WHO COOKS. In provision mode the cooks are the units STANDING IN THE STAGING ROOM that hold
+    // the spell — room-gated exactly like weapons.provision. That is the whole point: the cook only
+    // fires where the fleet gathers off-shift, never where the graveyard placement is moving people,
+    // so it cannot win the fleet tick and STARVE the shift (which is what the create-food STRATEGY,
+    // ungated, did — a scout reached the graveyard but nobody ever gathered). Otherwise the cooks
+    // are the units that selected the Create Food strategy.
+    const selected = roomGated
+      ? (fleetObs.characters ?? []).filter(r => r.in_game && r.room === prov.room
+          && (r.provides ?? []).some(s => String(s).toLowerCase() === 'create food'))
+      : strategyRows(fleetObs, doctrine, STRATEGY_IDS.CREATE_FOOD);
+    if (!selected.length) return { kind: 'pass', why: roomGated
+      ? `no cook holding Create Food is at the staging room ${prov.room}`
+      : 'no live unit has Create Food to keep Fed enabled' };
+
     // ACT ON WHAT IS READABLE. A single unit whose inventory did not come back this tick — a
     // timed-out read on a busy shared broker, which at 21 characters happens on most ticks —
     // must NOT block Create Food for the twenty whose larders we CAN see. Bailing the whole rule
@@ -46,25 +65,32 @@ export const foodFleetRules = [{
     const unread = selected.filter(r => !readable.includes(r));
     const note = unread.length ? ` (${unread.length} unread this tick: ${unread.map(r => r.agent).join(', ')})` : '';
     if (!readable.length)
-      return { kind: 'report', why: `cannot maintain food: inventory or spells unreadable for ` +
-        unread.map(r => r.agent).join(', '), evidence: { unread: unread.map(r => r.agent) } };
+      // A report WINS the fleet tick and stops the table. In strategies mode that is fine — the
+      // food rule sits high and surfacing "the fleet is blind" is worth a tick. But provisioning
+      // sits BELOW the graveyard placement: a report there stops the shift over a single unreadable
+      // staged cook, stranding the rest of the team outside the GY (measured). So provisioning PASSES
+      // on a blind tick — the reason still lands in the audit — and retries next tick.
+      return roomGated
+        ? { kind: 'pass', why: `provision deferred: inventory or spells unreadable this tick for ` +
+            unread.map(r => r.agent).join(', ') + ' — passing so it cannot starve the shift below' }
+        : { kind: 'report', why: `cannot maintain food: inventory or spells unreadable for ` +
+            unread.map(r => r.agent).join(', '), evidence: { unread: unread.map(r => r.agent) } };
 
-    const f = doctrine.food;
-    const readiness = new Map(readable.map(r => [r.agent, createFoodReadiness(r, f)]));
+    const readiness = new Map(readable.map(r => [r.agent, createFoodReadiness(r, fEff)]));
     const short = readable.filter(r => readiness.get(r.agent).short);
     const plan = short.filter(r => readiness.get(r.agent).ready)
       .map(r => ({ do: 'cast-create-food', agent: r.agent,
-        why: `larder below ${f.min_items}; spend one verified reagent pair` }));
+        why: `larder below ${fEff.min_items}; spend one verified reagent pair` }));
 
     if (!plan.length) {
       const missing = short.length;
       return { kind: 'pass', why: (missing
-        ? `${missing} readable selected unit(s) have no meal, but none currently has the spell, ` +
-          `${f.mana_cost} mana, and ${f.elderberry_per_cast} elderberry + ${f.herbs_per_cast} herbs`
-        : `${readable.length}/${selected.length} readable selected unit(s) have food aboard`) + note };
+        ? `${missing} readable ${roomGated ? 'staged' : 'selected'} unit(s) have no meal, but none currently has the spell, ` +
+          `${fEff.mana_cost} mana, and ${fEff.elderberry_per_cast} elderberry + ${fEff.herbs_per_cast} herbs`
+        : `${readable.length}/${selected.length} readable ${roomGated ? 'staged' : 'selected'} unit(s) have food aboard`) + note };
     }
     return { kind: 'act', plan,
-      why: `${short.length} readable larder(s) are below ${f.min_items}; ` +
+      why: `${short.length} readable larder(s) are below ${fEff.min_items}; ` +
         `${plan.length} verified Create Food cast(s)` + note };
   },
 }];

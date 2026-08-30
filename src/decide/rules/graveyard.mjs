@@ -245,11 +245,29 @@ export const graveyardFleetRules = [
       const a = windowIsOpen(inGrave), b = windowIsOpen(inCrypt);
       const open = a.open || b.open;
 
-      if (!views.length)
-        return { kind: 'pass',
-                 why: 'nobody is standing in either room, so there is no observation of ' +
-                      'whether they are generating — and this rule will not fall back to ' +
-                      'the computed hour, which has been wrong on this server' };
+      // COLD-START BOOTSTRAP — break the deadlock between "won't deploy without observing the
+      // window" and "can't observe without someone in the room". A scattered fleet has nobody in
+      // the graveyard or crypt, so the rule used to just report and move no one, and the loop
+      // never started. Instead send ONE scout into the graveyard to establish the observation and
+      // gather everyone else at the Tos inn to wait. The scout goes in as a full shift member —
+      // armoured quarry ceiling, safe spots, retreat armed — so a lone character in a room that
+      // may hold level-75 skeletons fights from behind a wall or not at all; and if the window
+      // turns out shut, the very next tick observes it and recalls the scout with the rest. Prefer
+      // a body-armoured scout: it is the one that can survive a skeleton if the window is open.
+      if (!views.length) {
+        const armoured = live.filter(wearsBodyArmour);
+        const scout = (armoured.length ? armoured : live)[0];
+        const scoutOrders = { ...ordersFor(scout, doctrine), use_safe_spots: true };
+        return { kind: 'act',
+                 plan: live.map(r => r.agent === scout.agent
+                   ? { agent: r.agent, do: 'deploy', to: GRAVEYARD, moved: r.room !== GRAVEYARD,
+                       ...scoutOrders, retreat_to: retreatTo(),
+                       why: 'scout the graveyard to establish the window observation the shift needs' }
+                   : { agent: r.agent, do: 'stand-down', ...standDownOrders(), moved: r.room !== TOS_INN,
+                       why: 'gather at the Tos inn while the scout checks whether the window is open' }),
+                 why: `no observation of the window — scouting ${scout.agent} into the graveyard, ` +
+                      `the rest to the Tos inn` };
+      }
 
       if (!open)
         return { kind: 'act',

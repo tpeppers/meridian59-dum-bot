@@ -58,7 +58,11 @@
           "Inky-cap mushroom",
           "blue dragon scale",
           "arrows",
-          "nerudite arrows"
+          "nerudite arrows",
+          // Operator request, 2026-09-03. Applied live through the strategy-control
+          // endpoint (the per-unit store is re-read every tick); listed here so a fresh
+          // unit, or a restart on this file, protects it too.
+          "Jewel of Froz"
         ]
       }
     }

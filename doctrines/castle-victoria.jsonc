@@ -62,7 +62,14 @@
           // Operator request, 2026-09-03. Applied live through the strategy-control
           // endpoint (the per-unit store is re-read every tick); listed here so a fresh
           // unit, or a restart on this file, protects it too.
-          "Jewel of Froz"
+          "Jewel of Froz",
+          // Same request, later the same day. The rose is NOT here yet: it was missing
+          // from the harness item table (a case-sensitive resource join, fixed in
+          // m59-harness 506c458), and the broker resolves vault names when the order
+          // lands, so naming it before the deployed table carries it would have the
+          // keeper refuse the whole list every tick. Add it once prod runs that table.
+          "herald shield",
+          "true lute"
         ]
       }
     }

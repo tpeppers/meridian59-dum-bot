@@ -310,7 +310,23 @@ export async function runErrand(broker, intent, { commit = false, holder = null,
   // restarts stalled keepers is ten minutes of a genuinely stuck character nobody
   // touches. The lease is the net for a bot that DIED; a bot that is still running should
   // put the character back itself.
-  if (commit && holder)
+  //
+  // THE ONE EXCEPTION IS A JOURNEY, AND IT IS THE POINT OF `hold_busy_ms`. An errand that
+  // only LAUNCHES a walk (the feast hall's outbound leg) returns in seconds while the
+  // character walks on for ten minutes under its keeper's journey. Freed here, that walker
+  // is takeable, and every rule that reads `takeable` — the station recall above all —
+  // would send it somewhere else mid-road. So instead of freeing, the errand EXTENDS the
+  // busy it already holds to cover the walk, and lets the lease lapse on its own. An
+  // extension by the same holder does not cancel movement (m59-autopilot.mjs declareBusy
+  // bumps the movement generation only when an operation BEGINS), so the walk it is
+  // protecting is not the walk it interrupts. Bounded by CEILING_MS like every lease here.
+  const hold = Number(intent.orders?.hold_busy_ms) || 0;
+  if (commit && holder && hold > 0 && !stopped) {
+    const held = await claimBusy(Math.min(CEILING_MS, hold),
+      `${intent.why} (walking; held for ${Math.round(Math.min(CEILING_MS, hold) / 1000)}s)`);
+    results.push({ tool: 'autopilot', args: { action: 'busy', lease_ms: Math.round(Math.min(CEILING_MS, hold)) },
+      result: held, why: 'held busy for the walk this errand launched, rather than freed' });
+  } else if (commit && holder)
     await broker.call('autopilot', { agent, action: 'free', by: holder })
       .catch(e => results.push({ tool: 'autopilot', args: { action: 'free' },
         result: { error: e.message },

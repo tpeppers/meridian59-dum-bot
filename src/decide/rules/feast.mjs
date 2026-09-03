@@ -57,6 +57,13 @@ import { foodAmountOf } from './food.mjs';
 
 const mins = ms => `${Math.round(ms / 60000)}m`;
 
+// HOW LONG TO HOLD A WALKER `busy` FOR A LEG: the estimate, padded for a leg that goes
+// slightly wrong (the ordinary case), plus two minutes, never past the journey's own
+// give-up time. The runner caps it at its lease ceiling besides. A hold that lapses
+// early makes the walker takeable on the road; one that runs long makes every stall
+// detector step over a character that is already home — the first is the worse failure.
+const holdFor = (ms, maxTripMs) => Math.round(Math.min(maxTripMs, ms * 1.5 + 2 * 60_000));
+
 // Same test `engine.mjs` exports as `takeable`, inlined to stay out of the
 // engine<->schema import cycle (crate.mjs and sellrun.mjs do the same).
 const isTakeable = row => {
@@ -219,9 +226,15 @@ export const feastFleetRules = [
       // 1. SOMEBODY IS STANDING IN THE HALL. Serve them first: a character in a sanctuary
       // with an empty pack is doing nothing for anyone, and the dispatch below would only
       // add another walker to the road while this one waits.
+      //
+      // OUR OWN BUSY IS NOT A REASON TO WAIT. The outbound errand holds the walker `busy`
+      // for the length of the walk (hold_busy_ms), precisely so nothing else takes it on
+      // the road — and that hold is still on it when it arrives. A `bot` commitment is
+      // that hold; anything else (a keeper errand, a pilot, a park) is somebody else's.
       for (const row of rows) {
         if (row.room !== hall) continue;
-        if (row.piloted || row.parked || !isTakeable(row)) continue;
+        if (row.piloted || row.parked) continue;
+        if (!isTakeable(row) && row.commitment?.kind !== 'bot') continue;
         const e = mem[row.agent];
         // Arrived under our journey, or simply there for its own reasons — either way, if
         // it is not freshly fed, fill the pack.
@@ -231,11 +244,14 @@ export const feastFleetRules = [
                    : (row.policy?.assignedRoom ?? row.assigned_room ?? null);
         const d = chosenDispenser(cfg);
         const steps = grabSteps(row.agent, cfg, home, row);
+        // The walk home is as long as the walk in; hold the walker for it the same way.
+        const homeMs = Number.isFinite(e?.ms) ? e.ms : maxTravelMs;
         return {
           kind: 'errand',
           orders: { errand: 'feast-grab', agent: row.agent,
                     label: `feast hall: fill the pack with ${d.item}`,
                     context: { home, dispenser: d.dispenser, grabs: steps.filter(s => s.tool === 'act').length },
+                    hold_busy_ms: Number.isInteger(home) ? holdFor(homeMs, maxTripMs) : 0,
                     steps },
           why: `${row.agent} is standing in ${FEAST_HALL.name}; take ${d.item} from the ` +
                `${d.dispenser} until the pack is full, then walk home to ${home ?? 'wherever it was'}`,
@@ -313,6 +329,9 @@ export const feastFleetRules = [
         orders: { errand: 'feast-outbound', agent: row.agent,
                   label: `feast hall: set off (${pick.door === 'passing' ? 'near Tos' : 'supply trip, redirected'})`,
                   context: { home, door: pick.door, hops: pick.hops, ms: pick.ms },
+                  // Held `busy` for the walk, so the station recall and every other rule
+                  // that reads `takeable` leave it on the road. See errands.mjs.
+                  hold_busy_ms: holdFor(pick.ms ?? maxTravelMs, maxTripMs),
                   steps: outboundSteps(row.agent, cfg) },
         why: pick.door === 'passing'
           ? `${row.agent} is ${pick.hops ?? '?'} hop(s) from the feast hall with ${pick.meals} meal(s) aboard; ` +
@@ -336,8 +355,10 @@ export function recordFeastOutbound({ agent, at, stopped, context }) {
   if (stopped)
     return { patch: { [agent]: { phase: null, failed_at: at, ok: false, why: stopped } },
              read: { ok: false, agent, at, stopped } };
-  return { patch: { [agent]: { phase: 'outbound', since: at, from: context?.home ?? null, ok: null } },
-           read: { ok: true, agent, at, phase: 'outbound', from: context?.home ?? null } };
+  // `ms` is the walk in, kept so the grab can hold the walker for a walk home of the same length.
+  const ms = Number.isFinite(context?.ms) ? context.ms : null;
+  return { patch: { [agent]: { phase: 'outbound', since: at, from: context?.home ?? null, ms, ok: null } },
+           read: { ok: true, agent, at, phase: 'outbound', from: context?.home ?? null, ms } };
 }
 
 /** Grab: how much was taken, whether the pack filled, and that the trip is done. */

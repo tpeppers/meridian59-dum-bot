@@ -358,6 +358,57 @@ test('feast: the runner does not re-extend busy for every one of sixty grabs', a
   ok(busyCalls <= 3, `announce, one extension for the grabs, one for the walk home: ${busyCalls}`);
 });
 
+// ---------------------------------------------------------------- the walker is held on the road
+
+test('feast: both legs hold the walker busy for the walk, padded and bounded by the give-up time', () => {
+  const out = rule.decide(fleetObs([unit('a')]), doctrineWith());
+  eq(out.orders.hold_busy_ms, Math.round(11 * MIN * 1.5 + 2 * MIN), 'the walk in, padded, plus two minutes');
+  const capped = rule.decide(fleetObs([unit('a', { travel_to_feast: { ms: 14 * MIN, hops: 12 } })]),
+                             doctrineWith({ max_trip_ms: 20 * MIN }));
+  eq(capped.orders.hold_busy_ms, 20 * MIN, 'never past max_trip_ms');
+  const inHall = unit('a', { room: FEAST_HALL.room });
+  const grab = rule.decide(fleetObs([inHall], { a: { phase: 'outbound', since: NOW - 12 * MIN, from: 39, ms: 10 * MIN } }),
+                           doctrineWith());
+  eq(grab.orders.hold_busy_ms, Math.round(10 * MIN * 1.5 + 2 * MIN), 'the walk home is as long as the walk in');
+  const nowhere = rule.decide(fleetObs([unit('b', { room: FEAST_HALL.room, policy: null, assigned_room: null })]),
+                              doctrineWith());
+  eq(nowhere.orders.hold_busy_ms, 0, 'no home, no walk home, no hold');
+});
+
+test('feast: a walker arriving under its own busy hold is served, and a keeper errand is not', () => {
+  const held = unit('a', { room: FEAST_HALL.room,
+    commitment: { kind: 'bot', takeable: false, label: 'dum/x is steering: feast hall: set off' } });
+  const mem = { a: { phase: 'outbound', since: NOW - 12 * MIN, from: 39, ms: 11 * MIN } };
+  eq(rule.decide(fleetObs([held], mem), doctrineWith()).orders?.errand, 'feast-grab', 'our own hold is not a reason to wait');
+  const other = unit('b', { room: FEAST_HALL.room, commitment: { kind: 'errand', takeable: false } });
+  eq(rule.decide(fleetObs([other]), doctrineWith()).kind, 'pass', 'a keeper errand is somebody else\'s');
+});
+
+test('feast: the runner HOLDS busy for a launched walk instead of freeing it, and frees on a failure', async () => {
+  const calls = [];
+  const broker = {
+    call: async (tool, args) => {
+      if (tool === 'autopilot') { calls.push(`${args.action}:${args.lease_ms ?? ''}`); return {}; }
+      return { started: true };
+    },
+    write: async () => ({ dry_run: true }),
+  };
+  const intent = { rule: 'feast-hall-larder', ...rule.decide(fleetObs([unit('a')]), doctrineWith()) };
+  await runErrand(broker, intent, { commit: true, holder: 'dum/test@pid-1' });
+  ok(!calls.some(c => c.startsWith('free')), `never freed: ${calls.join(' ')}`);
+  const last = calls[calls.length - 1];
+  ok(last.startsWith('busy:'), `the last word is a hold: ${calls.join(' ')}`);
+  eq(Number(last.split(':')[1]), Math.min(15 * MIN, intent.orders.hold_busy_ms), 'for the walk, under the runner\'s ceiling');
+
+  const failing = { call: async (tool, args) => {
+      if (tool === 'autopilot') { calls.push(args.action); return {}; }
+      return { error: 'no route' };
+    }, write: async () => ({ dry_run: true }) };
+  calls.length = 0;
+  await runErrand(failing, intent, { commit: true, holder: 'dum/test@pid-1' });
+  eq(calls[calls.length - 1], 'free', 'a walk that never started is freed, not held');
+});
+
 // ---------------------------------------------------------------- the surface
 
 test('feast: act verb:"activate" is admitted on a hall table and refused on anything else', () => {

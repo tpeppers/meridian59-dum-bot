@@ -17,6 +17,7 @@ import { characterRules, fleetRules, decide } from '../decide/index.mjs';
 import { apply } from '../act/orders.mjs';
 import { verify } from '../act/verify.mjs';
 import { readErrand } from '../act/errands.mjs';
+import { FEAST_HALL } from '../decide/feast-hall.mjs';
 import { STRATEGY_IDS } from '../strategies/catalog.mjs';
 
 /**
@@ -205,6 +206,12 @@ export async function tickFleet(ctx, { decide: runRules = true, only = null } = 
         obs.strategies?.agents?.[r.agent]?.includes(STRATEGY_IDS.PLAY_FACTION_GAMES));
       if (factionPlayers.length) await enrichFactionGames(broker, factionPlayers);
     }
+    // HOW FAR EVERYBODY IS FROM THE DUKE'S TABLES. Free — the estimate is local arithmetic
+    // in the harness, asked once per distinct room — and it is the fact both feast doors
+    // turn on: "near Tos" is a hop count and "the supply trip, redirected" is a walk time.
+    // On its own field so it cannot collide with the graveyard's `travel_to_station`.
+    if (config.feast?.on === true)
+      await enrichTravelEstimates(broker, live(), FEAST_HALL.room, { field: 'travel_to_feast' });
     line.observation = obs;
 
     // STAND DOWN WHILE THE FLEET IS PARKING. A parked keeper is running and

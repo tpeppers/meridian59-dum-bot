@@ -277,7 +277,8 @@ export async function enrichFactionLoyalty(broker, rows = []) {
  * traffic), and it is asked once per DISTINCT current room rather than once per character,
  * because the answer depends on where a unit is standing and not on which unit it is.
  */
-export async function enrichTravelEstimates(broker, rows = [], to, { basis = 'p90' } = {}) {
+export async function enrichTravelEstimates(broker, rows = [], to,
+                                            { basis = 'p90', field = 'travel_to_station' } = {}) {
   const byRoom = new Map();
   for (const row of rows) {
     if (!Number.isInteger(row.room) || row.room === to) continue;
@@ -292,7 +293,11 @@ export async function enrichTravelEstimates(broker, rows = [], to, { basis = 'p9
     // Undefined when the unit is already there, null when the estimate failed. A caller
     // must not read either as "no walk" — see the shift rule, which falls back to the
     // doctrine's own lead rather than to zero.
-    row.travel_to_station = row.room === to ? { ms: 0, hops: 0, confidence: 1 } : est ?? null;
+    //
+    // `field` names where the answer lands: the graveyard shift reads `travel_to_station`
+    // and the feast rule reads `travel_to_feast`, and the two can be asked on one tick
+    // without overwriting each other.
+    row[field] = row.room === to ? { ms: 0, hops: 0, confidence: 1 } : est ?? null;
   }
   return rows;
 }

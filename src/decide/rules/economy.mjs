@@ -54,10 +54,17 @@ export const economyRules = [
     enabled: doctrine => doctrine.strategies?.enabled === true,
     offWhy: 'DUM strategies are disabled',
     decide(obs, doctrine) {
+      // WHILE THE DUKE'S FEAST HALL IS OPEN, REAGENTS ARE NOT BOUGHT. The doctrine says so
+      // in one place (`feast.suspend_reagent_buying`, on while `feast.on`), and it is
+      // applied here rather than in the feast rule because this is the rule that owns the
+      // keeper's purchase permissions — two writers of `buy_reagents` on different
+      // cadences would oscillate, with both journals reading correct. The per-unit
+      // strategy selection is untouched and comes back the moment the feast is off.
+      const feast = doctrine.feast?.on === true && doctrine.feast?.suspend_reagent_buying !== false;
       const want = {
         buy_food: strategyEnabled(obs, doctrine, obs.agent, STRATEGY_IDS.BUY_FOOD),
         buy_weapons: strategyEnabled(obs, doctrine, obs.agent, STRATEGY_IDS.BUY_WEAPONS),
-        buy_reagents: strategyEnabled(obs, doctrine, obs.agent, STRATEGY_IDS.BUY_REAGENTS),
+        buy_reagents: !feast && strategyEnabled(obs, doctrine, obs.agent, STRATEGY_IDS.BUY_REAGENTS),
       };
       const live = obs.keeper?.policy ?? obs.policy ?? {};
       const keys = { buy_food: 'buyFood', buy_weapons: 'buyWeapons', buy_reagents: 'buyReagents' };
@@ -65,8 +72,10 @@ export const economyRules = [
       return {
         kind: 'orders',
         orders: { action: 'start', ...want },
-        why: Object.entries(want).map(([key, value]) => `${key}=${value}`).join(', '),
-        evidence: { want, keeper_has: pick(live, Object.values(keys)) },
+        why: Object.entries(want).map(([key, value]) => `${key}=${value}`).join(', ') +
+             (feast ? " (buy_reagents held off while the Duke's Feast Hall is feeding the fleet)" : ''),
+        evidence: { want, keeper_has: pick(live, Object.values(keys)),
+                    ...(feast ? { feast_suspends_reagent_buying: true } : {}) },
       };
     },
   },

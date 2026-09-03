@@ -265,6 +265,51 @@ weight/bulk room. It stops casting as soon as existing qualifying weapons can co
 fleet. It never treats unknown carrying room as free room, and it becomes a no-op as
 soon as anyone leaves staging, so it cannot recall or interrupt an active shift.
 
+## `feast` — free food from the Duke's Feast Hall, for the length of an event
+
+```jsonc
+"feast": {
+  "on": true,                  // off by default: the hall is LOCKED outside the event
+  "min_items": 6,              // fewer meals than this aboard, and a character near Tos tops up
+  "max_hops": 4,               // "near Tos" by route distance from the hall (Tos square = 3)
+  "near_rooms": [],            // …or by name
+  "max_travel_ms": 900000,     // the supply trip, redirected: an EMPTY larder with no reagents
+                               // goes to the tables instead of the apothecary, from this far
+  "min_health": 0.8,
+  "max_in_flight": 3,          // on the road to the hall at once
+  "grab_from": ["roast pig", "cauldron of soup"],   // which table, first that exists
+  "max_grabs": 60,             // activations per visit; the hall refuses when the pack is full
+  "max_trip_ms": 1800000,      // a journey unseen in the hall this long is given up
+  "cooldown_ms": 2700000,      // after a filled pack
+  "fail_backoff_ms": 600000,   // after a trip that got nothing
+  "return_home": true,
+  "suspend_reagent_buying": true   // hold the keeper's buy_reagents off while on
+}
+```
+
+The hall (room 953, three hops from the Tos square through the Duke's castle) hands out
+unlimited food to anyone who `activate`s a table — `src/decide/feast-hall.mjs` has the
+tables and the kod citations. The rule in `src/decide/rules/feast.mjs` has two doors:
+**passing through** (near Tos with a thin larder — a larder count and nothing else) and
+**the supply trip, redirected** (no food and no casting's worth of reagents, so the
+keeper was about to walk to the apothecary anyway; the hall is within `max_travel_ms`).
+
+**It is a journey, not an errand.** The hall is eleven hops from Castle Victoria, and a
+single blocking errand would stand DUM down for the walk, so the trip is three short
+errands joined by the `feast` memory topic: `feast-outbound` launches the walk and
+records where home is; `feast-grab` fires when a later tick sees the character in the
+hall, activates the table until "You can't hold anything more!", and launches the walk
+home; `feast-abandon` clears a journey that never arrived — which is what a **locked**
+hall looks like, since it hustles a visitor straight back out. When the Duke closes the
+doors, set `on: false`; nothing else can tell.
+
+Reagent buying stops by itself: the harness's supply trip yields while there are meals
+aboard (`supplyShortfall`, "still has meals"). `suspend_reagent_buying` additionally
+holds `buy_reagents` off through the `purchase-strategy-policy` rule, for the character
+that reaches a counter for some other reason. And a larder is only eaten from below the
+fighting floor, so a fleet throttled to the resting cap carries its free food around
+untouched — `doctrines/dukes-feast.jsonc` raises `throttle` for that reason.
+
 ## `prey`, `placement`, `economy`, `party`, `escalate`
 
 See the commented examples in [`../doctrines/`](../doctrines/). Two conventions run

@@ -27,6 +27,7 @@ import { placementRules, placementFleetRules } from './rules/placement.mjs';
 import { partyFleetRules } from './rules/party.mjs';
 import { crateFleetRules } from './rules/crate.mjs';
 import { sellrunFleetRules } from './rules/sellrun.mjs';
+import { feastFleetRules } from './rules/feast.mjs';
 import { shiftFleetRules } from './rules/shift.mjs';
 import { swarmFleetRules } from './rules/swarm.mjs';
 import { graveyardFleetRules } from './rules/graveyard.mjs';
@@ -123,6 +124,14 @@ export const fleetRules = new RuleSet('fleet', [
   // closing window (the crate, an assigned faction quest) and below survival, which is the
   // keeper's regardless.
   ...sellrunFleetRules,
+  // THE FEAST HALL SITS WITH THE SELL CIRCUIT, AND ABOVE THE PATROL FOR ONE REASON: a
+  // character standing in the hall with an empty pack is earning nothing, and the grab
+  // that fills it is a two-minute errand. Its window closes too — the Duke locks the
+  // doors when the event ends — but the ordering argument is the arrival, not the event.
+  // It cannot starve the patrol below: dispatch is capped by `max_in_flight`, every
+  // character it sends is cooled down for the better part of an hour afterwards, and it
+  // returns `pass` the moment nobody is in the hall or hungry within reach.
+  ...feastFleetRules,
   // Establish the hands-off patrol policy before its maintenance strategies try to
   // spend mana or hand over equipment. This is also the baseline a finite learning
   // errand returns to. It returns `pass` as soon as the policy agrees, so putting it

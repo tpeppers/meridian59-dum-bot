@@ -220,6 +220,58 @@ export const DEFAULTS = {
     herbs_per_cast: 2,
   },
 
+  // THE DUKE'S FEAST HALL — free food for the length of an event, instead of bought
+  // reagents. See src/decide/rules/feast.mjs for the mechanism and src/decide/feast-hall.mjs
+  // for the room, the tables and the kod citations. OFF BY DEFAULT like every other trip:
+  // the hall is LOCKED outside the event (a visitor is hustled straight back out), and the
+  // walk is eleven hops from where this fleet farms, so it is opted into for the event
+  // and must be switched off when the Duke closes the doors.
+  feast: {
+    on: false,
+    // With fewer meals than this aboard, a character NEAR TOS tops up. Six is about one
+    // climb from the resting cap to a 140 floor on the hall's 9-vigor dishes.
+    min_items: 6,
+    // Near Tos, by route distance from the hall (Tos square = 3, its shops = 4)…
+    max_hops: 4,
+    // …or by name. Empty means distance alone decides.
+    near_rooms: [],
+    // THE SUPPLY TRIP, REDIRECTED. A character with NO food and no casting's worth of
+    // reagents is about to be walked to the Tos apothecary by its keeper; if the hall is
+    // within this much walking, it goes to the tables instead. Castle Victoria is about
+    // twelve minutes at the fleet's p90, which is what the default admits.
+    max_travel_ms: 15 * 60_000,
+    // Do not send a hurt character across the world for food.
+    min_health: 0.8,
+    // How many may be on the road to the hall at once. The road is the only thing that
+    // kills this fleet, so a hungry fleet queues rather than stampedes.
+    max_in_flight: 3,
+    // Which table to take from, first that exists. Pork is the best food on the tables
+    // (9 vigor for 20 stomach, 9 weight) and it SPEAKS when taken, which is how the
+    // errand counts what it got. See FEAST_DISPENSERS.
+    grab_from: ['roast pig', 'cauldron of soup'],
+    // Activations per visit, at one item each. The hall refuses when the pack is full and
+    // the errand stops on that sentence, so this is a ceiling rather than a target. Sixty
+    // slices of pork is 540 weight — about a quarter of a pack — and 540 vigor, or
+    // nine climbs from the rest cap to a 140 floor.
+    max_grabs: 60,
+    // A journey that has not been seen in the hall this long after setting off is given
+    // up (its walk cancelled, its memory cleared). Twice the worst walk here.
+    max_trip_ms: 30 * 60_000,
+    // Per-character windows. A completed visit filled the pack and waits the cooldown; a
+    // failed one — a dead walker, a locked hall — waits only the backoff.
+    cooldown_ms: 45 * 60_000,
+    fail_backoff_ms: 10 * 60_000,
+    // Walk back to the assigned room afterwards. See crate.return_after for why leaving a
+    // character where an errand put it is the worse choice.
+    return_home: true,
+    // While the feast is on, the keeper's reagent purchase permission is switched off
+    // through the ordinary purchase-strategy-policy rule, so a character that reaches the
+    // apothecary for some other reason buys nothing there. The keeper's own supply trip
+    // already stands down while it has meals aboard (m59-autopilot.mjs supplyShortfall),
+    // which is what stops it walking to the counter in the first place.
+    suspend_reagent_buying: true,
+  },
+
   castle_victoria: {
     shift: false,
     rooms: { downstairs: 38, upstairs: 39 },
@@ -362,7 +414,9 @@ export const DEFAULTS = {
     // Never sold. Reagents (create-food stock) and the rares that are worth more kept than the
     // few shillings a merchant pays. Matched as case-insensitive substrings by sell_all's keep.
     keep: ['inky', 'dragon scale', 'angel feather', 'wand', 'scroll', 'signet', 'orb of',
-           'potion', 'herb', 'elderberry'],
+           'potion', 'herb', 'elderberry',
+           // The feast hall's dishes: a pack of free food is the larder, not stock.
+           'slice of pork', 'bowl of soup', 'spider eye', 'bunch of grapes', 'drumstick'],
     // A sale below this many shillings is cancelled and the item kept — a floor against handing
     // something valuable to a merchant who lowballs it.
     min_price: 1,

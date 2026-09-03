@@ -8,6 +8,10 @@
 // This file is the boundary. It is deliberately data rather than scattered
 // conditionals, so the answer to "can the bot do X" is one grep.
 
+// The seven table pieces in the Duke's Feast Hall — the only things `activate` may touch.
+// Pure data from src/decide/feast-hall.mjs, read off the kod; nothing from decide/ runs here.
+import { FEAST_DISPENSER_NAMES } from '../decide/feast-hall.mjs';
+
 // ---------------------------------------------------------------- never
 //
 // Each of these is here for a specific recorded reason, not for tidiness.
@@ -86,8 +90,10 @@ export const WRITE = new Set([
   // not enough. This is the narrowest widening that makes a PLACE-TRIGGERED room
   // reachable at all, and it is here for one of them: the crate under Castle Victoria
   // answers to BP_REQ_GO on a square and to nothing else. Every other verb `act` carries
-  // (use, unuse, get, drop, activate, eat) reaches into the character's pack, which is a
-  // different kind of decision and is not one DUM claims.
+  // (use, unuse, get, drop, eat) reaches into the character's pack, which is a
+  // different kind of decision and is not one DUM claims. The one exception, also in
+  // deny(): `activate` on a named food dispenser in the Duke's Feast Hall, which is how
+  // the hall hands out its free food and touches nothing the character already holds.
   'act',
 ]);
 
@@ -122,10 +128,24 @@ export function deny(tool, args = {}) {
     // the exit, so a `go` is only safe where the caller knows which square it is on —
     // which is why the crate errand refuses to send one unless its `walk_to` reported
     // `arrived`, rather than sending it hopefully.
-    if (tool === 'act' && args.verb !== 'go')
+    //
+    // THE ONE OTHER VERB, AND THE ONE OTHER TARGET SET: `activate` on a FOOD DISPENSER in
+    // the Duke's Feast Hall. A dispenser is not in the pack and cannot be — `activate` on
+    // it CREATES one item of food and hands it over (dispensr.kod TryActivate), which is
+    // how the hall gives out its free food. It is still an object interaction, so the
+    // widening is by name rather than by verb: the seven table pieces the hall places
+    // (duke4.kod:123-176), and nothing else. `activate` on a lever, a door, a shop or a
+    // player's item is refused exactly as before.
+    if (tool === 'act' && args.verb === 'activate') {
+      const target = String(args.target ?? '').trim().toLowerCase();
+      if (!FEAST_DISPENSER_NAMES.includes(target))
+        return `refused — act verb:"activate" is allowed only on a Feast Hall food dispenser ` +
+               `(${FEAST_DISPENSER_NAMES.join(', ')}), not "${args.target ?? '?'}". See ` +
+               `src/link/surface.mjs`;
+    } else if (tool === 'act' && args.verb !== 'go')
       return `refused — act verb:"${args.verb ?? '?'}" reaches into the character's pack. ` +
-             `DUM only claims verb:"go", which acts on the square underfoot. See ` +
-             `src/link/surface.mjs`;
+             `DUM only claims verb:"go", which acts on the square underfoot, and ` +
+             `verb:"activate" on a Feast Hall dispenser. See src/link/surface.mjs`;
     if (tool === 'cast' && !['create weapon', 'create food']
           .includes(String(args.spell ?? '').trim().toLowerCase()))
       return `refused — DUM may cast only the self-only provisioning spell "create weapon", ` +

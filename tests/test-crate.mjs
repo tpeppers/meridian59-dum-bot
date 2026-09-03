@@ -462,10 +462,15 @@ test('crate: an errand kind nothing can interpret is refused rather than walked'
 
 test('crate: act is allowed for go and refused for everything that reaches into the pack', () => {
   eq(deny('act', { verb: 'go' }), null, 'go acts on the square underfoot');
-  for (const verb of ['use', 'unuse', 'get', 'drop', 'activate', 'eat']) {
+  for (const verb of ['use', 'unuse', 'get', 'drop', 'eat']) {
     ok(deny('act', { verb }), `${verb} must be refused`);
     ok(/reaches into the character's pack/.test(deny('act', { verb })), `${verb} says why`);
   }
+  // `activate` is refused too unless the target is a Feast Hall table — that widening,
+  // and its argument, are pinned in tests/test-feast.mjs.
+  ok(deny('act', { verb: 'activate' }), 'a bare activate is refused');
+  ok(/Feast Hall food dispenser/.test(deny('act', { verb: 'activate', target: 'lever' })),
+     'activate on anything but a dispenser says why');
   ok(deny('act', {}), 'and a call with no verb at all is refused');
 });
 

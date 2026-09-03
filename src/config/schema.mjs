@@ -21,6 +21,9 @@
 import { ORDER_FIELDS } from '../act/orders.mjs';
 import { weaponPreset, thresholdRank } from '../decide/weapons.mjs';
 import { validateStrategyIds, validateStrategySettingsMap } from '../strategies/catalog.mjs';
+// Pure data: the tables the Duke's Feast Hall actually has, so a doctrine naming one it
+// does not is refused here rather than failing "nothing here matches" in the hall.
+import { dispenserNamed, FEAST_DISPENSER_NAMES } from '../decide/feast-hall.mjs';
 
 const ORDER_FIELD_NAMES = new Set(Object.keys(ORDER_FIELDS));
 
@@ -240,6 +243,36 @@ export function validate(c) {
     say('food.min_items', 'must be a non-negative item count');
   if (!num(c.food?.mana_cost) || c.food.mana_cost < 1)
     say('food.mana_cost', 'must be a positive mana cost');
+
+  // ---- the Duke's Feast Hall
+  if (c.feast?.on) {
+    const f = c.feast;
+    if (!Number.isInteger(f.min_items) || f.min_items < 1)
+      say('feast.min_items', 'must be a positive meal count — a character with fewer aboard tops up');
+    if (!Number.isInteger(f.max_hops) || f.max_hops < 0)
+      say('feast.max_hops', 'must be a non-negative hop count from the hall (Tos is 3)');
+    if (!Array.isArray(f.near_rooms) || f.near_rooms.some(r => !Number.isInteger(r)))
+      say('feast.near_rooms', 'must be a list of room numbers, or empty to go by distance alone');
+    if (!num(f.max_travel_ms) || f.max_travel_ms < 60_000)
+      say('feast.max_travel_ms', 'must be at least 60000 — the longest walk a redirected supply trip may take');
+    if (!num(f.min_health) || f.min_health < 0 || f.min_health > 1)
+      say('feast.min_health', 'must be a fraction between 0 and 1');
+    if (!Number.isInteger(f.max_in_flight) || f.max_in_flight < 1)
+      say('feast.max_in_flight', 'must be a positive count of characters on the road at once');
+    if (!Array.isArray(f.grab_from) || !f.grab_from.length || !f.grab_from.some(n => dispenserNamed(n)))
+      say('feast.grab_from', `must name at least one table the hall actually has: ${FEAST_DISPENSER_NAMES.join(', ')}`);
+    if (!Number.isInteger(f.max_grabs) || f.max_grabs < 1)
+      say('feast.max_grabs', 'must be a positive number of activations per visit');
+    if (!num(f.max_trip_ms) || f.max_trip_ms < 120_000)
+      say('feast.max_trip_ms', 'must be at least 120000 — a journey unseen in the hall this long is given up');
+    if (!num(f.cooldown_ms) || f.cooldown_ms < 60_000)
+      say('feast.cooldown_ms', 'must be at least 60000. It is the per-character window that stops a ' +
+                              'character living at the Duke\'s tables');
+    if (!num(f.fail_backoff_ms) || f.fail_backoff_ms < 60_000)
+      say('feast.fail_backoff_ms', 'must be at least 60000');
+    if (typeof f.suspend_reagent_buying !== 'boolean')
+      say('feast.suspend_reagent_buying', 'must be true or false');
+  }
 
   if (c.castle_victoria?.shift) {
     const cv = c.castle_victoria;

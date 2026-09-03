@@ -1,0 +1,89 @@
+{
+  // THE DUKE'S FEAST HALL — free food for the length of an event, instead of bought
+  // reagents. A worked overlay on the parity doctrine.
+  //
+  // For Meridian 59's thirtieth anniversary the Duke opened his feast hall (room 953,
+  // three hops from the Tos square through his castle) and its tables hand out unlimited
+  // food to anyone who activates one. This fleet keeps vigor above the resting cap by
+  // EATING, and until now every meal was cast from 2 elderberry + 2 herbs bought at the Tos
+  // apothecary on a supply trip that is the same walk as this one and costs 5,600 shillings
+  // a fill. So, while the doors are open: nobody buys reagents, and anybody near Tos with a
+  // thin larder — or anybody anywhere with an EMPTY one and nothing to cast with — fills the
+  // pack from the tables instead. The mechanism, the two doors and the three-errand journey
+  // are in src/decide/rules/feast.mjs; the room and the tables, cited to the kod, are in
+  // src/decide/feast-hall.mjs.
+  //
+  // THE HALL IS LOCKED OUTSIDE THE EVENT. A visitor to a locked hall is hustled straight
+  // back out to the great hall, so a journey never arrives; the rule gives it up after
+  // max_trip_ms and says so. When the Duke closes the doors, set "on": false. Nothing here
+  // can tell that the event has ended except a journey that keeps not arriving.
+  //
+  // It extends keeper-parity, so everything ELSE is the fleet's own behaviour, verbatim, and
+  // if vigor or reagent spend move under this doctrine it is the feast that moved them.
+  //
+  // NO FLEET NAME HERE, deliberately — tools/dum-guard.mjs refuses one. To run it against a
+  // live fleet, extend it in doctrines/local/ with a "fleet:" line, or pass --set fleet=<name>.
+  // A fleet already running another doctrine adds the "feast" block below to that doctrine.
+
+  "extends": "keeper-parity.jsonc",
+
+  "name": "duke's feast",
+  "why": "while the Duke's Feast Hall is open, fill larders from its tables instead of buying create-food reagents; measure vigor held and shillings not spent",
+
+  "feast": {
+    "on": true,
+
+    // Fewer meals than this aboard, and a character NEAR TOS tops up. The hall's best
+    // dish is 9 vigor for 20 stomach; six of them is one climb from the rest cap to a
+    // 140 floor.
+    "min_items": 6,
+
+    // Near Tos, by route distance from the hall: the Tos square is 3 hops, its shops 4.
+    // Name rooms in near_rooms to add places distance would miss.
+    "max_hops": 4,
+    "near_rooms": [],
+
+    // THE SUPPLY TRIP, REDIRECTED. A character with no food and no casting's worth of
+    // reagents is about to be walked to the apothecary by its keeper. If the hall is within
+    // this much walking (this fleet's own p90 from Castle Victoria is about twelve minutes),
+    // it is sent to the tables instead.
+    "max_travel_ms": 900000,
+
+    "min_health": 0.8,
+
+    // How many may be on the road to the hall at once. The road kills; the hall does not.
+    "max_in_flight": 3,
+
+    // Which table, first that exists. Pork is the best food on the tables and it speaks
+    // when taken, which is how the errand counts what it got.
+    "grab_from": ["roast pig", "cauldron of soup"],
+
+    // Activations per visit — a ceiling: the hall refuses when the pack is full and the
+    // errand stops on that sentence. Sixty slices is 540 weight and 540 vigor.
+    "max_grabs": 60,
+
+    // A journey unseen in the hall this long after setting off is given up.
+    "max_trip_ms": 1800000,
+
+    // Per-character windows: a filled pack waits the cooldown; a failed trip only the backoff.
+    "cooldown_ms": 2700000,
+    "fail_backoff_ms": 600000,
+
+    "return_home": true,
+
+    // Hold the keeper's buy_reagents permission off while the feast is on, through the
+    // ordinary purchase-strategy-policy rule. The keeper's own supply trip already stands
+    // down while it has meals aboard; this is for the character that reaches the
+    // apothecary for some other reason.
+    "suspend_reagent_buying": true
+  },
+
+  // WITH FOOD FLOWING, THE VIGOR FLOOR CAN GO WHERE IT BELONGS. A larder is only eaten
+  // from below the fighting floor, so a fleet throttled to the resting cap (0.4 = 80/200)
+  // would carry its free pork around and never touch it. 0.7 is 140: three times the
+  // health regeneration of the rest cap, and every point of it now comes from the tables.
+  // The harness drops the floor back to what resting gives whenever a larder is empty
+  // (m59-autopilot.mjs reachableFightFloor), so a character that has not been fed yet is
+  // not idle-locked by this.
+  "throttle": 0.7
+}

@@ -172,8 +172,26 @@ const LOOPBACK = /^(127\.\d+\.\d+\.\d+|::1|0\.0\.0\.0|localhost)$/i;
   const dir = SOURCES[2].dir;
   if (fs.existsSync(dir)) {
     let n = 0;
+    // A JOURNAL CAN BE LARGER THAN A STRING. A day with full observations on ran to
+    // 1.4 GB, and `readFileSync(..., 'utf8')` on it throws ERR_STRING_TOO_LONG — so the
+    // guard crashed before checking anything, which is the one outcome it exists to
+    // prevent. Every row of a journal names the same fleet, so the first 64 MB of a big
+    // one carries every name the rest does; read that much and say so.
+    const SAMPLE_BYTES = 64 * 1024 * 1024;
+    const readJournal = p => {
+      const size = fs.statSync(p).size;
+      if (size <= SAMPLE_BYTES) return fs.readFileSync(p, 'utf8');
+      const fd = fs.openSync(p, 'r');
+      try {
+        const buf = Buffer.alloc(SAMPLE_BYTES);
+        const got = fs.readSync(fd, buf, 0, SAMPLE_BYTES, 0);
+        sampled.push(`${path.basename(p)} (${Math.round(size / 1048576)} MB, first ${Math.round(got / 1048576)} MB read)`);
+        return buf.toString('utf8', 0, got);
+      } finally { fs.closeSync(fd); }
+    };
+    const sampled = [];
     for (const f of fs.readdirSync(dir).filter(f => f.endsWith('.ndjson'))) {
-      for (const line of fs.readFileSync(path.join(dir, f), 'utf8').split(/\r?\n/)) {
+      for (const line of readJournal(path.join(dir, f)).split(/\r?\n/)) {
         if (!line.trim()) continue;
         let j; try { j = JSON.parse(line); } catch { continue; }
         const rows = j.observation?.characters ?? [j.observation ?? {}];
@@ -183,7 +201,7 @@ const LOOPBACK = /^(127\.\d+\.\d+\.\d+|::1|0\.0\.0\.0|localhost)$/i;
         }
       }
     }
-    if (n) readFrom.push(`${rel(dir)} (${n} row(s))`);
+    if (n) readFrom.push(`${rel(dir)} (${n} row(s)${sampled.length ? `; sampled: ${sampled.join(', ')}` : ''})`);
   }
 }
 

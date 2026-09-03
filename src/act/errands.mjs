@@ -54,6 +54,7 @@
 
 import { recordCrateCheck } from '../decide/rules/crate.mjs';
 import { recordSellrun } from '../decide/rules/sellrun.mjs';
+import { recordFeastOutbound, recordFeastGrab, recordFeastAbandon } from '../decide/rules/feast.mjs';
 
 const sleep = ms => new Promise(res => setTimeout(res, ms));
 
@@ -101,6 +102,16 @@ export const ERRANDS = {
   // Leaves one fact behind: when this character last ran the Barloque sell circuit, so the
   // rule's per-character cooldown can gate the next one.
   'sellrun-circuit': { record: recordSellrun, topic: 'sellrun' },
+  // THE FEAST HALL JOURNEY, IN THREE SHORT ERRANDS JOINED BY MEMORY. The hall is eleven
+  // hops from where the fleet farms, and one blocking errand per character would stand
+  // the whole bot down for the walk (see "IT BLOCKS THE PASS" above). So `outbound` only
+  // LAUNCHES the walk and records that it is on the road and where home is; `grab` fires
+  // when a later tick sees the character standing in the hall, takes food until the pack
+  // is full and launches the walk home; `abandon` clears a journey that never arrived.
+  // All three share the `feast` topic, keyed by agent. See src/decide/rules/feast.mjs.
+  'feast-outbound': { record: recordFeastOutbound, topic: 'feast' },
+  'feast-grab': { record: recordFeastGrab, topic: 'feast' },
+  'feast-abandon': { record: recordFeastAbandon, topic: 'feast' },
   // These leave progress in FactionGoalStore rather than the general Memory topics.
   'faction-request': { record: null, topic: null },
   'faction-offer': { record: null, topic: null },
@@ -173,6 +184,8 @@ export async function runErrand(broker, intent, { commit = false, holder = null,
   const results = [];
   const transcript = [];
   let stopped = null;
+  // The sentence that ended a repeated step early, if one did. See `stop_when` below.
+  let satisfied = null;
 
   // SAY SO BEFORE WALKING, AND SAY SO EVEN IF THE WALK FAILS.
   //
@@ -221,7 +234,19 @@ export async function runErrand(broker, intent, { commit = false, holder = null,
     //
     // It costs one call per step, which is nothing against a leg that is a character
     // walking a hundred squares.
-    if (i > 0 && !stopped) {
+    // A REPEATED STEP WHOSE WORK IS DONE IS SKIPPED, NOT SENT. `stop_when` on a step
+    // names the sentence that means "there is nothing more to get here" — the feast
+    // hall's "You can't hold anything more!" — and every later step marked
+    // `skip_when_satisfied` steps aside. Not a failure: the pack is full, which is what
+    // the errand was for, and the `always` leg home still runs.
+    if (satisfied && step.skip_when_satisfied) {
+      results.push({ tool: step.tool, skipped: true, why: `after ${satisfied}` });
+      continue;
+    }
+    // `extend_busy: false` on a step skips the re-declaration for it — sixty three-second
+    // activations do not each need a lease extension, and the first of them already asked
+    // for the whole run.
+    if (i > 0 && !stopped && step.extend_busy !== false) {
       const left = estimateFor(steps.slice(i));
       if (left > 15_000) {
         const extended = await claimBusy(left, `${intent.why} (${steps.length - i} step(s) left)`);
@@ -254,6 +279,10 @@ export async function runErrand(broker, intent, { commit = false, holder = null,
     if (!commit) continue;
 
     if (step.collect === 'messages' && Array.isArray(r?.messages)) transcript.push(...r.messages);
+    if (step.stop_when instanceof RegExp && Array.isArray(r?.messages)) {
+      const said = r.messages.find(m => step.stop_when.test(String(m)));
+      if (said) satisfied = `the room said "${said}"`;
+    }
     if (r?.error) { stopped = `${step.tool} failed: ${r.error}`; continue; }
     if (step.expect === 'arrived') {
       if (r?.started === true) {
@@ -314,7 +343,11 @@ export function readErrand(applied, { at, memory = {} }) {
   const was = memory?.[spec.topic] ?? {};
   // `stopped` is the failure reason or null on success — a record fn that wants to cool down
   // a completed run differently from an aborted one (sellrun) reads it; others ignore it.
+  // `results` and `context` ride along for a record fn that counts what ran rather than
+  // what was said (the feast hall's silent dispensers) or needs what the rule knew when
+  // it composed the errand (where home is). Older record fns ignore them.
   const { patch, read } = spec.record({ agent: applied.agent, at,
-    transcript: applied.transcript, was, stopped: applied.stopped ?? null });
+    transcript: applied.transcript, was, stopped: applied.stopped ?? null,
+    results: applied.results ?? [], context: applied.context ?? null });
   return { topic: spec.topic, patch, read };
 }

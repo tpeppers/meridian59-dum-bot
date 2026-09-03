@@ -11,6 +11,7 @@ is gitignored.
 | [`valley-grind.jsonc`](valley-grind.jsonc) | a worked advancement ladder for a character strong enough to be out of the starter rooms |
 | [`lowland-starter.jsonc`](lowland-starter.jsonc) | extends `survive` for a fragile character: report-only, plus the one economy threshold that matters when everything you own fits in a pocket |
 | [`castle-crate.jsonc`](castle-crate.jsonc) | the first **errand** doctrine. Changes nobody's orders; occasionally walks one character one room down and back, to a crate whose timer, lockout and history are all invisible. The narrowest claim in this directory |
+| [`dukes-feast.jsonc`](dukes-feast.jsonc) | an **event** doctrine: while the Duke's Feast Hall is open, fill larders from its free tables instead of buying create-food reagents. The first **journey** — three short errands joined by memory, because the hall is eleven hops from where the fleet farms. Switch it off when the Duke locks the doors |
 
 ## The shape
 

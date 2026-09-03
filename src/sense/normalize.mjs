@@ -128,6 +128,15 @@ export function normalizeFleetRow(r = {}) {
     // Usually absent on the free board; a bounded faction enrichment adds it only for
     // units with an active item quest.
     items: Array.isArray(r.items) ? r.items : null,
+    // THREE LARDER FACTS THE BOARD CARRIES FOR FREE, so a rule about food does not have
+    // to pay for `inventory` on every character every tick. `pack_items` is the same
+    // name+amount list the paid read returns, from the keeper's cached inventory;
+    // `reagents` is the create-food pair counted; `has_food` is the keeper's own answer.
+    // Absent on an older broker, and null means "not answered", never "empty".
+    pack_items: Array.isArray(r.pack_items) ? r.pack_items : null,
+    reagents: (r.reagents && typeof r.reagents === 'object')
+      ? { elderberry: num(r.reagents.elderberry), herbs: num(r.reagents.herbs) } : null,
+    has_food: bool(r.has_food),
     // WHY THIS CHARACTER IS NOT WORKING, AS DATA RATHER THAN AS PROSE.
     //
     // The reason `escalate.mjs` refuses to act on `doing`: matching sentences the harness

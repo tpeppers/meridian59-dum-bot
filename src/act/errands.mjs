@@ -99,6 +99,11 @@ async function waitForArrival(broker, agent, dest, timeoutMs) {
  */
 export const ERRANDS = {
   'crate-check': { record: recordCrateCheck, topic: 'crate' },
+  // Walking back to the assigned room after a death or a shop trip. Nothing to record:
+  // the fact it would leave — "this character is at its station" — is already on the
+  // fleet board as its room, and re-deriving it here would be a second, staler copy.
+  // It is registered so the errand runner does not discard the transcript with a warning.
+  'return-to-station': { record: null, topic: null },
   // Leaves one fact behind: when this character last ran the Barloque sell circuit, so the
   // rule's per-character cooldown can gate the next one.
   'sellrun-circuit': { record: recordSellrun, topic: 'sellrun' },

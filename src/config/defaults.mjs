@@ -179,10 +179,20 @@ export const DEFAULTS = {
   },
 
   // ---------------------------------------------------------------- weapons
-  // THE THROTTLE — the fraction of max vigor (200) the fleet maintains before it will fight.
-  // null leaves fight_above_vigor to the ladder/keeper; a number in [0,1] makes the
-  // throttle-vigor rule set fight_above_vigor = round(throttle * 200). 1.0 is full throttle
-  // (park and eat Create Food up toward ~200 before each fight); ~0.4 fights off the rest cap.
+  // THE THROTTLE — the vigor the fleet maintains before it will fight.
+  //
+  // null leaves fight_above_vigor to the ladder/keeper. Three spellings otherwise, and the
+  // third is the one to reach for:
+  //
+  //   throttle: 0.4                              a fraction of the 200 maximum
+  //   throttle: 80                               the same thing said out loud (>1 is absolute)
+  //   throttle: { with_food: 180, no_food: 80 }  the floor FOLLOWS THE LARDER
+  //
+  // A single number is a bet on the larder and it loses in both directions: a high one
+  // idle-locks every character that cannot eat its way up to it, a low one throws away the
+  // regeneration a fed character has already paid for. The split says what to do in each
+  // case. `min_meals` is how many meals aboard count as fed, and the reagents for a casting
+  // count too. rules/throttle.mjs carries the measurement behind it.
   throttle: null,
 
   // The named order is always usable; provisioning is opt-in because casting and
@@ -272,10 +282,29 @@ export const DEFAULTS = {
     suspend_reagent_buying: true,
   },
 
+  // Walk anyone who is out of position back to their assigned room. Off by default:
+  // "lose the goal on death" is the right answer for some fleets and the wrong one for a
+  // fleet grinding a single room, so the doctrine has to say which it is.
+  station: {
+    recall: false,
+    rooms: [],      // stations this doctrine claims; empty means every assigned room
+    per_pass: 4,    // cap, so a fleet-wide displacement queues instead of stampeding
+    // Health fraction required before a recall will walk anybody. 1 = full, matching the
+    // harness's own travel_start_health: a character that just died is recovering, not
+    // stranded, and the inn it is standing in heals for free.
+    min_health: 1,
+  },
+
   castle_victoria: {
     shift: false,
     rooms: { downstairs: 38, upstairs: 39 },
     upstairs_share: 0.67,
+    // One quarry for the whole upstairs cohort, retiring the battered-skeleton/zombie
+    // rotation. null keeps the mix. Room 39 generates 'battered skeleton' and 'zombie'.
+    upstairs_quarry: null,
+    // Characters pinned to the zombie upstairs whatever the rotation says — the safety
+    // valve for the weakest of the roster. Empty means the rotation decides for everyone.
+    zombie_only: [],
     retreat_to: 52,
     rest_below: 0.75,
     flee_below: 0.35,

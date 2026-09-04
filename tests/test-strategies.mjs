@@ -455,7 +455,7 @@ test('food provision: an unreadable staged cook PASSES, never reports — a repo
   // stops the table. A single unreadable staged cook must not strand the rest of the team outside the GY.
   const doctrine = { food: { min_items: 1, mana_cost: 10, elderberry_per_cast: 2, herbs_per_cast: 2,
     provision: { enabled: true, room: 52, min_items: 8 } } };
-  const blind = { agent: 't17', in_game: true, room: 52, provides: ['create food'], items: null };
+  const blind = { agent: 'unit-17', in_game: true, room: 52, provides: ['create food'], items: null };
   const result = foodFleetRules[0].decide({ characters: [blind], strategies: { agents: {} } }, doctrine);
   assert.equal(result.kind, 'pass', 'provisioning defers rather than reporting, so the shift below still runs');
   assert.match(result.why, /cannot starve the shift/);
@@ -521,31 +521,95 @@ test('strategies: Spread Out owns the wall cap; the shift owns which room', () =
     'an upstairs zombie assignment admits the battered skeleton sharing that generator');
 });
 
-test('strategies: the shipped Castle shift hunts the full skeleton, not the battered one', () => {
-  // A KILL PAYS ONLY WHILE THE CREATURE'S LEVEL IS STRICTLY ABOVE MAX HEALTH, and max
-  // health is the level here. The battered skeleton is 60 and most of this fleet is 60, so
-  // upstairs pays them nothing while reporting kills the whole time — the exact shape
-  // `yieldCheck` exists to catch. The full skeleton downstairs is 75.
-  //
-  // Pinned because it is a deliberate choice that looks like a typo: one character in a
-  // JSON file moves twenty-one characters into a harder room.
-  const doctrine = loadDoctrine({ file: 'doctrines/castle-victoria.jsonc' }).config;
-  assert.equal(doctrine.castle_victoria.upstairs_share, 0);
+test('strategies: upstairs_quarry retires the zombie rotation', () => {
+  // THE ROTATION IS BY INDEX, so "battered skeletons only" was unreachable from a
+  // doctrine however the fleet was shaped — every third character got a zombie. The knob
+  // must answer for the WHOLE cohort and must not disturb the threat ceiling, which is
+  // sized to the strongest spawn sharing the generator rather than to the quarry.
+  const doctrine = structuredClone(loadDoctrine({ file: 'doctrines/castle-victoria.jsonc' }).config);
+  doctrine.castle_victoria.upstairs_share = 1;
   const rows = Array.from({ length: 21 }, (_, i) => ({ agent: `a${i + 1}`, in_game: true,
-    level: 60, policy: {}, mode: 'farm' }));
+    level: 43 + (i % 9), policy: {}, mode: 'farm' }));
+
+  assert.deepEqual(new Set(castleAssignments(rows, doctrine).map(a => a.hunt)),
+    new Set(['zombie', 'battered skeleton']), 'absent, the mix is what was already here');
+
+  const only = structuredClone(doctrine);
+  only.castle_victoria.upstairs_quarry = 'battered skeleton';
+  const assigned = castleAssignments(rows, only);
+  assert.ok(assigned.every(a => a.hunt === 'battered skeleton'));
+  assert.ok(assigned.every(a => a.row.level + a.max_threat_over === 60),
+    'the ceiling still admits the strongest spawn upstairs, not merely the quarry');
+
+  // Downstairs is a different generator and the knob must not reach it.
+  const down = structuredClone(only);
+  down.castle_victoria.upstairs_share = 0;
+  assert.ok(castleAssignments(rows, down).every(a => a.hunt === 'skeleton'));
+});
+
+test('strategies: zombie_only pins the named characters and leaves the rotation alone', () => {
+  // The safety valve for the bottom of the roster, and it must not become a fleet-wide
+  // quarry change by accident: everyone unnamed keeps whatever the rotation gave them.
+  const doctrine = structuredClone(loadDoctrine({ file: 'doctrines/castle-victoria.jsonc' }).config);
+  doctrine.castle_victoria.upstairs_share = 1;
+  doctrine.castle_victoria.zombie_only = ['a3', 'Named Character'];
+  const rows = Array.from({ length: 9 }, (_, i) => ({ agent: `a${i + 1}`, in_game: true,
+    level: 43 + i, policy: {}, mode: 'farm' }));
+  rows[5].character = 'Named Character';
+
+  const assigned = castleAssignments(rows, doctrine);
+  const huntOf = agent => assigned.find(a => a.row.agent === agent).hunt;
+  assert.equal(huntOf('a3'), 'zombie', 'pinned by agent handle');
+  assert.equal(huntOf('a6'), 'zombie', 'pinned by character name');
+  // The pin is a per-character override, not a cohort-wide quarry: the rotation still
+  // produces both quarries for everyone it was not asked about.
+  const others = assigned.filter(a => !['a3', 'a6'].includes(a.row.agent));
+  assert.ok(others.some(a => a.hunt === 'battered skeleton'));
+  // A pinned character still gets the ceiling of the strongest spawn sharing its room,
+  // or it would reject the very room it is assigned to.
+  assert.ok(assigned.every(a => a.row.level + a.max_threat_over === 60));
+  // An empty list changes nothing.
+  const none = structuredClone(doctrine);
+  none.castle_victoria.zombie_only = [];
+  assert.deepEqual(castleAssignments(rows, none).map(a => a.hunt),
+    castleAssignments(rows, { ...doctrine, castle_victoria:
+      { ...doctrine.castle_victoria, zombie_only: [] } }).map(a => a.hunt));
+});
+
+test('strategies: the shipped Castle shift retires a room rather than splitting the fleet', () => {
+  // CORRECTED. This used to pin `upstairs_share: 0` — everybody DOWNSTAIRS on the level-75
+  // skeleton, on the argument that the battered skeleton is 60 and a kill pays only while
+  // the creature's level is strictly ABOVE max health, so a fleet at 60 was being paid
+  // nothing upstairs while reporting kills the whole time.
+  //
+  // The shipped doctrine now says 1 and comments `downstairs` out altogether, and the test
+  // follows it rather than the other way round: a share of exactly 1 names ONE room for
+  // every character, which is what makes the choice expressible at all — castleAssignments
+  // turns it into a single named room without Spread Out having to be involved. What the
+  // right room IS depends on the fleet's max healths on the day and belongs in a local
+  // doctrine, not in the shipped example.
+  //
+  // Still pinned, because it is a deliberate choice that looks like a typo: one character
+  // in a JSON file moves twenty-one characters into a different room.
+  const doctrine = loadDoctrine({ file: 'doctrines/castle-victoria.jsonc' }).config;
+  assert.equal(doctrine.castle_victoria.upstairs_share, 1);
+  // AND COMMENTING `downstairs` OUT DOES NOT REMOVE IT. Objects MERGE across the layers,
+  // so the built-in default supplies 38 whatever the doctrine file says — which is fine,
+  // and worth knowing, because the room is retired by the SHARE and by nothing else.
+  assert.equal(doctrine.castle_victoria.rooms.downstairs, 38,
+    'the default still supplies it; the share is what retires it');
+  const rows = Array.from({ length: 21 }, (_, i) => ({ agent: `a${i + 1}`, in_game: true,
+    level: 40, policy: {}, mode: 'farm' }));
   const obs = { characters: rows, strategies: { agents: Object.fromEntries(rows.map(row =>
     [row.agent, [STRATEGY_IDS.SPREAD_OUT]])) } };
   const assigned = castleAssignments(rows, doctrine, obs);
-  assert.deepEqual(new Set(assigned.map(a => a.hunt)), new Set(['skeleton']),
-    'no zombie and no battered skeleton: neither can advance a level-60 character');
-  assert.equal(assigned.filter(a => a.to === 39).length, 0);
+  assert.equal(assigned.filter(a => a.to === 38).length, 0, 'nobody is sent to a retired room');
 
   // The ceiling is sized to the strongest normal spawn in the ASSIGNED room, not to the
-  // quarry — a skeleton hunter downstairs shares that generator with nothing worse, but
-  // sizing it to the quarry is how a unit ends up rejecting its own room.
+  // quarry — sizing it to the quarry is how a unit ends up rejecting its own room.
   const placed = assigned.filter(a => a.to != null);
   assert.ok(placed.length > 0);
-  assert.ok(placed.every(a => a.row.level + a.max_threat_over === 75));
+  assert.ok(placed.every(a => a.row.level + a.max_threat_over === 60));
 });
 
 test('strategies: Castle policy diff includes live maintenance fields', () => {

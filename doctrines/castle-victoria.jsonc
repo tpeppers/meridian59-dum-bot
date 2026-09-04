@@ -59,6 +59,7 @@
           "blue dragon scale",
           "arrows",
           "nerudite arrows",
+          "magic wand",
           // Operator request, 2026-09-03. Applied live through the strategy-control
           // endpoint (the per-unit store is re-read every tick); listed here so a fresh
           // unit, or a restart on this file, protects it too.
@@ -67,7 +68,7 @@
           // from the harness item table (a case-sensitive resource join, fixed in
           // m59-harness 506c458), and the broker resolves vault names when the order
           // lands, so naming it before the deployed table carries it would have the
-          // keeper refuse the whole list every tick. Add it once prod runs that table.
+          // keeper refuse the whole list every tick. Add it once the fleet runs that table.
           "herald shield",
           "true lute"
         ]
@@ -77,7 +78,8 @@
 
   "castle_victoria": {
     "shift": true,
-    "rooms": { "downstairs": 38, "upstairs": 39 },
+    "rooms": { "upstairs": 39 },
+    // "downstairs": 38,
     // DOWNSTAIRS (38), FOR THE FULL LEVEL-75 SKELETON. This was 1 — everybody upstairs —
     // on the grounds that "downstairs has no keeper-detectable safe wall; upstairs has
     // proven walls and level-60 prey that still advances the whole fleet". Both halves of
@@ -103,7 +105,7 @@
     // a level-75 skeleton needs max health >= 50. The whole fleet clears it (lowest 53).
     // A YOUNGER FLEET MUST SET THIS BACK TO 1 — under 50 max health every character would
     // refuse the only prey its assigned room generates and stand in it doing nothing.
-    "upstairs_share": 0,
+    "upstairs_share": 1,
     "retreat_to": 52,
     "rest_below": 0.75,
     "flee_below": 0.35,

@@ -33,14 +33,33 @@
   "feast": {
     "on": true,
 
-    // Fewer meals than this aboard, and a character NEAR TOS tops up. The hall's best
-    // dish is 9 vigor for 20 stomach; six of them is one climb from the rest cap to a
-    // 140 floor.
-    "min_items": 6,
+    // Fewer meals than this aboard, and a character NEAR TOS tops up. The hall's best dish
+    // is 9 vigor for 20 stomach, so six of them is one climb from the rest cap to a 140
+    // floor — which is what a TOP-UP number wants to be.
+    //
+    // 1 IS THE CONSERVATIVE SETTING AND IT COLLAPSES THE TWO DOORS INTO ONE. At 1 only a
+    // character with literally no food qualifies, which is the same test the redirected
+    // supply trip already applies — so the passing door stops meaning "thin larder" and
+    // starts meaning "empty" as well. That is the right default for a shared example,
+    // because the trip is a walk and an example should not send a stranger's fleet across
+    // the map on our arithmetic. A fleet that actually wants the top-up behaviour described
+    // at the head of this file raises it to 6; doctrines/local/prod-cv-upstairs-feast.jsonc
+    // does exactly that.
+    "min_items": 1,
 
-    // Near Tos, by route distance from the hall: the Tos square is 3 hops, its shops 4.
-    // Name rooms in near_rooms to add places distance would miss.
-    "max_hops": 4,
+    // Near Tos, by route distance from the hall. Measured off a live broker's own
+    // `travel_estimate` (p90), 2026-09-03, to room 953 — the town runs 3 to 5 hops, not
+    // the 3-and-4 this line used to claim:
+    //
+    //     50  The Streets of Tos ..... 3     54  First Royal Bank of Tos ... 5
+    //     53  Frisconar's Mysticals .. 4     72  Adventurer's Hall of Tos .. 5
+    //     76  Fountain Tavern ........ 4    596  Outskirts of Tos .......... 5
+    //
+    // The BANK is the one that moved this from 4 to 6: banking is one of the two errands
+    // that takes a fleet to Tos at all, and at 4 a character standing in it was out of
+    // reach of a hall three rooms away. Name rooms in near_rooms to add places distance
+    // would miss.
+    "max_hops": 6,
     "near_rooms": [],
 
     // THE SUPPLY TRIP, REDIRECTED. A character with no food and no casting's worth of
@@ -52,15 +71,25 @@
     "min_health": 0.8,
 
     // How many may be on the road to the hall at once. The road kills; the hall does not.
-    "max_in_flight": 3,
+    "max_in_flight": 5,
 
     // Which table, first that exists. Pork is the best food on the tables and it speaks
     // when taken, which is how the errand counts what it got.
     "grab_from": ["roast pig", "cauldron of soup"],
 
-    // Activations per visit — a ceiling: the hall refuses when the pack is full and the
-    // errand stops on that sentence. Sixty slices is 540 weight and 540 vigor.
-    "max_grabs": 60,
+    // Activations per visit — a CEILING, and in the ordinary case it is not what stops the
+    // taking. The hall says "You can't hold anything more!" when the pack is full and the
+    // errand stops on that sentence (FEAST_PACK_FULL, `stop_when`), so the pack is the real
+    // limit and this only has to be larger than it. A slice of pork is 9 weight and 9
+    // vigor, so 250 is 2,250 of each — far past any pack here, which is the point: set it
+    // high and let the refusal do the arithmetic.
+    //
+    // It is not free to set it absurdly high. Each activation is a broker round trip with a
+    // 3s wait, and the grab errand BLOCKS DUM's pass while it runs, so this number is also
+    // the worst case for how long the fleet's other rules go unserved if a pack somehow
+    // never fills — 250 would be twelve minutes. Keep it comfortably above the pack and
+    // well under the length of a pass you would notice.
+    "max_grabs": 250,
 
     // A journey unseen in the hall this long after setting off is given up.
     "max_trip_ms": 1800000,

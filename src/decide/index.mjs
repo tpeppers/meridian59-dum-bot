@@ -35,6 +35,7 @@ import { mootFleetRules } from './rules/moot.mjs';
 import { weaponFleetRules } from './rules/weapons.mjs';
 import { foodFleetRules } from './rules/food.mjs';
 import { castleVictoriaFleetRules } from './rules/castle-victoria.mjs';
+import { stationRules } from './rules/station.mjs';
 import { factionCharacterRules, factionActiveFleetRules, factionRequestFleetRules,
   loyaltyFleetRules } from './rules/factions.mjs';
 import { factionGameFleetRules } from './rules/faction-games.mjs';
@@ -70,6 +71,13 @@ export const characterRules = new RuleSet('character', [
   // orders it produced.
   ...ladderRules.filter(r => !isFleet(r)),
   ...placementRules.filter(r => !isFleet(r)),
+  // AFTER THE LADDER, because the ladder is what sets the assigned room this reads.
+  // A character rule rather than a fleet one: only ONE fleet intent runs per pass, so
+  // fleet-scoped this either starved the Castle patrol or was starved by it depending
+  // which way round they sat. Per character there is nothing to compete with, and the
+  // recall staggers itself because characters are ticked individually.
+  ...stationRules.filter(r => !isFleet(r)),
+
 ]);
 
 /**

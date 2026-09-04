@@ -281,7 +281,14 @@ export const graveyardFleetRules = [
         const orders = { ...ordersFor(r, doctrine), use_safe_spots: true };
         return { ...r, orders, differs: deploymentDiffers(r, r.to, orders) };
       });
-      const plan = assigned.filter(r => r.differs).map(r => ({
+      // DEPLOY on a POLICY mismatch OR a LOCATION mismatch. deploymentDiffers only compares the
+      // policy, so a character that HOLDS the shift orders but is stranded at the wrong room —
+      // exactly what a broker recovery leaves behind, the fleet rejoined at Castle Victoria with
+      // assignedRoom already 70 — was never re-sent and sat idle while the window burned. So also
+      // re-deploy anyone assignRooms says must move (r.moved: not standing in the GY or crypt) who
+      // is NOT already travelling there. Travellers are left alone so this does not re-issue their
+      // trip every tick.
+      const plan = assigned.filter(r => r.differs || (r.moved && !/travel/i.test(r.doing ?? ''))).map(r => ({
         agent: r.agent, do: 'deploy', to: r.to, moved: r.moved,
         ...r.orders,
         // Every kill of the clean shift came from behind a wall and nobody died; the shift

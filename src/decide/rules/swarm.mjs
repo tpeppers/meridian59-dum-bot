@@ -138,10 +138,39 @@ export function leaderBySight(leader, roomViews = []) {
 // WHO FOLLOWS. Everybody in the world except the leader — but a follower that is dead, in
 // the Underworld, or being held by somebody else's errand is not available, and saying so
 // is better than issuing an order that silently does nothing.
-export function followersOf(rows = [], leader) {
+// YOU RECRUIT A SWARM BY WALKING INTO ITS ROOM.
+//
+// The swarm used to be "every character in game", which is a fleet-wide switch wearing a
+// tactical name: turning it on stops twenty-one characters doing their own work and makes
+// every one of them chase the operator — including the ones deliberately parked somewhere
+// safe on the other side of the world. That is rarely what "lead them" means, and it is
+// the same fleet-scoping mistake the Castle shift had.
+//
+// So enrolment is BY CO-LOCATION and it is STICKY: a character standing in the leader's
+// room joins, and stays joined. That makes the roster something the operator assembles by
+// walking — go to a room, collect who is in it, walk on — rather than something they have
+// to name in a file before setting off.
+//
+// Sticky is the part that is easy to get wrong. Membership recomputed each pass from "is
+// it in my room right now" would drop every follower the instant the leader stepped
+// through a door, which is precisely the moment a swarm most needs to know who it is.
+export function enrolCoLocated(enrolled = new Set(), leader = null, rows = []) {
+  const out = new Set(enrolled);
+  if (leader?.room == null) return out;
+  for (const r of rows) {
+    if (!r || r.agent === leader.agent) continue;
+    if (r.in_game && Number(r.room) === Number(leader.room)) out.add(r.agent);
+  }
+  return out;
+}
+
+export function followersOf(rows = [], leader, enrolled = null) {
   const out = { follow: [], holdback: [] };
   for (const r of rows) {
     if (!leader || r.agent === leader.agent) continue;
+    // `null` enrolment keeps the old whole-fleet behaviour, so a doctrine that has not
+    // asked for co-location is not silently narrowed to nobody.
+    if (enrolled && !enrolled.has(r.agent)) continue;
     if (!r.in_game) { out.holdback.push({ ...r, whyNot: 'not in game' }); continue; }
     if (r.room === UNDERWORLD) { out.holdback.push({ ...r, whyNot: 'in the Underworld' }); continue; }
     if (r.committed) { out.holdback.push({ ...r, whyNot: `committed: ${r.committed.label ?? r.committed.kind}` }); continue; }
@@ -168,12 +197,62 @@ export const FOLLOW_WITHIN = 2;
 // A door is an exit that `travel` already knows how to take (`act verb=go` for doors and
 // stairs, which walking off an outdoor edge does not need). Following the leader's ROOM
 // covers doors, stairs, portals and edges with one rule instead of four.
-export function followPlan(leader, followers, { within = FOLLOW_WITHIN } = {}) {
+// THE LEADER'S TRAIL — THE ROOMS THEY ACTUALLY WALKED, IN ORDER.
+//
+// `travel(to: leader.room)` looks like following and is not: it hands the destination to
+// the ROUTER, which picks its own way there. On this fleet that is the whole difference
+// between arriving and dying — the router's road is the one that put 14 of 21 characters
+// in the Underworld in a single window, and the reason an operator is field-walking a
+// swarm at all is to take a road they have chosen instead.
+//
+// So the swarm follows the PATH, not the position. Every room the leader is seen in is
+// appended, and a follower moves to the room that came NEXT after its own — one hop, to an
+// ADJACENT room, which the router cannot reinterpret because there is only one way to go.
+// Do that repeatedly and the swarm reproduces the leader's route exactly, doors and all.
+export const TRAIL_MAX = 64;
+
+export function recordLeaderStep(trail = [], room = null) {
+  if (room == null) return trail;
+  const n = Number(room);
+  if (!Number.isFinite(n)) return trail;
+  // Only TRANSITIONS are interesting. A leader standing still for a hundred passes must
+  // not fill the trail with one room repeated, or a straggler two rooms back finds its own
+  // room's "next" is itself and never moves.
+  if (trail.length && Number(trail[trail.length - 1]) === n) return trail;
+  const out = [...trail, n];
+  return out.length > TRAIL_MAX ? out.slice(out.length - TRAIL_MAX) : out;
+}
+
+// The room the leader went to next, from the LATEST time they were in this one. Latest,
+// because a route that doubles back through a hub — and Castle Victoria's room 38 is one —
+// appears in the trail more than once, and the follower wants the most recent departure
+// rather than the first.
+export function nextHopFor(trail = [], room = null) {
+  if (room == null) return null;
+  const n = Number(room);
+  for (let i = trail.length - 2; i >= 0; i--)
+    if (Number(trail[i]) === n) return Number(trail[i + 1]);
+  return null;
+}
+
+export function followPlan(leader, followers, { within = FOLLOW_WITHIN, trail = [] } = {}) {
   const plan = [];
   for (const f of followers) {
     if (f.room !== leader.room) {
-      plan.push({ agent: f.agent, do: 'travel', to: leader.room,
-                  why: `leader is in room ${leader.room}, this one is in ${f.room ?? '?'}` });
+      const hop = nextHopFor(trail, f.room);
+      if (hop != null) {
+        plan.push({ agent: f.agent, do: 'travel', to: hop, on_trail: true,
+                    why: `following the leader's own path: they went ${f.room} -> ${hop}` });
+        continue;
+      }
+      // OFF THE TRAIL, AND IT SAYS SO. This is the old behaviour and it is a fallback
+      // rather than the plan: the follower is somewhere the leader never walked, so there
+      // is no path to copy and the router picks the road. Distinguishable on the board,
+      // because "followed you" and "found its own way to where you are" are different
+      // facts and only one of them is what was asked for.
+      plan.push({ agent: f.agent, do: 'travel', to: leader.room, on_trail: false,
+                  why: `room ${f.room ?? '?'} is not on the leader's trail — routing to ` +
+                       `room ${leader.room} instead, which may take a different road` });
       continue;
     }
     plan.push({ agent: f.agent, do: 'approach', target: leader.agent, distance: within,
@@ -228,6 +307,13 @@ export function tooHurtToPileIn(followers, fleeBelow = 0.4) {
   });
 }
 
+// Module-scoped swarm memory. Reset by  so a test - or an operator
+// starting a fresh swarm - never inherits the last one's roster or route.
+let swarmTrail = [];
+let swarmEnrolled = new Set();
+export function resetSwarmMemory() { swarmTrail = []; swarmEnrolled = new Set(); }
+export function swarmMemory() { return { trail: [...swarmTrail], enrolled: [...swarmEnrolled] }; }
+
 export const swarmFleetRules = [
   {
     id: 'swarm-follow',
@@ -271,19 +357,42 @@ export const swarmFleetRules = [
         }
       }
 
-      const { follow, holdback } = followersOf(rows, head);
+      // THE TWO PIECES OF MEMORY A SWARM NEEDS, AND WHY THEY LIVE HERE.
+      //
+      // A rule is otherwise a pure function of one observation, which is the right shape
+      // for almost everything in this directory. Following is the exception: both "who is
+      // in this swarm" and "which way did the leader go" are facts about the PAST that no
+      // single observation contains. Recomputing either from the current tick gives the
+      // two failures this rule exists to avoid — a swarm that forgets its members at every
+      // door, and a swarm that routes itself rather than following.
+      //
+      // Kept module-scoped and bounded rather than persisted: a swarm is a thing an
+      // operator does for a few minutes at the controls, and it should not survive a
+      // restart as a stale roster of characters that have since been sent elsewhere.
+      swarmTrail = recordLeaderStep(swarmTrail, head.room);
+      const recruiting = doctrine.swarm?.recruit_by_room !== false;
+      if (recruiting) swarmEnrolled = enrolCoLocated(swarmEnrolled, head, rows);
+
+      const { follow, holdback } = followersOf(rows, head, recruiting ? swarmEnrolled : null);
       if (!follow.length)
         return { kind: 'pass',
-                 why: `${leader.agent} is leading and nobody can follow: ` +
-                      (holdback.map(h => `${h.agent} ${h.whyNot}`).join(', ') || 'the fleet is empty') };
+                 why: recruiting && !swarmEnrolled.size
+                   ? `${leader.agent} is leading and nobody has joined yet — walk into a ` +
+                     `room with the characters you want and they enrol on the spot`
+                   : `${leader.agent} is leading and nobody can follow: ` +
+                     (holdback.map(h => `${h.agent} ${h.whyNot}`).join(', ') || 'the fleet is empty') };
 
       // `head`, not `leader` — in the sighted-fallback case they differ by exactly the
       // room, which is the only field followPlan reads. Passing `leader` here would plan
       // every follower against `room: null` and send the whole swarm nowhere.
-      const plan = followPlan(head, follow, { within: doctrine.swarm?.within ?? FOLLOW_WITHIN });
-      return { kind: 'act', plan, degraded,
+      const plan = followPlan(head, follow, { within: doctrine.swarm?.within ?? FOLLOW_WITHIN,
+                                              trail: swarmTrail });
+      const offTrail = plan.filter(p => p.on_trail === false).length;
+      return { kind: 'act', plan, degraded, enrolled: [...swarmEnrolled], trail: swarmTrail,
                why: `${leader.agent} is at the controls in room ${head.room}; ` +
                     `${plan.length} following, ${holdback.length} held back` +
+                    (recruiting ? `, ${swarmEnrolled.size} enrolled by walking into their room` : '') +
+                    (offTrail ? `, ${offTrail} OFF the trail and routing themselves` : '') +
                     (degraded ? ` — ${degraded}` : '') ,
                holdback };
     },

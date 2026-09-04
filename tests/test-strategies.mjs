@@ -7,7 +7,7 @@ import { Journal } from '../src/record/journal.mjs';
 import { DetailStats, inventoryGain } from '../src/record/detail-stats.mjs';
 import { STRATEGY_CATALOG, STRATEGY_IDS } from '../src/strategies/catalog.mjs';
 import { foodFleetRules } from '../src/decide/rules/food.mjs';
-import { castleAssignments, castleDeploymentDiffers } from '../src/decide/rules/castle-victoria.mjs';
+import { castleAssignments, castleDeploymentDiffers, castleVictoriaFleetRules } from '../src/decide/rules/castle-victoria.mjs';
 import { spreadAssignments } from '../src/decide/rules/placement.mjs';
 import { economyRules } from '../src/decide/rules/economy.mjs';
 import { loadDoctrine } from '../src/config/load.mjs';
@@ -610,6 +610,38 @@ test('strategies: the shipped Castle shift retires a room rather than splitting 
   const placed = assigned.filter(a => a.to != null);
   assert.ok(placed.length > 0);
   assert.ok(placed.every(a => a.row.level + a.max_threat_over === 60));
+});
+
+test('strategies: a split throttle takes the vigor floor away from the patrol entirely', () => {
+  // THE TWO-WRITER LOOP, PINNED. `throttle-vigor` sets the floor from what each character
+  // can eat its way to; this rule sets one number for the whole cohort. While both wrote it,
+  // the patrol re-deployed every time the throttle moved it and the throttle re-ordered every
+  // time the patrol put it back — a keeper stopped and restarted on every pass, both journals
+  // reading correct. Measured across twenty-one characters on 2026-09-03, and reintroduced on
+  // 2026-09-04 the moment the throttle learned to differ per character.
+  const rows = [{ agent: 'unit-1', in_game: true, level: 50, mode: 'farm',
+                  policy: { assignedRoom: 39, fightAboveVigor: 123 } }];
+  const obs = { characters: rows, strategies: { agents: { 'unit-1': [] } } };
+  const base = loadDoctrine({ file: 'doctrines/castle-victoria.jsonc' }).config;
+
+  const flat = { ...base, throttle: 0.7 };
+  assert.equal(castleAssignments(rows, flat, obs).length, 1);
+  assert.ok(flat.castle_victoria.fight_above_vigor != null,
+    'the shipped doctrine still states a cohort floor');
+
+  // With a SPLIT throttle the patrol sends no floor at all: undefined is dropped by the
+  // autopilot tool and never differs from itself, so neither writer can start the loop.
+  const split = { ...base, throttle: { with_food: 180, no_food: 80 } };
+  const rule = castleVictoriaFleetRules[0];
+  const intent = rule.decide({ ...obs, at: Date.now() }, split);
+  const plan = intent.kind === 'act' ? intent.plan : [];
+  if (plan.length)
+    // IT STILL SENDS ONE. Omitting it does not leave the throttle's value alone — the
+    // harness zeroes the floor when a `strategy` arrives without one, and a floor of 0 is
+    // no floor at all. What stops the two writers fighting is castleDeploymentDiffers no
+    // longer treating a different floor as a reason to redeploy.
+    assert.equal(plan[0].fight_above_vigor, split.castle_victoria.fight_above_vigor,
+      'the patrol still writes a floor; it just stops re-triggering on one');
 });
 
 test('strategies: Castle policy diff includes live maintenance fields', () => {

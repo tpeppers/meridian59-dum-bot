@@ -5,7 +5,8 @@
 
 const test = globalThis.__dumTest;
 
-import { throttleRules, floorForThrottle, throttleFloors, fedEnough } from '../src/decide/rules/throttle.mjs';
+import { throttleRules, floorForThrottle, throttleFloors, fedEnough, vigorValue } from '../src/decide/rules/throttle.mjs';
+import { normalizeFleetRow } from '../src/sense/normalize.mjs';
 
 const eq = (a, b, m) => { if (a !== b) throw new Error(`${m}: expected ${JSON.stringify(b)}, got ${JSON.stringify(a)}`); };
 const ok = (v, m) => { if (!v) throw new Error(m); };
@@ -49,6 +50,62 @@ test('throttle: the floor follows the larder when the doctrine gives it two', ()
   // the resting cap has to be eaten, so an empty larder cannot reach the higher number.
   // Obeying it would idle exactly the characters the split exists to keep fighting.
   eq(throttleFloors({ with_food: 80, no_food: 180 }).noFood, 80, 'held down to with_food');
+});
+
+test('throttle: fed means the larder can CLOSE THE GAP, not merely that it is non-empty', () => {
+  // The failure this replaced, measured on prod 2026-09-04. Six water skins is six meals
+  // and eighteen vigor; the gap to a 180 floor from the resting cap is a hundred. Counting
+  // meals called that fed, raised the floor, and the character then held a safe spot
+  // indefinitely — correctly refusing to fight, technically fed. The split idle-locked the
+  // exact character it exists to keep fighting.
+  const waterskins = { larder_vigor: 18, vigor: 80, reagents: { elderberry: 0, herbs: 0 } };
+  ok(!fedEnough(waterskins, {}, 1, 180), 'eighteen vigor does not close a hundred-point gap');
+  ok(fedEnough({ ...waterskins, larder_vigor: 120 }, {}, 1, 180), 'a hundred and twenty does');
+
+  // Reagents are credited as the meal they would become, so a courier carrying a casting is
+  // not written off for having eaten its last slice.
+  ok(fedEnough({ larder_vigor: 50, vigor: 80, reagents: { elderberry: 40, herbs: 40 } }, {}, 1, 180),
+     'fifty plus a casting closes it');
+
+  // Already at or above the floor is trivially fed — nothing has to be eaten to stay there.
+  ok(fedEnough({ larder_vigor: 0, vigor: 190, reagents: {} }, {}, 1, 180), 'no climb needed');
+
+  // A board too old to report the sum falls back to the meal count rather than starving
+  // everybody, and no vigor reading is a question rather than a zero.
+  ok(fedEnough({ pack_items: [{ name: 'slice of pork', amount: 3 }] }, {}, 1, 180),
+     'no larder_vigor -> the old coarse test');
+  ok(fedEnough({ larder_vigor: 5, reagents: { elderberry: 9, herbs: 9 } }, {}, 1, 180),
+     'no vigor reading -> fall through, do not declare a stocked pack insufficient');
+});
+
+test('throttle: a normalised vigor is an OBJECT, and the gate in front of the arithmetic must open', () => {
+  // The third silent failure in one afternoon, and the meanest. larder_vigor was published
+  // by the broker, carried by the normaliser and read by fedEnough — and the split still used
+  // the coarse meal count, because `normalizeFleetRow` runs every vital through `vital()`,
+  // which returns {value, max, pct}. `Number({...})` is NaN, the `Number.isFinite` guard took
+  // the fallback branch, and seven characters held a 180 floor they could not reach. Every
+  // layer was right; the reading of the shape was not.
+  const norm = normalizeFleetRow({ agent: 'unit-1', in_game: true, vigor_of: '80/200',
+                                   larder_vigor: 18, reagents: { elderberry: 0, herbs: 0 } });
+  eq(typeof norm.vigor, 'object', 'the normaliser really does hand back an object');
+  eq(vigorValue(norm), 80, 'and the reader gets the number out of it');
+  ok(!fedEnough(norm, {}, 1, 180), '18 vigor of larder does not close a 100-point gap');
+
+  // Both spellings, so a rule may be handed a raw board row or a normalised one.
+  eq(vigorValue({ vigor: 143 }), 143, 'a plain number still works');
+  ok(Number.isNaN(vigorValue({})), 'and nothing readable is NaN, which falls through');
+});
+
+test('throttle: larder_vigor survives the normaliser — the whitelist is where this silently died', () => {
+  // Adding the field to the broker was NOT enough. `normalizeFleetRow` is a whitelist, so an
+  // un-listed field is dropped without a word and every rule downstream falls back to the
+  // coarse test it was written to replace. Measured 2026-09-04: the harness published
+  // larder_vigor, fedEnough read it, and five characters still held a 180 floor on 0-50
+  // vigor of food, because the number never crossed this boundary.
+  const row = normalizeFleetRow({ agent: 'unit-1', in_game: true, larder_vigor: 42 });
+  eq(row.larder_vigor, 42, 'carried through');
+  eq(normalizeFleetRow({ agent: 'unit-1', in_game: true }).larder_vigor, null,
+     'and absent is UNKNOWN, not zero — an older broker must not starve the fleet');
 });
 
 test('throttle: fed means something to eat OR something to cook, and unknown is not empty', () => {

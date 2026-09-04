@@ -137,6 +137,18 @@ export function normalizeFleetRow(r = {}) {
     reagents: (r.reagents && typeof r.reagents === 'object')
       ? { elderberry: num(r.reagents.elderberry), herbs: num(r.reagents.herbs) } : null,
     has_food: bool(r.has_food),
+    // HOW MUCH VIGOR THE LARDER CAN DELIVER — the sum of the nutrition it is carrying, and
+    // nutrition IS the vigor a bite returns. `has_food` above answers whether the pack is
+    // non-empty, which is a different and much weaker question: six water skins is six
+    // meals and eighteen vigor, against a hundred-point climb to a 180 floor.
+    //
+    // THIS LINE IS THE WHOLE FEATURE. Adding the field to the broker was not enough — this
+    // normaliser is a WHITELIST, so an un-listed field is dropped in silence and every rule
+    // downstream quietly falls back to the coarse test it was written to replace. Observed
+    // 2026-09-04: the harness published it, `fedEnough` looked for it, and five characters
+    // still sat at a floor of 180 with 0-50 vigor of food, because the number never crossed
+    // this boundary. Null means "an older broker did not answer", never "empty".
+    larder_vigor: r.larder_vigor == null ? null : num(r.larder_vigor),
     // WHY THIS CHARACTER IS NOT WORKING, AS DATA RATHER THAN AS PROSE.
     //
     // The reason `escalate.mjs` refuses to act on `doing`: matching sentences the harness

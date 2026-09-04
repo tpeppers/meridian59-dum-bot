@@ -23,6 +23,24 @@ import { mealsAboard, canCook } from './feast.mjs';
 const clamp01 = v => Math.max(0, Math.min(1, Number(v)));
 
 /**
+ * A vigor reading, however the layer it came from spells it.
+ *
+ * `normalizeFleetRow` runs every vital through `vital()`, which returns `{value, max, pct}`
+ * — so a rule reading `row.vigor` as a number gets an OBJECT, `Number()` gives NaN, and any
+ * `Number.isFinite` guard downstream quietly takes the fallback branch. That is precisely
+ * how the fed/unfed split went on using the coarse meal count after `larder_vigor` had been
+ * plumbed all the way through to it: the field arrived, the arithmetic was right, and the
+ * gate in front of the arithmetic never opened. Seven characters held an unreachable 180.
+ */
+export const vigorValue = row => {
+  const v = row?.vigor;
+  const n = Number(v && typeof v === 'object' ? v.value : v);
+  if (Number.isFinite(n)) return n;
+  const m = Number(row?.vitals?.vigor?.value ?? row?.vitals?.vigor);
+  return Number.isFinite(m) ? m : NaN;
+};
+
+/**
  * The vigor floor a throttle asks for, on the 0..200 scale. Pure; exported for the test.
  *
  * TWO SPELLINGS, AND THE BOUNDARY IS 1. A fraction of the 200 maximum is the original
@@ -74,14 +92,44 @@ export function throttleFloors(throttle) {
   return { withFood: flat, noFood: flat, split: false };
 }
 
-/** Can this character actually reach the fed floor — something to eat, or something to cook? */
-export function fedEnough(row, food = {}, minMeals = 1) {
+/**
+ * Can this character actually reach the fed floor?
+ *
+ * "HAS FOOD" IS THE WRONG QUESTION AND IT COST A FLEET AN AFTERNOON. The first version of
+ * this counted meals: one aboard and you were fed, so the floor went to 180. Measured on
+ * prod 2026-09-04, that raised a character's floor on the strength of six WATER SKINS —
+ * 3 vigor each, eighteen in total, against a hundred-point gap. He held a safe spot
+ * indefinitely, correctly refusing to fight, technically fed. The split idle-locked exactly
+ * the character it was added to keep fighting, which is the failure it replaced.
+ *
+ * So the test is arithmetic, not a boolean: can what this character is carrying carry it
+ * from where its vigor IS to where the floor would be? `larder_vigor` is the harness's own
+ * sum of nutrition (nutrition IS the vigor a bite returns), and a casting's worth of
+ * reagents counts as the meal it would become.
+ *
+ * The meal COUNT survives only as the fallback for a board too old to report the sum, and
+ * `min_meals` with it. UNKNOWN IS NOT EMPTY at every level: a larder the board did not
+ * report must not drop a well-stocked character to the resting cap on one bad snapshot.
+ */
+export function fedEnough(row, food = {}, minMeals = 1, target = null, vigorNow = null) {
+  const cook = canCook(row, food);
+  const larder = Number(row?.larder_vigor);
+  if (Number.isFinite(larder) && target != null) {
+    const now = Number(vigorNow ?? vigorValue(row));
+    // No vigor reading is a question, not a zero — fall through to the coarse test rather
+    // than declaring a full pack insufficient against a gap we cannot measure.
+    if (Number.isFinite(now)) {
+      const gap = target - now;
+      if (gap <= 0) return true;                 // already at or above it
+      // A casting is one meal, and the fleet's own create-food yield is the honest value to
+      // credit it with; without one, reagents alone still beat an empty pack.
+      const fromReagents = cook ? (food.vigor_per_cast ?? 60) : 0;
+      return (larder + fromReagents) >= gap;
+    }
+  }
   const meals = mealsAboard(row);
-  // UNKNOWN IS NOT EMPTY. A larder the board did not report reads null, and treating that as
-  // "no food" would drop a well-stocked character to the resting cap on a bad snapshot. The
-  // reagents are the second chance, and only when BOTH are unknown-or-absent do we step down.
   if (meals != null && meals >= minMeals) return true;
-  return canCook(row, food);
+  return cook;
 }
 
 export const throttleRules = [
@@ -96,8 +144,12 @@ export const throttleRules = [
     decide(obs, doctrine) {
       const floors = throttleFloors(doctrine.throttle);
       const row = obs.keeper ? { ...obs, ...obs.keeper } : obs;
+      const vigorNow = vigorValue(row);
+      // Asked against the FED floor, because that is the climb being contemplated: the
+      // question is not "does it have food" but "can it get from here to there".
       const fed = floors.split
-        ? fedEnough(row, doctrine.food ?? {}, doctrine.throttle?.min_meals ?? 1)
+        ? fedEnough(row, doctrine.food ?? {}, doctrine.throttle?.min_meals ?? 1,
+                    floors.withFood, vigorNow)
         : true;
       const target = fed ? floors.withFood : floors.noFood;
       const live = obs.keeper?.policy ?? obs.policy ?? {};

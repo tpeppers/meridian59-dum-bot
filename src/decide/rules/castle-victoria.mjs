@@ -132,7 +132,22 @@ export function castleDeploymentDiffers(row, orders) {
     p.maxThreatOver !== orders.max_threat_over || p.fleeBelow !== orders.flee_below ||
     p.restBelow !== orders.rest_below || p.roam !== false ||
     p.useSafeSpots !== orders.use_safe_spots || p.strategy !== orders.strategy ||
-    p.fightAboveVigor !== orders.fight_above_vigor ||
+    // THE VIGOR FLOOR IS NOT THIS RULE'S, WHEN SOMETHING ELSE IS DECIDING IT PER CHARACTER.
+    //
+    // `throttle-vigor` sets the floor from what each character can actually eat its way to;
+    // this rule sets one number for the whole cohort. Comparing it here makes the patrol
+    // re-deploy every time the throttle moves it, and the throttle re-order every time the
+    // patrol puts it back — a keeper stopped and restarted on every pass, with both journals
+    // reading correct. That loop ran across all twenty-one characters on 2026-09-03 (five
+    // `-> 80` deploys against five bare `-> 140` orders per character in one window) and was
+    // reintroduced on 2026-09-04 the moment the throttle learned to differ per character.
+    //
+    // One field, one owner. The patrol still SENDS a floor below, so a cohort with no
+    // throttle set is unchanged; it just stops treating a different value as a reason to
+    // redeploy. `orders.fight_above_vigor` is undefined when a doctrine leaves it out, and
+    // an undefined never differs from itself.
+    (orders.fight_above_vigor !== undefined &&
+      p.fightAboveVigor !== orders.fight_above_vigor) ||
     p.holdResumeAbove !== orders.hold_resume_above || p.purpose !== orders.purpose ||
     !sameList(p.weaponPriority, orders.weapon_priority);
 }
@@ -179,6 +194,20 @@ export const castleVictoriaFleetRules = [{
         ? 'vsSkeletons' : doctrine.weapons.preset;
       const orders = {
         ...a, flee_below: cv.flee_below, rest_below: cv.rest_below,
+        // STILL SENT, EVEN WHEN THE THROTTLE OWNS IT — and NOT sending it was a live bug.
+        //
+        // The deploy also carries `strategy`, and the harness's start handler reads the two
+        // together: `if (a.strategy !== undefined) { ... if (a.fight_above_vigor === undefined)
+        // p.policy.fightAboveVigor = plan.fightAboveVigor ?? 0 }`. `fieldrest` names no floor,
+        // so omitting ours did not leave the throttle's value alone — it ZEROED it. Measured
+        // 2026-09-04: a character deployed at fight_above_vigor 0, which is not a low floor,
+        // it is no floor at all — it fights at any vigor, however exhausted, and never rests
+        // to climb. Worse than the churn it was meant to avoid.
+        //
+        // So the patrol keeps sending a floor and the throttle keeps adjusting it per
+        // character. What stops the two writers fighting is the DIFFS check, not the send:
+        // castleDeploymentDiffers no longer treats a different floor as a reason to redeploy.
+        // One owner for the DECISION, both for the write, and only one of them re-triggers.
         fight_above_vigor: cv.fight_above_vigor,
         roam: false, use_safe_spots: cv.use_safe_spots,
         // `wellfed` WAS HARDCODED HERE, AND IT CARRIES `restInTown: true` — which walks a

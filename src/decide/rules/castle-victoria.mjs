@@ -5,6 +5,17 @@ import { activeFactionWork } from './factions.mjs';
 const sameList = (a, b) => Array.isArray(a) && Array.isArray(b) &&
   a.length === b.length && a.every((x, i) => x === b[i]);
 
+// An order may name one creature or several. Comparing those with `!==` compares ARRAY
+// REFERENCES, so a multi-quarry order would look different from itself on every pass and
+// the deploy would be re-sent for ever — stopping and restarting the keeper each time.
+// The order of the names carries no meaning (see huntNames in the harness), so equality
+// is set equality, not sequence equality.
+const huntDiffers = (a, b) => {
+  const norm = h => (Array.isArray(h) ? [...h] : [h]).filter(Boolean).map(String).sort();
+  const [x, y] = [norm(a), norm(b)];
+  return x.length !== y.length || x.some((v, i) => v !== y[i]);
+};
+
 // The patrol owns quarry and combat posture. Spread Out alone owns whether that posture
 // includes a forced room and a safe-wall occupancy cap.
 export function castleAssignments(rows = [], doctrine = {}, fleetObs = { characters: rows }) {
@@ -81,9 +92,27 @@ export function castleAssignments(rows = [], doctrine = {}, fleetObs = { charact
     // A kill advances only while monster level is strictly above max health. Zombies
     // stop paying at 55, so the mature cohort must not spend its safe upstairs time on
     // them merely to preserve the old 2:1 room mix.
+    // `upstairs_quarry` names one creature for the whole upstairs cohort and retires the
+    // mix. An operator narrowing the shift to one generator wants ONE answer, and the
+    // rotation cannot express it: every third character is a zombie hunter by index, so
+    // "battered skeletons only" was unreachable from a doctrine. Absent means the mix,
+    // which is the behaviour that was already here.
+    // `zombie_only` pins named characters to the weaker of the two upstairs generators.
+    // It is the safety valve for the bottom of the roster: a kill pays while the
+    // creature's level is above max health, so the zombie's 55 still advances everybody
+    // here, and it hits far softer than the battered skeleton's 60. Matched against the
+    // agent handle OR the character name, like `only`.
+    const pinned = Array.isArray(cv.zombie_only)
+      ? cv.zombie_only.filter(x => typeof x === 'string').map(s => s.toLowerCase()) : [];
+    const zombiePinned = pinned.length > 0 &&
+      (pinned.includes(String(row.agent).toLowerCase()) ||
+       pinned.includes(String(row.character ?? '').toLowerCase()));
     const zombieStillPays = (row.level ?? 0) < 55;
-    const hunt = upstairs ? (zombieStillPays && i % 3 === 2 ? 'zombie' : 'battered skeleton')
-                          : 'skeleton';
+    const hunt = upstairs
+      ? (zombiePinned ? 'zombie'
+         : cv.upstairs_quarry ??
+           (zombieStillPays && i % 3 === 2 ? 'zombie' : 'battered skeleton'))
+      : 'skeleton';
     // The keeper's ceiling gates the WHOLE generator, not only the quarry. A zombie
     // hunter assigned upstairs still shares the room with level-60 battered skeletons;
     // setting its ceiling to the zombie's 55 makes preyRooms() reject its own assigned
@@ -98,7 +127,7 @@ export function castleAssignments(rows = [], doctrine = {}, fleetObs = { charact
 export function castleDeploymentDiffers(row, orders) {
   const p = row.policy ?? {};
   return row.commitment?.kind === 'driven' || row.keeper?.inert ||
-    row.mode !== 'farm' || p.assignedRoom !== orders.to || p.hunt !== orders.hunt ||
+    row.mode !== 'farm' || p.assignedRoom !== orders.to || huntDiffers(p.hunt, orders.hunt) ||
     p.maxBotsPerSafeSpot !== orders.max_bots_per_safe_spot ||
     p.maxThreatOver !== orders.max_threat_over || p.fleeBelow !== orders.flee_below ||
     p.restBelow !== orders.rest_below || p.roam !== false ||
@@ -117,10 +146,34 @@ export const castleVictoriaFleetRules = [{
   offWhy: 'castle_victoria.shift is off',
 
   decide(fleetObs, doctrine) {
-    const live = (fleetObs.characters ?? []).filter(r => r.in_game && !r.parked &&
+    let live = (fleetObs.characters ?? []).filter(r => r.in_game && !r.parked &&
       !activeFactionWork(fleetObs, r));
-    if (!live.length) return { kind: 'pass', why: 'nobody in game' };
     const cv = doctrine.castle_victoria;
+
+    // A SHIFT IS FLEET-SCOPED, AND SOMETIMES THE FLEET IS THREE PEOPLE.
+    //
+    // This rule ordered EVERY character in game, which is right when the whole fleet works
+    // one place and catastrophic when it does not: on 2026-08-19 eighteen characters were
+    // parked in a sanctuary precisely because the roads between them and here were killing
+    // them, and a fleet-scoped deploy would have walked all eighteen straight back out.
+    // `--agent` does not help — it applies that character's OVERRIDES, it does not narrow a
+    // fleet rule, which the dry run showed by naming all twenty-one anyway.
+    //
+    // `castle_victoria.only` is that narrowing, matched against the agent handle OR the
+    // character name so a doctrine can use whichever it has. ABSENT MEANS EVERYBODY, which
+    // is the behaviour that was already here — an empty list would silently stand the whole
+    // shift down, and this file must not learn to do that by accident.
+    const only = Array.isArray(cv?.only) ? cv.only.filter(x => typeof x === 'string') : null;
+    if (only?.length) {
+      const want = new Set(only.map(s => s.toLowerCase()));
+      live = live.filter(r => want.has(String(r.agent).toLowerCase()) ||
+                              want.has(String(r.character ?? '').toLowerCase()));
+    }
+    if (!live.length) {
+      return { kind: 'pass', why: only?.length
+        ? `castle_victoria.only names ${only.join(', ')} and none are in game here`
+        : 'nobody in game' };
+    }
     const assigned = castleAssignments(live, doctrine, fleetObs).map(a => {
       const preset = strategyEnabled(fleetObs, doctrine, a.row.agent, STRATEGY_IDS.VS_SKELETONS)
         ? 'vsSkeletons' : doctrine.weapons.preset;
@@ -128,7 +181,12 @@ export const castleVictoriaFleetRules = [{
         ...a, flee_below: cv.flee_below, rest_below: cv.rest_below,
         fight_above_vigor: cv.fight_above_vigor,
         roam: false, use_safe_spots: cv.use_safe_spots,
-        hold_resume_above: 0.9, strategy: 'wellfed', purpose: 'advance',
+        // `wellfed` WAS HARDCODED HERE, AND IT CARRIES `restInTown: true` — which walks a
+        // hurt character back to an inn to recover, a journey, with its assignment still
+        // reading 39 and the board still reading healthy. That is exactly how a confinement
+        // leaks, and it is not a thing a doctrine could previously say anything about.
+        // `fieldrest` is the one strategy that never walks back to town. Default unchanged.
+        hold_resume_above: 0.9, strategy: cv.strategy ?? 'wellfed', purpose: 'advance',
         goals: [{ kind: 'hp' }], weapon_priority: keeperWeaponPriority(preset, doctrine.weapons.presets),
       };
       return { ...orders, differs: castleDeploymentDiffers(a.row, orders) };

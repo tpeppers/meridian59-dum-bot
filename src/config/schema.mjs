@@ -39,6 +39,9 @@ const num = v => typeof v === 'number' && Number.isFinite(v);
  * @returns {{where: string, why: string}[]} empty when usable
  */
 import { HUNT_ROOMS } from '../strategies/catalog.mjs';
+// One reader of the throttle's two spellings, so the schema and the rule cannot disagree
+// about what 180 and 0.9 mean.
+import { floorForThrottle } from '../decide/rules/throttle.mjs';
 
 export function validate(c) {
   const bad = [];
@@ -244,6 +247,34 @@ export function validate(c) {
   if (!num(c.food?.mana_cost) || c.food.mana_cost < 1)
     say('food.mana_cost', 'must be a positive mana cost');
 
+  // ---- the throttle: a number, or a floor that follows the larder
+  //
+  // Only the wrongness that is SILENT, as everywhere in this file. A bad number here does
+  // not throw — it sets a vigor floor, and a floor is enforced by a character declining to
+  // fight, which looks exactly like a quiet room.
+  if (c.throttle != null) {
+    const t = c.throttle;
+    const okFloor = v => num(v) && Number(v) >= 0 && Number(v) <= 200;
+    if (typeof t === 'object') {
+      if (!okFloor(t.with_food))
+        say('throttle.with_food', 'must be a vigor floor — a fraction of 200, or the number ' +
+            'itself (180 and 0.9 mean the same thing)');
+      if (!okFloor(t.no_food))
+        say('throttle.no_food', 'must be a vigor floor for a character that has nothing to eat ' +
+            'and nothing to cook. 80 is the resting cap and the last value that cannot deadlock');
+      if (okFloor(t.with_food) && okFloor(t.no_food) &&
+          floorForThrottle(t.no_food) > floorForThrottle(t.with_food))
+        say('throttle', 'no_food is HIGHER than with_food, which idles exactly the characters ' +
+            'this split exists to keep fighting — everything above the resting cap of 80 has ' +
+            'to be eaten, so an empty larder cannot reach a higher floor than a full one');
+      if (t.min_meals != null && (!Number.isInteger(t.min_meals) || t.min_meals < 1))
+        say('throttle.min_meals', 'must be a positive count of meals that counts as fed');
+    } else if (!okFloor(t)) {
+      say('throttle', 'must be a vigor floor (0-200, or a fraction of 200), or ' +
+          '{ with_food, no_food } to let it follow the larder');
+    }
+  }
+
   // ---- the Duke's Feast Hall
   if (c.feast?.on) {
     const f = c.feast;
@@ -253,6 +284,14 @@ export function validate(c) {
       say('feast.max_hops', 'must be a non-negative hop count from the hall (Tos is 3)');
     if (!Array.isArray(f.near_rooms) || f.near_rooms.some(r => !Number.isInteger(r)))
       say('feast.near_rooms', 'must be a list of room numbers, or empty to go by distance alone');
+    // Optional, and absent means NOBODY. Checked for shape rather than for presence, because
+    // the failure worth catching is a bare string where a list belongs, or a handle typed as
+    // a number — either of which silently sends no one, which is the exact behaviour a
+    // courier list is added to stop.
+    if (f.couriers != null &&
+        (!Array.isArray(f.couriers) || f.couriers.some(x => typeof x !== 'string')))
+      say('feast.couriers', 'must be a list of agent handles or character names — the ones ' +
+          'sent to the tables for the FLEET, whose own larder is not the test');
     if (!num(f.max_travel_ms) || f.max_travel_ms < 60_000)
       say('feast.max_travel_ms', 'must be at least 60000 — the longest walk a redirected supply trip may take');
     if (!num(f.min_health) || f.min_health < 0 || f.min_health > 1)
@@ -280,6 +319,22 @@ export function validate(c) {
       say('castle_victoria.rooms', 'must name integer downstairs and upstairs room numbers');
     if (!num(cv.upstairs_share) || cv.upstairs_share < 0 || cv.upstairs_share > 1)
       say('castle_victoria.upstairs_share', 'must be a fraction from 0 through 1');
+    // A quarry the room cannot generate is the silent failure this file exists to catch:
+    // the character stands in its assigned room, reports itself healthy, and waits for
+    // prey that will never spawn.
+    const UPSTAIRS_GENERATES = ['battered skeleton', 'zombie'];
+    // One name, or several to take whichever is in front of you. A name the room cannot
+    // generate is the silent failure: the character stands in its assigned room reporting
+    // itself healthy, waiting for prey that will never spawn.
+    const quarry = cv.upstairs_quarry == null ? []
+      : (Array.isArray(cv.upstairs_quarry) ? cv.upstairs_quarry : [cv.upstairs_quarry]);
+    const unknown = quarry.filter(q => !UPSTAIRS_GENERATES.includes(q));
+    if (unknown.length)
+      say('castle_victoria.upstairs_quarry',
+          `names ${unknown.join(', ')}, which room ${cv.rooms?.upstairs} does not ` +
+          `generate — it makes only ${UPSTAIRS_GENERATES.join(' and ')}`);
+    if (cv.zombie_only != null && !Array.isArray(cv.zombie_only))
+      say('castle_victoria.zombie_only', 'must be a list of agent handles or character names');
   }
 
   // ---- the hunting shift

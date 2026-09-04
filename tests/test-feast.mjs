@@ -152,6 +152,69 @@ test('feast: from afar, a thin-but-not-empty larder does NOT go, and neither doe
   eq(rule.decide(fleetObs([cook]), doctrineWith()).kind, 'pass', 'it can cook, so its keeper will');
 });
 
+// ------------------------------------------------- door three: a courier, for the fleet
+
+test('feast: a named courier goes even though it is full, far, and perfectly able to cook', () => {
+  // The case the first two doors cannot express, and the one that produced this door.
+  // Operator request 2026-09-04: three characters that had outgrown their hunting room were
+  // to fill up at the tables and carry the food back to fifteen fleet-mates pinned at the
+  // resting cap. Every one of the three carried reagents (so `starving` was false) and was
+  // eleven hops from Tos (so `nearby` was false), and the rule declined to send anybody —
+  // correctly, at the exact moment sending somebody was the whole point.
+  const stocked = unit('a', {
+    pack_items: [{ name: 'slice of pork', amount: 40 }],   // a full larder of its own
+    reagents: { elderberry: 60, herbs: 60 },               // and well able to cook
+  });
+  eq(rule.decide(fleetObs([stocked]), doctrineWith()).kind, 'pass',
+     'without the list it stays at home, which is the old behaviour');
+
+  const intent = rule.decide(fleetObs([stocked]), doctrineWith({ couriers: ['a'] }));
+  eq(intent.kind, 'errand', 'named, so it goes');
+  eq(intent.orders.context.door, 'courier', 'through the courier door');
+  eq(intent.orders.context.home, 39, 'and it comes home to its assigned room, not to the hall');
+  ok(/are not the test/.test(intent.why), `says why: ${intent.why}`);
+});
+
+test('feast: the courier list matches a character name as well as a handle, and absent means NOBODY', () => {
+  const stocked = unit('a', { pack_items: [{ name: 'slice of pork', amount: 40 }],
+                              reagents: { elderberry: 60, herbs: 60 } });
+  eq(rule.decide(fleetObs([stocked]), doctrineWith({ couriers: ['A'] })).kind, 'errand',
+     'the character name (A) works like the handle');
+  eq(rule.decide(fleetObs([stocked]), doctrineWith({ couriers: [] })).kind, 'pass',
+     'an EMPTY list sends nobody rather than everybody — the dangerous reading');
+  eq(rule.decide(fleetObs([stocked]), doctrineWith({ couriers: ['someone-else'] })).kind, 'pass',
+     'and a list that does not name it leaves it alone');
+});
+
+test('feast: a courier still obeys health, the in-flight cap and its own cooldown', () => {
+  const full = { pack_items: [{ name: 'slice of pork', amount: 40 }],
+                 reagents: { elderberry: 60, herbs: 60 } };
+  const hurt = unit('a', { ...full, health: { value: 10, max: 40, pct: 0.25 } });
+  eq(rule.decide(fleetObs([hurt]), doctrineWith({ couriers: ['a'] })).kind, 'pass',
+     'a hurt courier is not sent — the road is what kills this fleet');
+
+  const fresh = unit('a', full);
+  const justFilled = { a: { last_visit_at: NOW - 5 * MIN, ok: true } };
+  eq(rule.decide(fleetObs([fresh], justFilled), doctrineWith({ couriers: ['a'] })).kind, 'pass',
+     'and one that filled a pack five minutes ago waits its cooldown rather than turning round');
+
+  const onTheRoad = { b: { phase: 'outbound', since: NOW - MIN, ms: 11 * MIN } };
+  eq(rule.decide(fleetObs([fresh, unit('b', full)], onTheRoad),
+                 doctrineWith({ couriers: ['a', 'b'], max_in_flight: 1 })).kind, 'pass',
+     'and the in-flight cap counts couriers like anybody else');
+});
+
+test('feast: a courier is dispatched before an opportunistic top-up', () => {
+  // Both qualify; the courier is somebody's instruction and the other is a coincidence.
+  const nearTos = unit('n', { room: 50, travel_to_feast: { ms: 3 * MIN, hops: 3 },
+                              pack_items: [{ name: 'hammer', amount: 1 }] });
+  const courier = unit('c', { pack_items: [{ name: 'slice of pork', amount: 40 }],
+                              reagents: { elderberry: 60, herbs: 60 } });
+  const intent = rule.decide(fleetObs([nearTos, courier]), doctrineWith({ couriers: ['c'] }));
+  eq(intent.kind, 'errand', 'somebody goes');
+  eq(intent.orders.agent, 'c', 'and it is the courier, despite the longer walk');
+});
+
 test('feast: the walk limit is honoured, and a missing estimate is not read as a short walk', () => {
   const far = unit('a', { travel_to_feast: { ms: 40 * MIN, hops: 30 } });
   eq(rule.decide(fleetObs([far]), doctrineWith()).kind, 'pass', 'forty minutes is over the limit');

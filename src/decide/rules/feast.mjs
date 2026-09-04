@@ -219,6 +219,31 @@ export const feastFleetRules = [
       const failBackoffMs = cfg.fail_backoff_ms ?? 10 * 60_000;
       const maxInFlight = cfg.max_in_flight ?? 3;
       const near = new Set(cfg.near_rooms ?? []);
+      // COURIERS — THE THIRD DOOR, AND THE ONE THAT IS NOT ABOUT THE WALKER'S OWN LARDER.
+      //
+      // Both doors below ask what THIS character has to eat, which is right for a fleet
+      // feeding itself and useless for a fleet feeding somebody else. Operator request,
+      // 2026-09-04: three characters that had outgrown their hunting room were to empty
+      // their packs, fill up at the tables and carry the food back to the fifteen at Castle
+      // Victoria — eleven of whom were pinned at the resting cap of 80 against a target of
+      // 140, with one meat pie between them. Not one of the three qualified: they carried
+      // reagents and could cook, so `starving` was false, and they were nowhere near Tos,
+      // so `nearby` was false. The rule correctly declined to send anybody, at the moment
+      // sending somebody was the entire point.
+      //
+      // A courier's own larder is therefore not the test. Everything that keeps the trip
+      // safe and bounded still is: health, takeability, the in-flight cap, and the
+      // per-character cooldown — a courier that has just filled a pack does not turn round
+      // and walk straight back for another one.
+      //
+      // Matched against the agent handle OR the character name, like `castle_victoria.only`.
+      // ABSENT MEANS NOBODY, not everybody: this door walks a character across the world for
+      // other people's benefit, and that is not a behaviour to acquire by leaving a key out.
+      const couriers = new Set((Array.isArray(cfg.couriers) ? cfg.couriers : [])
+        .filter(x => typeof x === 'string').map(s => s.toLowerCase()));
+      const isCourier = row => couriers.size > 0 &&
+        (couriers.has(String(row.agent).toLowerCase()) ||
+         couriers.has(String(row.character ?? '').toLowerCase()));
       const rows = (obs.characters ?? []).filter(r => r.in_game);
       if (!rows.length) return { kind: 'pass', why: 'nobody in game' };
       const byAgent = new Map(rows.map(r => [r.agent, r]));
@@ -296,8 +321,11 @@ export const feastFleetRules = [
         if (row.piloted || row.parked || !isTakeable(row)) continue;
         if ((row.health?.pct ?? 1) < minHealth) { skipped.push(`${row.agent}: hurt`); continue; }
         const meals = mealsAboard(row);
-        if (meals === null) { skipped.push(`${row.agent}: larder unreadable`); continue; }
-        if (meals >= minItems) continue;
+        const courier = isCourier(row);
+        // A courier is going for other people, so an unreadable or a full larder is not a
+        // reason to keep it at home — only the shared safety tests below apply to it.
+        if (!courier && meals === null) { skipped.push(`${row.agent}: larder unreadable`); continue; }
+        if (!courier && meals >= minItems) continue;
         const est = row.travel_to_feast ?? null;
         const hops = Number.isFinite(est?.hops) ? est.hops : null;
         const ms = Number.isFinite(est?.ms) ? est.ms : null;
@@ -305,7 +333,13 @@ export const feastFleetRules = [
         const starving = meals === 0 && !canCook(row, food);
         const reachable = ms !== null && ms <= maxTravelMs;
         let door = null;
-        if (nearby) door = 'passing';
+        // The courier door is checked FIRST and is deliberately not bounded by
+        // `max_travel_ms`. That bound exists to decide whether redirecting a keeper's own
+        // supply trip is worth the walk; a courier's walk is not a redirection of anything,
+        // it is the errand, and an operator naming three characters has already made that
+        // judgement. `max_trip_ms` still gives up on a journey that never arrives.
+        if (courier) door = 'courier';
+        else if (nearby) door = 'passing';
         else if (starving && reachable) door = 'supply';
         else if (starving && ms === null) { skipped.push(`${row.agent}: no walk estimate`); continue; }
         else continue;
@@ -319,21 +353,28 @@ export const feastFleetRules = [
                       `meals or out of food and reagents within ${mins(maxTravelMs)} of the hall` +
                       (skipped.length ? ` (${skipped.slice(0, 4).join('; ')}${skipped.length > 4 ? '; …' : ''})` : '') };
 
-      // Nearest first, then hungriest: the short walk is the cheap one.
-      candidates.sort((a, b) => (a.hops ?? 99) - (b.hops ?? 99) || a.meals - b.meals);
+      // Couriers first — they are somebody's explicit instruction and the other two doors
+      // are opportunistic. Then nearest, then hungriest: the short walk is the cheap one.
+      candidates.sort((a, b) => (b.door === 'courier') - (a.door === 'courier') ||
+                                (a.hops ?? 99) - (b.hops ?? 99) || a.meals - b.meals);
       const pick = candidates[0];
       const row = pick.row;
       const home = row.policy?.assignedRoom ?? row.assigned_room ?? row.room ?? null;
       return {
         kind: 'errand',
         orders: { errand: 'feast-outbound', agent: row.agent,
-                  label: `feast hall: set off (${pick.door === 'passing' ? 'near Tos' : 'supply trip, redirected'})`,
+                  label: `feast hall: set off (${pick.door === 'courier' ? 'courier, for the fleet'
+                            : pick.door === 'passing' ? 'near Tos' : 'supply trip, redirected'})`,
                   context: { home, door: pick.door, hops: pick.hops, ms: pick.ms },
                   // Held `busy` for the walk, so the station recall and every other rule
                   // that reads `takeable` leave it on the road. See errands.mjs.
                   hold_busy_ms: holdFor(pick.ms ?? maxTravelMs, maxTripMs),
                   steps: outboundSteps(row.agent, cfg) },
-        why: pick.door === 'passing'
+        why: pick.door === 'courier'
+          ? `${row.agent} is a named feast courier: fill the pack at the tables and carry it ` +
+            `home to ${home ?? 'wherever it came from'} for the fleet, ${pick.hops ?? '?'} hop(s) ` +
+            `away — its own ${pick.meals ?? 0} meal(s) are not the test (${inFlight} already on the road)`
+          : pick.door === 'passing'
           ? `${row.agent} is ${pick.hops ?? '?'} hop(s) from the feast hall with ${pick.meals} meal(s) aboard; ` +
             `go and fill the pack while it is close (${inFlight} already on the road)`
           : `${row.agent} has no food and cannot cast create food (reagents ` +

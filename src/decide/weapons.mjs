@@ -44,6 +44,29 @@ export const WEAPON_PRESETS = Object.freeze({
       { id: 'other', names: without(NOVICE_DAMAGE_ORDER, new Set(['short sword'])) },
     ],
   }),
+  // PROFICIENCY BEATS DAMAGE TYPE WHEN THE PROFICIENCY IS ZERO, and that is not a quibble
+  // with `vsSkeletons` below — it is a different question. That preset ranks by the
+  // MONSTERS' resistance tables, which is right for a character that can hit with any of
+  // them. Hit chance is `offense * 55 / defence` bounded to [10,95], and offense is carried
+  // by the weapon's own proficiency skill: measured on prod 2026-08-19, three characters
+  // held mace fighting 41, 54 and 56 and ZERO hammer wielding, and all three were found
+  // swinging hammers — pinned near the 10% floor, landing nothing across whole engagements.
+  // A weapon you cannot hit with does no damage whatever its resistance profile.
+  //
+  // Same shape and same trade as `shortSwording`: name the weapon the SKILL is for, then
+  // everything else, so an unskilled weapon still beats an empty hand.
+  maceFighting: Object.freeze({
+    id: 'maceFighting',
+    title: 'maceFighting',
+    why: 'the mace the skill is for, then every other weapon — for a character whose mace ' +
+         'fighting is real and whose hammer wielding is zero',
+    tiers: [
+      { id: 'mace', names: ['mace', 'morning star', 'club', 'cudgel'] },
+      { id: 'short sword', names: ['short sword'] },
+      { id: 'other', names: without(NOVICE_DAMAGE_ORDER,
+          new Set(['mace', 'morning star', 'club', 'cudgel', 'short sword'])) },
+    ],
+  }),
   vsSkeletons: Object.freeze({
     id: 'vsSkeletons',
     title: 'vsSkeletons',

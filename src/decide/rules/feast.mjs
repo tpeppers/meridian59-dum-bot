@@ -636,7 +636,9 @@ export const feastFleetRules = [
                                where_by_agent: Object.fromEntries(
                                  stale.map(([a]) => [a, byAgent.get(a)?.room ?? null])) },
                     steps: [
-                      { tool: 'cancel_movement', args: { agent }, estimate_ms: 2_000, always: true,
+                      { tool: 'cancel_movement',
+                        args: { agent, why: 'feast: giving up a stale journey' },
+                        estimate_ms: 2_000, always: true,
                         why: 'cancel whatever walk is still dangling from the journey' },
                       // AND GIVE THE STATION BACK. The outbound leg made the hall this
                       // character's assigned room so its own keeper would take it there. A

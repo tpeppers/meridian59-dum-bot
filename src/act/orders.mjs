@@ -35,6 +35,19 @@ export const ORDER_FIELDS = {
   purpose:           { policy: 'purpose' },
   assigned_room:     { policy: 'assignedRoom' },
   max_bots_per_safe_spot: { policy: 'maxBotsPerSafeSpot' },
+  // ROOMS THIS CHARACTER MUST NOT SET OUT FOR. A destination ban, not an avoidance: a
+  // journey that merely passes through one is not rerouted.
+  //
+  // The harness wrote it for Roq — room 110, the one NPC that buys a full mixed pack, whose
+  // road crosses a lupogg's ground with a jump in it. The fleet was making over a thousand
+  // journeys a day to him and the lupoggs were the single biggest thing killing it, for a
+  // sale that does not pay well: anything worth real money goes to the Barloque smith, the
+  // jeweler or the herbalist, all above ground, and anything none of them wants is worth
+  // less than the walk.
+  //
+  // It belongs here because it is an ORDER — which rooms this fleet may go to is the
+  // operator's call and changes with the map's dangers, not with the code.
+  banned_destinations: { policy: 'bannedDestinations' },
   partner:           { policy: 'partner' },
   rest_below:        { policy: 'restBelow' },
   flee_below:        { policy: 'fleeBelow' },

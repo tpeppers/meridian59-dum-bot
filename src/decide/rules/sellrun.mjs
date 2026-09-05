@@ -14,6 +14,19 @@
 // second-to-second execution of each `travel` and each `sell_all`; DUM owns only the decision
 // to make the trip and the order of the stops.
 //
+// THE RETURN ROUTE, IN THE ORDER THE OPERATOR GAVE IT (2026-09-05):
+//
+//     vault -> sell -> bank -> drop -> yell -> the Duke's tables
+//
+// Every step earns the next. The vault takes what is worth keeping, the shops take what will
+// sell, the bank takes what they paid, and what reaches the street is exactly what no counter
+// in the world wanted — which is why the drop is LAST of the four and not first. Dropping
+// before Barloque throws money in the road; carrying it home hauls it for nothing.
+//
+// And emptying the pack immediately before the hall is what makes the food step worth taking:
+// a character arrives carrying its weapon, its armour, its money and its reagents, and
+// everything else it can hold is the Duke's food.
+//
 // VAULT, THEN SELL, THEN BANK - and the first and last are why the trip is worth taking.
 // Selling turns a pack into a purse, which moves the risk of dying rather than removing it: a
 // circuit that sells and walks home has converted loot into a bigger thing to lose. So the
@@ -101,6 +114,9 @@ export const BARLOQUE_VAULT = Object.freeze({
 // back without a withdrawal, and a withdrawal is the one bank operation that never states the
 // new balance (Lm_bnkr_did_withdraw, monster.kod:144).
 export const TOS_BANK = Object.freeze({ room: 54, keep: 500 });
+
+import { giveawaySteps, GIVEAWAY_KEEP } from '../street-giveaway.mjs';
+import { FEAST_HALL } from '../feast-hall.mjs';
 
 const mins = ms => `${Math.round(ms / 60000)}m`;
 
@@ -197,7 +213,16 @@ function circuitSteps(agent, cfg, back) {
     // Omit max_stack when there is no cap rather than sending null: the errand runner skips any
     // step with a null argument (it means "a value was not known"), which would silently drop
     // the sale at an uncapped shop. sell_all defaults to no cap when the field is absent.
-    const sellArgs = { agent, merchant: stop.merchant, keep, min_price: minPrice };
+    // KEEP ONE WEAPON: THE ONE IN HAND. `max_weapons` counts equipped plus carried, and
+    // OMITTING IT MEANS NULL, WHICH MEANS KEEP EVERY WEAPON — so for as long as this
+    // circuit existed it walked every spare blade to Barloque, declined to sell any of
+    // them, and walked them home again. A second weapon is worth shillings at the smith
+    // and nothing at all in a pack. Operator's correction, 2026-09-05.
+    //
+    // One, not zero: a character with no weapon at all is a character that cannot fight,
+    // and the keeper's own rearming would then have to buy one back.
+    const sellArgs = { agent, merchant: stop.merchant, keep, min_price: minPrice,
+                       max_weapons: cfg.max_weapons ?? 1 };
     if (stop.max_stack != null) sellArgs.max_stack = stop.max_stack;
     steps.push({ tool: 'sell_all', args: sellArgs, collect: 'messages', estimate_ms: 15_000,
       why: `sell this stop's lane to ${stop.merchant}` });
@@ -230,11 +255,40 @@ function circuitSteps(agent, cfg, back) {
       why: `bank everything above a ${cfg.bank.keep ?? 500} walking float` });
   }
 
-  if (cfg.return_home !== false)
-    // ALWAYS: the way home runs even if a stop failed, so a half-done circuit does not strand a
-    // character in a shop it could not reach the far side of.
-    steps.push({ tool: 'travel', args: { agent, to: back, run_errands: false }, always: true,
-      timeout_ms: travelTimeout, estimate_ms: 120_000, why: 'back to the room it was hunting in' });
+  // AND THEN WHAT NONE OF THE THREE WOULD TAKE GOES IN THE ROAD.
+  //
+  // This is the last step of the route rather than an alternative to it, and the ordering is
+  // the whole point: the vault has taken what is worth keeping, the shops have taken what
+  // will sell, the bank has taken what they paid — so what reaches the street is exactly
+  // what no counter in the world wanted. Dropping it earlier would be throwing money away;
+  // carrying it home is hauling it for nothing.
+  //
+  // It also empties the pack immediately before the tables, which is why the food step is
+  // last and not first: a character arrives at the Duke's hall carrying its weapon, its
+  // armour, its money and its reagents, and everything else it can hold is food.
+  if (cfg.giveaway?.on === true)
+    steps.push(...giveawaySteps(agent, { keep: cfg.giveaway.keep ?? GIVEAWAY_KEEP,
+                                         room: cfg.giveaway.room,
+                                         travelTimeoutMs: travelTimeout }));
+
+  // WHERE THE CIRCUIT ENDS. Home by default — that is what it always did, and what a fleet
+  // with no feast on should still do. `finish: "feast"` sends it to the Duke's tables
+  // instead, which is the operator's return route: everything above happens on the way, and
+  // the character walks home from the hall with a pack full of food rather than loot.
+  //
+  // The grab is not scheduled here. The feast rule fires on a character STANDING IN THE
+  // HALL, whatever brought it there, so the two errands join without either knowing about
+  // the other.
+  const finishAtFeast = cfg.finish === 'feast';
+  const endsAt = finishAtFeast ? FEAST_HALL.room : back;
+  if (cfg.return_home !== false || finishAtFeast)
+    // ALWAYS: the last leg runs even if a stop failed, so a half-done circuit does not strand
+    // a character in a shop it could not reach the far side of.
+    steps.push({ tool: 'travel', args: { agent, to: endsAt, run_errands: false }, always: true,
+      timeout_ms: travelTimeout, estimate_ms: 120_000,
+      why: finishAtFeast
+        ? `on to ${FEAST_HALL.name} (${endsAt}) to fill the pack with food`
+        : 'back to the room it was hunting in' });
   return steps;
 }
 

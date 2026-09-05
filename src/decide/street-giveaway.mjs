@@ -10,6 +10,8 @@
 // empty enough for the food to be worth walking to, and it comes AFTER Barloque so that
 // what hits the road is only what no merchant and no vault would take.
 
+import { FEAST_DISPENSERS } from './feast-hall.mjs';
+
 // Room 50, and the stop is FREE rather than a detour. Measured off the bake: Castle
 // Victoria to the Duke's hall is 11 room hops, and Castle Victoria -> Streets of Tos -> the
 // hall is 8 + 3. From the bank it is closer still: 54 -> 50 is 2 hops, 50 -> 953 is 3.
@@ -23,12 +25,28 @@ export const GIVEAWAY_YELL = 'free crap in streets';
 // relied on rather than a duplicate of them here — the caller that forgets is the whole case
 // they exist for, and a list that repeats them hides whether they work.
 //
-// What is here is food and the two create-food reagents, and nothing else. NO SPARE WEAPONS:
-// a second weapon is worth shillings at the Barloque smith and nothing at all in a pack, so
-// the sell stop is told to keep exactly one (the equipped one) and anything the smith would
-// not take has earned its place in the road.
+// NO SPARE WEAPONS: a second weapon is worth shillings at the Barloque smith and nothing at
+// all in a pack, so the sell stop is told to keep exactly one (the equipped one) and anything
+// the smith would not take has earned its place in the road.
+//
+// AND THE FOOD HALF IS DERIVED FROM THE HALL'S OWN TABLES, not typed out. A hand-written list of "what is food"
+// drifts from the game, and this one had: it named two of the seven things the Duke hands
+// out, so `spider eye`, `bunch of grapes`, `drumstick`, `goblet of ale` and `fortune cookie`
+// were all being dropped in the road or sold in Barloque. The spider eye is the expensive
+// one — nutrition 9, the same as a slice of pork, and the fleet was carrying six hundred.
+//
+// FEAST_DISPENSERS is the list the grab errand already walks up to and activates, so it
+// cannot disagree with what the fleet actually comes home holding. Anything added to the
+// hall arrives here for free.
+//
+// The three after it are foods the hall does NOT dispense but the fleet finds: the two
+// edible mushrooms (four of this world's five are reagents, so they are named exactly and
+// never as a family), and bread. The reagents at the end are not food at all — they are what
+// Create Food is made of, which is the same argument for keeping them out of a merchant's
+// hands and out of the road.
 export const GIVEAWAY_KEEP = Object.freeze([
-  'slice of pork', 'bowl of soup', 'edible mushroom', 'inky', 'turkey leg', 'loaf',
+  ...FEAST_DISPENSERS.map(d => d.item),
+  'edible mushroom', 'inky', 'loaf',
   'herb', 'elderberry',
 ]);
 

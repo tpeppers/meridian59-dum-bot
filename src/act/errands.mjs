@@ -328,7 +328,8 @@ export async function runErrand(broker, intent, { commit = false, holder = null,
           // no-op if nothing is moving. THIS RUNS FOR AN OPTIONAL STEP TOO: a walk nobody is
           // waiting for any more is still a walk in flight, and it is what makes the next
           // step fail "busy".
-          await broker.call('cancel_movement', { agent }).catch(() => {});
+          await broker.call('cancel_movement', { agent,
+            why: `the errand runner clearing a dangling walk (${errand})` }).catch(() => {});
           failed(`${step.tool} did not arrive at ${step.args?.to} (${reached.why})`);
         }
       } else if (r?.arrived === false) {

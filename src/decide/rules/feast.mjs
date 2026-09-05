@@ -369,7 +369,40 @@ export { STREETS_OF_TOS, GIVEAWAY_YELL, GIVEAWAY_KEEP } from '../street-giveaway
 // to block. Here the whole design is that the walk is fired and forgotten and the arrival is
 // read off the board by a later tick. Keep it that way.
 function outboundSteps(agent, cfg, doctrine = {}, row = {}) {
-  return [{
+  return [
+  // MOVE THE KEEPER'S OWN DESTINATION, DO NOT FIGHT IT FOR THE BODY.
+  //
+  // Read live on prod, 2026-09-05, from a character that had just been dispatched:
+  //
+  //     faculties = { work: "keeper", movement: "keeper", economy: "keeper", ... }
+  //
+  // DUM holds NOTHING. The doctrine's `claim` block says work/movement/economy are the
+  // bot's and that is an intention, not a fact — nothing had ever taken the lease. So the
+  // keeper, mode `farm` with `assignedRoom: 39` and `roam: false`, was still steering: it
+  // walked the character to the hall because we asked, then walked it straight back to 39
+  // to farm, because that is where its own orders say it lives. The operator watched
+  // exactly that happen, repeatedly, and every call reported success — which is the failure
+  // CLAUDE.md describes in as many words.
+  //
+  // A LEASE IS THE WRONG TOOL FOR THIS PARTICULAR TRIP. `commander_claim` is capped at
+  // 30 seconds by the keeper and needs a heartbeat; this errand LAUNCHES an eleven-hop walk
+  // and returns in seconds, so there is nothing left alive to beat it. Holding the errand
+  // open instead would block the whole fleet tick for up to 25 minutes, which is why the
+  // outbound and the grab were split in the first place.
+  //
+  // So: tell the keeper the hall IS its station. Then it walks there of its own accord and
+  // STAYS - `roam: false` means a keeper at its assigned room idles rather than wandering -
+  // and the next fleet pass finds it standing in the hall, which is all the grab has ever
+  // needed. The grab puts the station back afterwards, and the abandon sweep puts it back
+  // if the trip never completes.
+  {
+    tool: 'autopilot',
+    args: { agent, action: 'start', assigned_room: FEAST_HALL.room },
+    estimate_ms: 2_000,
+    why: `make ${FEAST_HALL.name} this character's station, so its own keeper takes it there ` +
+         'and leaves it there',
+  },
+  {
     tool: 'travel',
     args: { agent, to: FEAST_HALL.room, background: true, run_errands: false },
     // No `expect: 'arrived'` on purpose — this errand LAUNCHES the walk and returns. The
@@ -428,6 +461,19 @@ function grabSteps(agent, cfg, home, row) {
     always: true, estimate_ms: 1_000, extend_busy: false,
     why: "the Duke's feast is a public event and the fleet is a guest at it",
   });
+
+  // AND GIVE THE STATION BACK, BEFORE ASKING IT TO WALK ANYWHERE.
+  //
+  // The outbound leg made the hall this character's assigned room so its keeper would take
+  // it there and keep it there. Leaving that in place means a character that has its food
+  // and lives in the Duke's hall for ever. `always`, and BEFORE the walk home: the travel
+  // below is a nudge, and the thing that actually keeps it home afterwards is this.
+  if (Number.isInteger(home))
+    steps.push({
+      tool: 'autopilot', args: { agent, action: 'start', assigned_room: home },
+      always: true, estimate_ms: 2_000, extend_busy: false,
+      why: 'hand the station back, or this character now lives at the feast',
+    });
 
   if (cfg.return_home !== false && Number.isInteger(home))
     steps.push({
@@ -589,8 +635,20 @@ export const feastFleetRules = [
                                also: stale.slice(1).map(([a]) => a),
                                where_by_agent: Object.fromEntries(
                                  stale.map(([a]) => [a, byAgent.get(a)?.room ?? null])) },
-                    steps: [{ tool: 'cancel_movement', args: { agent }, estimate_ms: 2_000, always: true,
-                              why: 'cancel whatever walk is still dangling from the journey' }] },
+                    steps: [
+                      { tool: 'cancel_movement', args: { agent }, estimate_ms: 2_000, always: true,
+                        why: 'cancel whatever walk is still dangling from the journey' },
+                      // AND GIVE THE STATION BACK. The outbound leg made the hall this
+                      // character's assigned room so its own keeper would take it there. A
+                      // journey that never arrived would otherwise leave it assigned to a room
+                      // it is not in and could not reach, which is the most expensive way to be
+                      // lost in this game. `e.from` is the home the outbound wrote down.
+                      ...(Number.isInteger(e?.from)
+                        ? [{ tool: 'autopilot',
+                             args: { agent, action: 'start', assigned_room: e.from },
+                             always: true, estimate_ms: 2_000,
+                             why: `the trip failed; put the station back to ${e.from}` }]
+                        : [])] },
           why: `${agent} set off for the feast hall ${mins(now - (e.since ?? now))} ago and is ` +
                `${where == null ? 'nowhere on the board' : `in ${where}`}, not in the hall` +
                (hustled ? ' — standing on the approach, which is what a LOCKED hall does to a ' +

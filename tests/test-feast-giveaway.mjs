@@ -33,15 +33,38 @@ const dispatch = (rows = [row()], d = doctrine) =>
 
 test('feast: the outbound errand launches and returns — nothing in it blocks', () => {
   const s = dispatch().orders.steps;
-  assert.equal(s.length, 1, 'one step per character dispatched');
-  assert.equal(s[0].tool, 'travel');
-  assert.equal(s[0].args.to, FEAST_HALL.room);
-  assert.equal(s[0].args.background, true, 'fired and forgotten');
-  assert.equal(s[0].expect, undefined, 'nothing waits for arrival here');
+  // THE STATION FIRST, AND IT IS THE STEP THAT ACTUALLY WORKS.
+  //
+  // Read live on prod: `faculties = { work: "keeper", movement: "keeper", ... }` — DUM holds
+  // nothing, the doctrine's `claim` block is an intention rather than a fact, and the keeper
+  // (mode farm, assignedRoom 39, roam false) was walking every dispatched character straight
+  // back home to farm. Asking it to travel and then leaving it under its own orders is asking
+  // it to change its mind, which it does not. Moving its station moves where it wants to be.
+  assert.equal(s[0].tool, 'autopilot');
+  assert.equal(s[0].args.assigned_room, FEAST_HALL.room);
+  const walk = s.find(x => x.tool === 'travel');
+  assert.equal(walk.args.to, FEAST_HALL.room);
+  assert.equal(walk.args.background, true, 'fired and forgotten');
+  assert.equal(walk.expect, undefined, 'nothing waits for arrival here');
+  for (const step of s) assert.notEqual(step.expect, 'arrived', `${step.tool} must not block`);
   // The arrival is read off the board by a later tick. A step that waits for it would hold
   // the pass, and the pass is the scarce thing.
   assert.equal(s.some(x => x.tool === 'drop_all' || x.tool === 'say'), false,
                'the giveaway belongs to the sell circuit, which can afford to block');
+});
+
+test('feast: the station is handed back, or the character lives at the feast', () => {
+  // The outbound leg makes the hall this character's home so its keeper will go and stay.
+  // Leaving it there is a character that has its food and never works again.
+  const grab = rule.decide({ at: NOW, memory: { feast: { a: { phase: 'outbound', since: NOW } } },
+                             characters: [row({ room: FEAST_HALL.room })] }, doctrine);
+  const back = (grab.orders.steps ?? []).filter(x => x.tool === 'autopilot');
+  assert.equal(back.length, 1, 'exactly one hand-back');
+  assert.equal(back[0].args.assigned_room, 39, 'to where it came from');
+  assert.equal(back[0].always, true, 'even if the taking failed');
+  const idx = grab.orders.steps.indexOf(back[0]);
+  const home = grab.orders.steps.findIndex(x => x.tool === 'travel');
+  assert.ok(idx < home, 'and before the walk home, which is only a nudge');
 });
 
 test('feast: several characters go per pass, because one cannot keep a fleet fed', () => {
@@ -51,12 +74,13 @@ test('feast: several characters go per pass, because one cannot keep a fleet fed
   const rows = Array.from({ length: 9 }, (_, i) =>
     row({ agent: `a${i}`, travel_to_feast: { hops: 3 + i, ms: (4 + i) * 60_000 } }));
   const out = dispatch(rows);
-  const sent = out.orders.steps.map(s => s.args.agent);
-  assert.equal(sent.length, 6, 'the default batch');
-  assert.equal(new Set(sent).size, 6, 'each character once');
-  assert.equal(sent[0], 'a0', 'nearest first');
-  assert.deepEqual(out.orders.context.also, sent.slice(1),
+  const agents = [...new Set(out.orders.steps.map(s => s.args.agent))];
+  assert.equal(agents.length, 6, 'six characters go per pass');
+  assert.equal(agents[0], 'a0', 'nearest first');
+  assert.deepEqual(out.orders.context.also, agents.slice(1),
                    'and the errand names the others so their memory is written too');
+  // Each of them gets the station move AND the nudge, so the count is two per character.
+  assert.equal(out.orders.steps.length, agents.length * 2);
 });
 
 test('feast: every launched character gets a memory entry, not just the addressed one', async () => {

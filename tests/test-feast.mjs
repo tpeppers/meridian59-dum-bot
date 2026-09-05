@@ -111,8 +111,14 @@ test('feast: a thin larder near Tos sets off, and the errand LAUNCHES the walk w
   eq(intent.orders.errand, 'feast-outbound', 'the dispatch errand');
   eq(intent.orders.agent, 'a', 'the one near Tos');
   eq(intent.orders.context.door, 'passing', 'through the near-Tos door');
-  eq(intent.orders.steps.length, 1, 'one step');
-  const [go] = intent.orders.steps;
+  // TWO STEPS NOW, AND NEITHER OF THEM WAITS. The first moves the keeper's own station to
+  // the hall - which is what actually gets the character there and keeps it there, since
+  // DUM holds no lease and the keeper was walking it home again - and the second nudges the
+  // walk. The property this test is about is that nothing BLOCKS, not how many steps it is.
+  eq(intent.orders.steps.length, 2, 'set the station, then nudge the walk');
+  eq(intent.orders.steps[0].tool, 'autopilot', 'the station first');
+  eq(intent.orders.steps[0].args.assigned_room, 953, 'to the hall');
+  const go = intent.orders.steps.find(x => x.tool === 'travel');
   eq(go.tool, 'travel', 'a travel');
   eq(go.args.to, FEAST_HALL.room, 'to the hall');
   eq(go.args.background, true, 'non-blocking');

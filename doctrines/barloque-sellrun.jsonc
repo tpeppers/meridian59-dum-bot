@@ -35,11 +35,11 @@
   // has to be first. That is the only half an operator should be changing without a commit.
   //
   // THIS SPLIT WAS NOT THE ORIGINAL ARRANGEMENT, and the reason it changed is worth keeping.
-  // Every list used to be restated here — and the live prod doctrine does not descend from
-  // this file. It descends from castle-victoria, which descends from survive. So switching
-  // selling on for the real fleet meant copying four lists into a gitignored local doctrine,
-  // where they would drift from the file the tests assert against, silently. The first symptom
-  // of that drift would have been a merchant buying the Duke's free food.
+  // Every list used to be restated here — and a doctrine driving a live fleet need not descend
+  // from this file at all. The one in use here descends from castle-victoria, which descends
+  // from survive. So switching selling on for it meant copying four lists into a gitignored
+  // local doctrine, where they would drift from the file the tests assert against, silently.
+  // The first symptom of that drift would have been a merchant buying the Duke's free food.
   //
   // Any of them can still be overridden here or in a local doctrine. `"vault": null` and
   // `"bank": null` decline those stops outright, which is a different instruction from saying

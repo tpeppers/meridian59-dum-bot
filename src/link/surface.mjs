@@ -95,14 +95,31 @@ export const WRITE = new Set([
   // deny(): `activate` on a named food dispenser in the Duke's Feast Hall, which is how
   // the hall hands out its free food and touches nothing the character already holds.
   'act',
+  // `approach` AND `say`, BOTH FOR THE DUKE'S TABLE AND BOTH FOR THE HUMANS WATCHING.
+  //
+  // Neither is needed to take the food. `UserTryActivate` checks only that the dispenser
+  // is in the same ROOM (user.kod: GetOwner <> poOwner) — no distance test — so a
+  // character can empty a table from the far side of the hall and the server allows it.
+  //
+  // The feast is a public event on a SHARED SERVER with human players standing at the same
+  // tables, and a character that harvests forty slices of pork from a doorway twenty
+  // squares away, in silence, reads as exactly what it is. So the grab errand walks up to
+  // the table and says "Mmm, slice of pork!" when it is done. Operator's call, 2026-09-04.
+  //
+  // NARROW ON PURPOSE. `say` is local room speech; `chat`, `converse` and the private
+  // channels stay out, and the only text DUM composes is that one fixed line naming the
+  // food it just took. `approach` walks toward a target it can already see in the room —
+  // it is not a route across the world, which is `travel`.
+  'approach',
+  'say',
 ]);
 
 // Tools that exist and DUM has no business calling, listed so that adding one later is
 // a deliberate act with a comment attached rather than a silent widening.
 export const NOT_YET = new Set([
-  'attack', 'fight', 'approach', 'face', 'attack_intent', 'move_intent',
+  'attack', 'fight', 'face', 'attack_intent', 'move_intent',
   'context_intent', 'pilot', 'recording', 'rescue', 'leave_raza', 'split', 'trade',
-  'loot', 'say', 'chat', 'converse', 'inbox', 'describe', 'look_at', 'go_through',
+  'loot', 'chat', 'converse', 'inbox', 'describe', 'look_at', 'go_through',
   'movement_mode', 'cancel_action', 'wait_for_event',
 ]);
 

@@ -245,9 +245,12 @@ test('loyalty: the surface widened by exactly one bounded primitive, and no furt
   // player, or compose any text — the one word it causes to be spoken is a constant in
   // the harness.
   assert.equal(deny('faction_loyalty', { action: 'request' }), null);
-  for (const shut of ['say', 'chat', 'converse', 'inbox', 'look_at', 'trade'])
+  // `say` left this list on 2026-09-04 for the Duke's feast — one fixed line at a table on
+  // a shared server, argued in surface.mjs. It is still true that DUM cannot READ speech or
+  // reply to it, which is what this test is really defending: the loyalty primitive causes
+  // a word the HARNESS composes, and that is a different thing from conversation.
+  for (const shut of ['chat', 'converse', 'inbox', 'look_at', 'trade'])
     assert.equal(NOT_YET.has(shut), true, `${shut} must stay closed`);
-  assert.match(deny('say', { text: 'loyalty' }) ?? '', /refused/);
   assert.equal(WRITE.has('faction_loyalty'), true);
 
   // An errand kind the runner does not know throws by design, so all three are registered.

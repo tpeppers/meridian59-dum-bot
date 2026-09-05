@@ -355,5 +355,8 @@ export async function pass(ctx, { only = null, decideFleet = true } = {}) {
     ...r, strategies: fleetLine.observation?.strategies ?? null,
     factions: fleetLine.observation?.factions ?? null,
   }));
-  return { fleet: fleetLine, characters };
+  // THE RUNNING TOTALS, READ AFTER THE PASS RATHER THAN ACCUMULATED IN IT. A pass may
+  // have written to them (an errand recorded itself), so this is deliberately the read
+  // that happens last. The report prints them; nothing decides on them.
+  return { fleet: fleetLine, characters, memory: ctx.memory?.read() ?? null };
 }

@@ -121,11 +121,13 @@ test('feast: a thin larder near Tos sets off, and the errand LAUNCHES the walk w
   ok(/near Tos|hop/.test(intent.orders.label + intent.why), `says so: ${intent.why}`);
 });
 
-test('feast: near Tos but already fed, nobody goes', () => {
+test('feast: near Tos and already fed - it still tops up', () => {
+  // UNCAPPED 2026-09-04. "It already has some food" was a reason to walk past free,
+  // infinite food, and the fleet's whole ceiling is vigor. Everybody fills up every time
+  // they pass; the only refusal left is a pack with no room in it.
   const rows = [unit('a', { room: 50, travel_to_feast: { ms: 48_000, hops: 3 },
                             pack_items: [{ name: 'slice of pork', amount: 9 }] })];
-  const out = rule.decide(fleetObs(rows), doctrineWith());
-  eq(out.kind, 'pass', 'a pass, with a reason');
+  eq(rule.decide(fleetObs(rows), doctrineWith()).kind, 'errand', 'nine meals is not full');
 });
 
 test('feast: near_rooms names a place distance would miss', () => {
@@ -140,79 +142,49 @@ test('feast: near_rooms names a place distance would miss', () => {
 test('feast: no food and no casting, within the walk limit — the supply trip goes to the tables instead', () => {
   const intent = rule.decide(fleetObs([unit('a')]), doctrineWith());
   eq(intent.kind, 'errand', 'sent');
-  eq(intent.orders.context.door, 'supply', 'through the redirected-supply door');
-  ok(/cannot cast create food/.test(intent.why), `explains the substitution: ${intent.why}`);
+  eq(intent.orders.context.door, 'supply', 'through the worth-the-walk door');
+  ok(/tables are free/.test(intent.why), `explains the substitution: ${intent.why}`);
   eq(intent.orders.context.home, 39, 'home is the assigned room');
 });
 
-test('feast: from afar, a thin-but-not-empty larder does NOT go, and neither does one that can cook', () => {
+test('feast: from afar, having food or reagents no longer keeps anybody home', () => {
+  // Both of these used to be passes. Free food beats cooked food: `create food` costs two
+  // elderberry and two herbs and a trip to a counter, and the tables cost a walk.
   const thin = unit('a', { pack_items: [{ name: 'slice of pork', amount: 1 }] });
-  eq(rule.decide(fleetObs([thin]), doctrineWith()).kind, 'pass', 'one meal aboard is not the supply door');
+  eq(rule.decide(fleetObs([thin]), doctrineWith()).kind, 'errand', 'one meal aboard still goes');
   const cook = unit('b', { reagents: { elderberry: 4, herbs: 4 } });
-  eq(rule.decide(fleetObs([cook]), doctrineWith()).kind, 'pass', 'it can cook, so its keeper will');
+  eq(rule.decide(fleetObs([cook]), doctrineWith()).kind, 'errand', 'able to cook still goes');
 });
 
 // ------------------------------------------------- door three: a courier, for the fleet
 
-test('feast: a named courier goes even though it is full, far, and perfectly able to cook', () => {
-  // The case the first two doors cannot express, and the one that produced this door.
-  // Operator request 2026-09-04: three characters that had outgrown their hunting room were
-  // to fill up at the tables and carry the food back to fifteen fleet-mates pinned at the
-  // resting cap. Every one of the three carried reagents (so `starving` was false) and was
-  // eleven hops from Tos (so `nearby` was false), and the rule declined to send anybody —
-  // correctly, at the exact moment sending somebody was the whole point.
-  const stocked = unit('a', {
-    pack_items: [{ name: 'slice of pork', amount: 40 }],   // a full larder of its own
-    reagents: { elderberry: 60, herbs: 60 },               // and well able to cook
-  });
-  eq(rule.decide(fleetObs([stocked]), doctrineWith()).kind, 'pass',
-     'without the list it stays at home, which is the old behaviour');
+test('feast: the pack-fullness safety is the ONLY thing that stops a trip', () => {
+  // Operator's decision, 2026-09-04: remove every cap that was about the FLEET - how many
+  // are on the road, who is a named courier, whether they already have food, how recently
+  // they went - and keep one safety that is about the CHARACTER. Both halves must hold.
+  const heavy = load => ({ carry: { weight_max: 2700, load: { weight: load } } });
 
-  const intent = rule.decide(fleetObs([stocked]), doctrineWith({ couriers: ['a'] }));
-  eq(intent.kind, 'errand', 'named, so it goes');
-  eq(intent.orders.context.door, 'courier', 'through the courier door');
-  eq(intent.orders.context.home, 39, 'and it comes home to its assigned room, not to the hall');
-  ok(/are not the test/.test(intent.why), `says why: ${intent.why}`);
+  // Mostly food AND nearly full: the one skip.
+  const stuffed = unit('a', { ...heavy(2300), pack_items: [{ name: 'slice of pork', amount: 240 }] });
+  const out = rule.decide(fleetObs([stuffed]), doctrineWith());
+  eq(out.kind, 'pass', 'no room for more food');
+  ok(/pack full of food/.test(out.why), out.why);
+
+  // Nearly full, but of LOOT - it can still carry food, so it goes.
+  const looted = unit('b', { ...heavy(2300),
+    pack_items: [{ name: 'chain armor', amount: 1 }, { name: 'slice of pork', amount: 10 }] });
+  eq(rule.decide(fleetObs([looted]), doctrineWith()).kind, 'errand', 'a heavy pack of loot still tops up');
+
+  // All food, but light - plenty of room, so it goes.
+  const light = unit('c', { ...heavy(500), pack_items: [{ name: 'slice of pork', amount: 55 }] });
+  eq(rule.decide(fleetObs([light]), doctrineWith()).kind, 'errand', 'room to carry is room to carry');
 });
 
-test('feast: the courier list matches a character name as well as a handle, and absent means NOBODY', () => {
-  const stocked = unit('a', { pack_items: [{ name: 'slice of pork', amount: 40 }],
-                              reagents: { elderberry: 60, herbs: 60 } });
-  eq(rule.decide(fleetObs([stocked]), doctrineWith({ couriers: ['A'] })).kind, 'errand',
-     'the character name (A) works like the handle');
-  eq(rule.decide(fleetObs([stocked]), doctrineWith({ couriers: [] })).kind, 'pass',
-     'an EMPTY list sends nobody rather than everybody — the dangerous reading');
-  eq(rule.decide(fleetObs([stocked]), doctrineWith({ couriers: ['someone-else'] })).kind, 'pass',
-     'and a list that does not name it leaves it alone');
-});
-
-test('feast: a courier still obeys health, the in-flight cap and its own cooldown', () => {
-  const full = { pack_items: [{ name: 'slice of pork', amount: 40 }],
-                 reagents: { elderberry: 60, herbs: 60 } };
-  const hurt = unit('a', { ...full, health: { value: 10, max: 40, pct: 0.25 } });
-  eq(rule.decide(fleetObs([hurt]), doctrineWith({ couriers: ['a'] })).kind, 'pass',
-     'a hurt courier is not sent — the road is what kills this fleet');
-
-  const fresh = unit('a', full);
-  const justFilled = { a: { last_visit_at: NOW - 5 * MIN, ok: true } };
-  eq(rule.decide(fleetObs([fresh], justFilled), doctrineWith({ couriers: ['a'] })).kind, 'pass',
-     'and one that filled a pack five minutes ago waits its cooldown rather than turning round');
-
-  const onTheRoad = { b: { phase: 'outbound', since: NOW - MIN, ms: 11 * MIN } };
-  eq(rule.decide(fleetObs([fresh, unit('b', full)], onTheRoad),
-                 doctrineWith({ couriers: ['a', 'b'], max_in_flight: 1 })).kind, 'pass',
-     'and the in-flight cap counts couriers like anybody else');
-});
-
-test('feast: a courier is dispatched before an opportunistic top-up', () => {
-  // Both qualify; the courier is somebody's instruction and the other is a coincidence.
-  const nearTos = unit('n', { room: 50, travel_to_feast: { ms: 3 * MIN, hops: 3 },
-                              pack_items: [{ name: 'hammer', amount: 1 }] });
-  const courier = unit('c', { pack_items: [{ name: 'slice of pork', amount: 40 }],
-                              reagents: { elderberry: 60, herbs: 60 } });
-  const intent = rule.decide(fleetObs([nearTos, courier]), doctrineWith({ couriers: ['c'] }));
-  eq(intent.kind, 'errand', 'somebody goes');
-  eq(intent.orders.agent, 'c', 'and it is the courier, despite the longer walk');
+test('feast: an unknown pack is not treated as a full one', () => {
+  // Unknown must fail toward GOING. The cost of a wrong walk is a walk; the cost of a wrong
+  // refusal is a character at the resting cap for ever, which is what this rule exists for.
+  const blind = unit('a', { carry: null, pack_items: null, has_food: null });
+  eq(rule.decide(fleetObs([blind]), doctrineWith()).kind, 'errand', 'no carry reading: still goes');
 });
 
 test('feast: the walk limit is honoured, and a missing estimate is not read as a short walk', () => {
@@ -237,32 +209,33 @@ test('feast: hurt, piloted, parked and busy characters are left alone', () => {
   eq(rule.decide(fleetObs([owned]), doctrineWith()).kind, 'errand', 'a takeable bot claim goes');
 });
 
-test('feast: an unreadable larder is not sent across the world on a guess', () => {
+test('feast: an unreadable larder is no longer a reason to stay home', () => {
+  // It was, while "already has food" was a gate - you cannot check a larder you cannot
+  // read. With the gate gone the question never arises, and the trip is free anyway.
   const blind = unit('a', { pack_items: null, has_food: null });
-  const out = rule.decide(fleetObs([blind]), doctrineWith());
-  eq(out.kind, 'pass', 'nobody');
-  ok(/larder unreadable/.test(out.why), out.why);
+  eq(rule.decide(fleetObs([blind]), doctrineWith()).kind, 'errand', 'sent');
 });
 
 // ---------------------------------------------------------------- bounded dispatch
 
-test('feast: max_in_flight caps the road, counting only live outbound journeys', () => {
+test('feast: there is no cap on how many are on the road', () => {
+  // `max_in_flight` is gone. It was a queue for a resource that cannot run out, and it
+  // jammed at six - mostly on phantom entries - while the fleet sat at the resting cap.
   const mem = { x: { phase: 'outbound', since: NOW - 5 * MIN },
                 y: { phase: 'outbound', since: NOW - 6 * MIN },
                 z: { phase: 'outbound', since: NOW - 7 * MIN } };
-  const out = rule.decide(fleetObs([unit('a')], mem), doctrineWith({ max_in_flight: 3 }));
-  eq(out.kind, 'pass', 'three already out');
-  ok(/already on the road/.test(out.why), out.why);
-  eq(rule.decide(fleetObs([unit('a')], mem), doctrineWith({ max_in_flight: 4 })).kind, 'errand', 'room for one more');
+  eq(rule.decide(fleetObs([unit('a')], mem), doctrineWith({ max_in_flight: 3 })).kind, 'errand',
+     'three already out, and a fourth still goes');
 });
 
 test('feast: a character\'s own outbound journey is not re-dispatched, and its cooldown gates the next', () => {
   const going = { a: { phase: 'outbound', since: NOW - 2 * MIN } };
   eq(rule.decide(fleetObs([unit('a')], going), doctrineWith()).kind, 'pass', 'already on its way');
-  const fed = { a: { phase: 'home', last_visit_at: NOW - 10 * MIN, ok: true } };
-  const out = rule.decide(fleetObs([unit('a')], fed), doctrineWith());
-  eq(out.kind, 'pass', 'filled up ten minutes ago');
-  ok(/filled up at the hall/.test(out.why), out.why);
+  // AND THE COOLDOWN IS GONE. A clock on a free, infinite resource only keeps a character
+  // at the resting cap for longer; the pack is the limit now, not the calendar.
+  const fed = { a: { phase: 'home', last_visit_at: NOW - MIN, ok: true } };
+  eq(rule.decide(fleetObs([unit('a')], fed), doctrineWith()).kind, 'errand',
+     'filled up a minute ago, and may go straight back');
 });
 
 test('feast: nearest first, then hungriest', () => {
@@ -302,13 +275,15 @@ test('feast: a character standing in the hall is served before anybody is sent, 
   eq(home.args.background, true, 'non-blocking, like the way out');
 });
 
-test('feast: somebody in the hall for their own reasons is fed too, unless freshly fed', () => {
+test('feast: somebody in the hall for their own reasons is fed too', () => {
   const inHall = unit('a', { room: FEAST_HALL.room, travel_to_feast: { ms: 0, hops: 0 } });
   const intent = rule.decide(fleetObs([inHall], {}), doctrineWith());
   eq(intent.orders.errand, 'feast-grab', 'no memory of a journey, still fed');
   eq(intent.orders.context.home, 39, 'home falls back to the assigned room');
+  // Standing in the hall is its own reason now: no journey memory required, no cooldown.
   const fed = { a: { phase: 'home', last_visit_at: NOW - MIN, ok: true } };
-  eq(rule.decide(fleetObs([inHall], fed), doctrineWith()).kind, 'pass', 'just filled up; not again');
+  eq(rule.decide(fleetObs([inHall], fed), doctrineWith()).orders.errand, 'feast-grab',
+     'in the room with the free food, so it takes some');
 });
 
 test('feast: grab_from names a table the hall has, in order, and the schema refuses one it does not', () => {
@@ -415,10 +390,24 @@ test('feast: the runner does not re-extend busy for every one of sixty grabs', a
     },
     write: async () => ({ dry_run: true }),
   };
-  const inHall = unit('a', { room: FEAST_HALL.room });
-  const intent = { rule: 'feast-hall-larder', ...rule.decide(fleetObs([inHall]), doctrineWith({ max_grabs: 20 })) };
-  await runErrand(broker, intent, { commit: true, holder: 'dum/test@pid-1' });
-  ok(busyCalls <= 3, `announce, one extension for the grabs, one for the walk home: ${busyCalls}`);
+  // THE PROPERTY IS THAT EXTENSIONS DO NOT SCALE WITH GRABS, not that there are three of
+  // them. A fixed bound broke the day a genuine step was added — walking up to the table
+  // before taking from it — and a test that fails when the errand grows a leg is a test
+  // that gets its number bumped rather than read. So run it twice, at twenty grabs and at
+  // sixty, and assert the count is IDENTICAL: sixty three-second activations must cost the
+  // same in leases as twenty, which is the thing worth defending.
+  const runWith = async grabs => {
+    busyCalls = 0;
+    const inHall = unit('a', { room: FEAST_HALL.room });
+    const intent = { rule: 'feast-hall-larder',
+                     ...rule.decide(fleetObs([inHall]), doctrineWith({ max_grabs: grabs })) };
+    await runErrand(broker, intent, { commit: true, holder: 'dum/test@pid-1' });
+    return busyCalls;
+  };
+  const twenty = await runWith(20);
+  const sixty = await runWith(60);
+  eq(sixty, twenty, `sixty grabs must cost the same leases as twenty (${twenty} vs ${sixty})`);
+  ok(twenty <= 6, `and the fixed cost stays small: ${twenty}`);
 });
 
 // ---------------------------------------------------------------- the walker is held on the road

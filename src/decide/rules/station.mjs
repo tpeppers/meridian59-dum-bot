@@ -35,6 +35,9 @@
 // So this is a doctrine switch rather than a default, and it names the rooms it will
 // return people to rather than trusting whatever `assignedRoom` happens to say.
 import { activeFactionWork } from './factions.mjs';
+// Pure data — room numbers read off the kod. See the note in isStranded: a room this
+// doctrine's own errands send people to is not a room they are stranded in.
+import { FEAST_HALL } from '../feast-hall.mjs';
 
 // A CLAIM IS NOT AN OPERATION, and reading it as one made the first version vacuous.
 //
@@ -90,11 +93,54 @@ const healthFraction = row => {
   return null;
 };
 
+/**
+ * Is this room somewhere this doctrine's own errands send people?
+ *
+ * Only rooms belonging to a rule that is switched ON. With the feast off, 953 is an
+ * ordinary room again and a character idling there SHOULD be walked home.
+ */
+export function isDoctrineDestination(room, doctrine = {}) {
+  if (!Number.isInteger(room)) return false;
+  const out = new Set();
+  // THE HALL ITSELF, AND DELIBERATELY NOT THE APPROACH.
+  //
+  // The first version of this exempted 950, 951 and 50 as well, reasoning that a courier
+  // crossing them is mid-errand. It is — but the `busy` hold already protects it there
+  // (30 minutes against an 11-minute walk since max_travel_ms was raised), and exempting
+  // the approach STRANDS the other half of the trip: a courier that has filled its pack
+  // and is walking home sits in Blackstone Keep for ever, because nothing recalls it and
+  // its errand has ended. Caught within minutes of shipping it: a courier was found
+  // holding 128 slices of pork in 951 with no reason left to move.
+  //
+  // Standing in the hall is the only part that needs the exemption, because that is where
+  // the character deliberately stops for up to six minutes to work the tables.
+  if (doctrine.feast?.on) out.add(FEAST_HALL.room);
+  for (const r of doctrine.station?.also_allowed ?? []) out.add(Number(r));
+  return out.has(Number(room));
+}
+
 /** Is this character somewhere other than the station this doctrine gave it? */
 export function isStranded(row = {}, doctrine = {}, fleetObs = null) {
   if (!row.in_game) return false;
   if (holdsTheBody(row)) return false;
   if (fleetObs && activeFactionWork(fleetObs, row)) return false;
+
+  // A ROOM THIS DOCTRINE SENDS PEOPLE TO IS NOT A ROOM THEY ARE STRANDED IN, and getting
+  // that wrong cost the fleet its entire food supply for a day.
+  //
+  // Measured on prod, 2026-09-04. The feast errand walks a courier eleven hops to the
+  // Duke's Feast Hall; this rule then read 953 as "out of position" and walked it straight
+  // back out, every time, within about thirty seconds of arrival. One was watched doing
+  // it: in the hall at r15c24, and back in Blackstone Keep at r12c9 a minute later, at
+  // which point activating a table answered "You can't activate the roast pig; it is no
+  // longer accessible" — the server's `GetOwner <> poOwner` refusal, right object, wrong
+  // room. In one log: 724 travel-to-39 orders against 20 travel-to-953. Not one courier
+  // ever took a single slice of pork.
+  //
+  // The general rule, not a special case for one hall: anywhere this doctrine's own errands
+  // deliberately send a character is somewhere it is allowed to be.
+  if (isDoctrineDestination(row.room, doctrine)) return false;
+
   const home = stationFor(row, doctrine);
   if (home == null || !Number.isInteger(row.room)) return false;
   if (row.room === home) return false;

@@ -157,8 +157,18 @@ test('surface: autopilot is allowed but autopilot hard:true is not', () => {
   assert.match(deny('autopilot', { agent: 'a', action: 'stop', hard: true }), /instruments go dark/);
 });
 
-test('surface: DUM does not talk', () => {
-  for (const t of ['say', 'chat', 'converse', 'inbox']) assert.ok(deny(t, {}), `${t} should be refused`);
+test('surface: DUM speaks one line and holds no conversation', () => {
+  // WIDENED 2026-09-04, deliberately and narrowly. The Duke's feast is a public event on a
+  // shared server, and a character that empties a table in silence reads as a bot; the grab
+  // errand now says "Mmm, slice of pork!" when it is done. That is the ONLY text DUM
+  // composes, and it names the food it just took.
+  //
+  // What must stay shut is the rest of talking: reading what players say, replying to it,
+  // and every private channel. A bot that can hold a conversation on a shared server is a
+  // different thing from one that can say a fixed line at a table.
+  assert.equal(deny('say', { text: 'Mmm, slice of pork!' }), null, 'local speech is allowed');
+  for (const t of ['chat', 'converse', 'inbox'])
+    assert.ok(deny(t, {}), `${t} should be refused — DUM does not converse`);
 });
 
 test('surface: a tool nobody has heard of is refused with a pointer to the file', () => {

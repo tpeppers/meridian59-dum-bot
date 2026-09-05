@@ -14,6 +14,7 @@
 // mode is the one you get by forgetting.
 
 import { loadDoctrine, flatten, getDotted } from '../src/config/load.mjs';
+import { feastStatsLine } from '../src/decide/rules/feast.mjs';
 import { Broker } from '../src/link/broker.mjs';
 import { checkFleet } from '../src/link/guard.mjs';
 import { ALLOWED, READ, WRITE, NOT_YET } from '../src/link/surface.mjs';
@@ -230,6 +231,12 @@ async function commitRun() {
 
 function printPass(result) {
   const f = result.fleet;
+  // THE FEAST'S RUNNING TOTALS, ON BY DEFAULT. The hall is the fleet's only free food and
+  // it took a day of wrong answers to get one slice out of it — mostly because nothing
+  // counted anything, so "did a courier actually take food" was answered by reading a
+  // keeper's pack by hand. One line, printed whenever there is anything to say.
+  const feastLine = feastStatsLine(result.memory?.feast ?? {});
+  if (feastLine) console.log(c.b('feast    ') + feastLine);
   if (f?.stood_down) { console.log(c.warn('fleet    stood down: ') + f.stood_down); return; }
   if (f?.error) console.log(c.bad('fleet    ') + f.error);
   else {

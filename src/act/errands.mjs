@@ -54,7 +54,7 @@
 
 import { recordCrateCheck } from '../decide/rules/crate.mjs';
 import { recordSellrun } from '../decide/rules/sellrun.mjs';
-import { recordFeastOutbound, recordFeastGrab, recordFeastAbandon } from '../decide/rules/feast.mjs';
+import { recordFeastOutbound, recordFeastGrab, recordFeastAbandon, recordFeastPkCheck } from '../decide/rules/feast.mjs';
 
 const sleep = ms => new Promise(res => setTimeout(res, ms));
 
@@ -117,6 +117,7 @@ export const ERRANDS = {
   'feast-outbound': { record: recordFeastOutbound, topic: 'feast' },
   'feast-grab': { record: recordFeastGrab, topic: 'feast' },
   'feast-abandon': { record: recordFeastAbandon, topic: 'feast' },
+  'feast-pk-check': { record: recordFeastPkCheck, topic: 'feast' },
   // These leave progress in FactionGoalStore rather than the general Memory topics.
   'faction-request': { record: null, topic: null },
   'faction-offer': { record: null, topic: null },

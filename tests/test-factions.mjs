@@ -134,9 +134,13 @@ test('factions: clearing a goal releases only its temporary cargo protection', (
   assert.deepEqual(intent.orders.protect_items, ['old cargo']);
 });
 
-test('factions: DUM still refuses general speech and trade', () => {
+test('factions: DUM still refuses conversation and trade', () => {
   assert.equal(deny('faction_join', { action: 'request', faction: 'rebel' }), null);
-  assert.match(deny('say', { text: 'anything' }), /does not claim/);
+  // `say` was opened on 2026-09-04 for one fixed line at the Duke's tables — see
+  // surface.mjs. Joining a faction still does not get DUM a conversation or a trade, which
+  // is what this test is for: those are how a bot gets talked into something.
+  assert.match(deny('chat', { text: 'anything' }), /does not claim/);
+  assert.match(deny('converse', {}), /does not claim/);
   assert.match(deny('trade', {}), /does not claim/);
 });
 

@@ -139,6 +139,22 @@ test('giveaway: the shared step builder is what both routes use', () => {
   assert.deepEqual(s[1].args.keep, GIVEAWAY_KEEP);
 });
 
+test('giveaway: every food the Duke hands out is spared, all seven', async () => {
+  // THE LIST WAS TYPED AND IT DRIFTED. It named two of the seven things the hall dispenses,
+  // so `spider eye`, `bunch of grapes`, `drumstick`, `goblet of ale` and `fortune cookie`
+  // were dropped in the road or sold in Barloque — and the spider eye is nutrition 9, the
+  // same as a slice of pork, with six hundred of them in the fleet's packs.
+  //
+  // It is derived from FEAST_DISPENSERS now, which is the same list the grab errand walks up
+  // to and activates, so it cannot disagree with what actually comes home. This test exists
+  // so a future hand-edit that breaks the derivation is caught rather than discovered.
+  const { FEAST_DISPENSERS } = await import('../src/decide/feast-hall.mjs');
+  const kept = n => GIVEAWAY_KEEP.some(k => n.toLowerCase().includes(String(k).toLowerCase()));
+  for (const d of FEAST_DISPENSERS)
+    assert.equal(kept(d.item), true, `${d.item} comes from the hall and must not be shed`);
+  assert.equal(FEAST_DISPENSERS.length, 7, 'seven tables; if this changes, read the hall');
+});
+
 test('giveaway: the keep list spares food and reagents, and never a weapon', () => {
   const kept = n => GIVEAWAY_KEEP.some(k => n.toLowerCase().includes(k.toLowerCase()));
   for (const meal of ['slice of pork', 'bowl of soup', 'edible mushroom', 'Inky-cap mushroom'])

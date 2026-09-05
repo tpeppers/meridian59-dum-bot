@@ -87,7 +87,13 @@ export const BARLOQUE_STOPS = Object.freeze([
 export const SELL_KEEP = Object.freeze([
   'inky', 'dragon scale', 'angel feather', 'wand', 'scroll', 'signet', 'orb of', 'potion',
   'herb', 'elderberry',
-  'slice of pork', 'bowl of soup', 'edible mushroom', 'turkey leg', 'loaf',
+  // THE FOOD HALF IS DERIVED, NOT TYPED. It was typed, and it named two of the seven things
+  // the Duke's tables hand out — so a character that had just filled its pack at the feast
+  // walked to Barloque and sold five of them, `spider eye` included, of which the fleet was
+  // carrying six hundred. FEAST_DISPENSERS is what the grab errand actually activates, so
+  // this cannot drift from what comes home in the pack.
+  ...FEAST_DISPENSERS.map(d => d.item),
+  'edible mushroom', 'loaf',
 ]);
 
 // Obert Cair'bre's office. VISITED BEFORE THE FIRST SHOP: what is in the vault cannot be sold
@@ -116,7 +122,7 @@ export const BARLOQUE_VAULT = Object.freeze({
 export const TOS_BANK = Object.freeze({ room: 54, keep: 500 });
 
 import { giveawaySteps, GIVEAWAY_KEEP } from '../street-giveaway.mjs';
-import { FEAST_HALL } from '../feast-hall.mjs';
+import { FEAST_HALL, FEAST_DISPENSERS } from '../feast-hall.mjs';
 
 const mins = ms => `${Math.round(ms / 60000)}m`;
 

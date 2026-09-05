@@ -49,6 +49,44 @@
 
     "min_price": 1,
 
+    // AND THEN THE TWO STOPS THAT ARE THE ACTUAL POINT.
+    //
+    // Selling turns a pack into a purse, which moves the risk of dying rather than removing
+    // it: everything a character dies holding is on the floor where it fell, and by the end of
+    // three shops it is holding the whole trip's takings in one place. A circuit that sells
+    // and walks home has converted loot into a bigger thing to lose.
+
+    // Obert Cair'bre's counter, and it is visited BEFORE the first shop rather than after.
+    // sell_all offers a merchant everything he will take and the keep list above is the only
+    // thing stopping him; a keep list is a hand-written string match, one forgotten name away
+    // from selling the best thing the character owns, and the sale reports success either way.
+    // What is in the vault cannot be sold by a list that is wrong. It costs two hops in forty
+    // (Castle Victoria to the vault is 15 against 13 to the smith), and the harness refuses
+    // the other order outright - m59-fleetscript.mjs rejects a plan that vaults after selling.
+    // Money has no bulk and cannot be vaulted; that is what the bank stop is for.
+    "vault": {
+      "room": 114,
+      // Omit "items" and the keep list above is used verbatim, which is what you usually
+      // want — the same names the shops were told to leave alone. Named here without the
+      // reagents, because those are wanted in the pack for create food, not in Barloque.
+      "items": ["dragon scale", "angel feather", "wand", "scroll", "signet", "orb of", "potion"]
+    },
+
+    // The First Royal Bank of Tos. There is NO BANKER IN BARLOQUE — Setag'lib is a compiled
+    // class that nothing ever creates — so this is a real detour: eleven hops from the vault.
+    //
+    // Tos rather than Jasper, and the reason is the leg after it rather than the leg to it.
+    // Both are eleven hops from the vault and both pay into the same account (BANK_BASIC and
+    // BID_TOS are both 1, blakston.khd:1275), but Tos is eight hops from Castle Victoria
+    // against Jasper's ten — and Tos is the town this fleet already crosses for the Duke's
+    // tables. The bank stop is on ground the character was going to walk anyway.
+    //
+    // "keep" is a walking float, not an amount: what there is to bank is whatever the shops
+    // just paid, and that number does not exist when these steps are built. The keeper works
+    // it out at the counter. 500 is enough to buy reagents on the way back without a
+    // withdrawal — a withdrawal is the one bank operation that does not state the new balance.
+    "bank": { "room": 54, "keep": 500 },
+
     "trigger": {
       // A pack of this many items is worth the trip. Tune against the fleet's real carry
       // allowance — the parity fleet runs a low max_carry, so this may want to be lower there.
@@ -59,8 +97,12 @@
       "min_health": 0.8
     },
 
-    // The per-character cooldown that keeps the errand from re-firing every 30s tick.
-    "cooldown_ms": 1200000,
+    // The per-character cooldown that keeps the errand from re-firing every 30s tick. With
+    // the vault and bank stops the circuit is eight travel legs rather than four, so this is
+    // the window a character is NOT hunting — worth having generous. A pack that fills again
+    // inside it waits, which is the correct trade: the whole claim of this doctrine is that
+    // one big trip beats several small ones.
+    "cooldown_ms": 2400000,
     "travel_timeout_ms": 240000,
     "return_home": true
   }

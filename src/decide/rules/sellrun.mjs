@@ -14,15 +14,21 @@
 // second-to-second execution of each `travel` and each `sell_all`; DUM owns only the decision
 // to make the trip and the order of the stops.
 //
-// WHAT THIS DRAFT DOES NOT DO YET, and why each is safe to leave out:
-//   * It does not VAULT the rare keepers (Obert Cair'bre, room 114). There is no keeper-proxied
-//     item-storage tool yet, so instead every stop's `sell_all` carries a `keep` list and the
-//     rares/reagents simply stay in the pack, unsold. That protects them from being sold; it
-//     does not protect them from death. A vault step waits on a storage action in the harness.
-//   * It does not BUY reagents or BANK inside the errand. Banking needs an explicit amount and
-//     there is no banker in Barloque (bank tool note: Tos/Jasper/Ko'catan only), and the
-//     post-sell purse is not knowable when the static steps are built. Both belong to the
-//     keeper's own economy policy (bank_above, buy_reagents), which the doctrine sets.
+// VAULT, THEN SELL, THEN BANK - and the first and last are why the trip is worth taking.
+// Selling turns a pack into a purse, which moves the risk of dying rather than removing it: a
+// circuit that sells and walks home has converted loot into a bigger thing to lose. So the
+// shops are bracketed by Obert Cair'bre's vault (114) for what must not be sold at all, and the
+// First Royal Bank of Tos (54) for what the shops paid. The vault comes FIRST, which costs two
+// hops in forty and means a wrong keep list cannot reach what is already stored.
+//
+// Both were deferred when this was a draft, and the note here said why: there was no
+// keeper-proxied storage tool, and a deposit amount is not knowable when a static step list is
+// built. Both are now answered in the harness rather than worked around here - a `vault` tool
+// that resolves the vaultman in the process that can see the room, and a `keep` float on `bank`
+// that moves the arithmetic to the counter, where the purse is a fact.
+//
+// WHAT IT STILL DOES NOT DO: buy reagents. That belongs to the keeper's own economy policy
+// (buy_reagents), which the doctrine sets, and which already runs a shorter loop for it.
 //
 // PURE, like every rule here: `now` and the past both arrive on the observation. The memory
 // window is what stops the errand re-firing every tick and marching a character to town for
@@ -79,6 +85,40 @@ function circuitSteps(agent, cfg, back) {
   const keep = cfg.keep ?? [];
   const minPrice = cfg.min_price ?? 1;
   const steps = [];
+  // THE VAULT GOES FIRST, BEFORE A SINGLE SHOP, AND IT COSTS TWO HOPS TO DO IT.
+  //
+  // `sell_all` offers a merchant everything he will take, and the only thing standing between
+  // a ring of invisibility and his counter is the keep list. A keep list is a string match
+  // written by hand: it is one forgotten name, or one item whose name reads differently from
+  // what anybody typed, away from selling the best thing the character owns - and the mistake
+  // is invisible afterwards, because the sale reports success either way and the ring is
+  // simply gone. What is IN the vault cannot be sold by a list that is wrong.
+  //
+  // So the order is not a preference, it is the fail-safe, and the harness already refuses the
+  // other way round: m59-fleetscript.mjs rejects a plan that `vault`s after it `sell`s, before
+  // anything walks, while the loot is still in the pack. This rule agrees with that on purpose
+  // - the two are the same fleet's two ways of saying "go and sell", and them disagreeing about
+  // which is safe is worse than either answer.
+  //
+  // WHAT IT COSTS, measured off the bake rather than assumed: Castle Victoria to the vault is
+  // 15 hops against 13 to the smith, and the vault is 4 hops from the smith rather than 3 from
+  // Joguer's. Vault-first is 42 hops against 40. Two hops in forty is the price of the keep
+  // list not being the last line of defence.
+  if (cfg.vault?.room != null) {
+    steps.push({ tool: 'travel', args: { agent, to: cfg.vault.room, run_errands: false },
+      expect: 'arrived', optional: true, label: 'at-the-vault',
+      timeout_ms: travelTimeout, estimate_ms: 120_000,
+      why: `to the vault (${cfg.vault.room}) BEFORE any shop, so a wrong keep list cannot sell it` });
+    steps.push({ tool: 'vault', args: { agent, action: 'deposit',
+        items: cfg.vault.items ?? keep },
+      // Optional: a vaultman who is not at his counter must not cost the character its
+      // selling, its banking or its trip home. `needs` is the other half - a deposit is only
+      // sent from a room the walk actually reached, rather than hopefully from wherever the
+      // character ended up.
+      optional: true, needs: 'at-the-vault', estimate_ms: 20_000,
+      why: 'store what must not be sold, where no keep list can reach it' });
+  }
+
   for (const stop of (cfg.stops ?? [])) {
     // run_errands:false — the circuit is the seller. Left at its default (true), each travel
     // hop would run the KEEPER's own bank/sell/supply errands first, selling the pack to the
@@ -94,6 +134,34 @@ function circuitSteps(agent, cfg, back) {
     steps.push({ tool: 'sell_all', args: sellArgs, collect: 'messages', estimate_ms: 15_000,
       why: `sell this stop's lane to ${stop.merchant}` });
   }
+  // THE BANK, WHICH IS THE EXPENSIVE LEG AND IS STILL THE POINT.
+  //
+  // A purse is the one thing a death takes in full, and by this point in the circuit the purse
+  // is everything three shops just paid. There is no banker in Barloque - Setag'lib is a
+  // compiled class that nothing ever creates - so this is a real detour: eleven hops from the
+  // vault to the First Royal Bank of Tos, both measured off the bake.
+  //
+  // TOS RATHER THAN JASPER, and the reason is the leg after it, not the leg to it. Both are
+  // eleven hops from the vault and both pay into the same account (BANK_BASIC and BID_TOS are
+  // both 1) - but Tos is eight hops from Castle Victoria against Jasper's ten, and Tos is the
+  // town this fleet already crosses for the Duke's tables. The bank stop is on ground the
+  // character was going to walk anyway.
+  //
+  // `keep` RATHER THAN AN AMOUNT, because the amount does not exist yet. These steps are built
+  // before the first shop is reached and what there is to bank is whatever the shops pay; a
+  // number written in here would be a guess, and a guess too high is a deposit refused for the
+  // whole trip's takings. The broker forwards the float to the keeper, which owns the purse.
+  if (cfg.bank?.room != null) {
+    steps.push({ tool: 'travel', args: { agent, to: cfg.bank.room, run_errands: false },
+      expect: 'arrived', optional: true, label: 'at-the-bank',
+      timeout_ms: travelTimeout, estimate_ms: 180_000,
+      why: `to the bank (${cfg.bank.room})` });
+    steps.push({ tool: 'bank', args: { agent, action: 'deposit',
+        keep: cfg.bank.keep ?? 500 },
+      optional: true, needs: 'at-the-bank', estimate_ms: 20_000,
+      why: `bank everything above a ${cfg.bank.keep ?? 500} walking float` });
+  }
+
   if (cfg.return_home !== false)
     // ALWAYS: the way home runs even if a stop failed, so a half-done circuit does not strand a
     // character in a shop it could not reach the far side of.

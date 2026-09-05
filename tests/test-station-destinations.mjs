@@ -10,7 +10,7 @@ const test = globalThis.__dumTest;
 // as "out of position" and walked it straight back out, about thirty seconds after it
 // arrived, every time.
 //
-// Camilla was watched doing it: in the hall at r15c24, and back in Blackstone Keep at
+// One was watched doing it: in the hall at r15c24, and back in Blackstone Keep at
 // r12c9 a minute later. Activating a table from there answered "You can't activate the
 // roast pig; it is no longer accessible" — which is the server's own same-room check
 // (user.kod UserTryActivate: GetOwner <> poOwner) refusing. Right object, wrong room.
@@ -32,7 +32,7 @@ test('station: but the APPROACH is still recallable, or the way home is stranded
   // The first version exempted these too. The `busy` hold already covers a courier walking
   // IN — 30 minutes against an 11-minute walk — and exempting them strands the walk OUT: a
   // courier that filled its pack and is heading home sits in Blackstone Keep for ever,
-  // because its errand has ended and nothing recalls it. Fozzie was found holding 128
+  // because its errand has ended and nothing recalls it. One was found holding 128
   // slices of pork in 951 with no reason left to move, minutes after it shipped.
   assert.equal(isStranded(at(951), ON), true, 'Blackstone Keep');
   assert.equal(isStranded(at(950), ON), true, 'the Courtyard');

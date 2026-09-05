@@ -29,3 +29,9 @@ Thumbs.db
 # it drives is all committed; this is the one line that says which fleet to point it at.
 /restart_all.ps1
 /restart_all.local.ps1
+
+# This machine's answers for the CLI: which doctrine, which fleet, where the broker is.
+# `fleet` is a roster name and `doctrine` points under doctrines/local/, and dum-guard
+# refuses both — same rule as the harness's roster files. dum.local.example.json is the
+# committed shape.
+/dum.local.json

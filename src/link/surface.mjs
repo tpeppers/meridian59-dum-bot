@@ -67,6 +67,19 @@ export const WRITE = new Set([
   // sells your own deposit back at a retrieval fee, so the worst a wrong deposit costs is
   // that fee. Nothing here retrieves.
   'vault',
+  // PUTTING THINGS DOWN, which is the one pack verb DUM claims and it is claimed narrowly.
+  //
+  // `act verb:"drop"` stays refused below, and this is not a way around it: `drop_all`
+  // cannot name an item. It sheds everything that is not worn, not money and not on a keep
+  // list, and it REFUSES outright when the equipment set is unknown — the harness decides
+  // what may go, and the decision DUM makes is only whether to shed at all.
+  //
+  // The decision itself is an economy one on a minutes clock, which is DUM's side of the
+  // boundary: a character on a route that passes no merchant is hauling loot it will never
+  // sell, and the pack space is worth more than the loot. It is also irreversible in a way
+  // the vault is not — dropped is gone, there is no retrieval fee — which is why the keep
+  // list and the harness's floors matter more here than anywhere else on this surface.
+  'drop_all',
   // Errands the harness already knows how to run end to end.
   'loot_run', 'rest_up', 'equip_best', 'wear_best', 'escape_underworld',
   // One bounded, localhost-only planner errand. The harness chooses from the first
@@ -114,9 +127,10 @@ export const WRITE = new Set([
   // squares away, in silence, reads as exactly what it is. So the grab errand walks up to
   // the table and says "Mmm, slice of pork!" when it is done. Operator's call, 2026-09-04.
   //
-  // NARROW ON PURPOSE. `say` is local room speech; `chat`, `converse` and the private
-  // channels stay out, and the only text DUM composes is that one fixed line naming the
-  // food it just took. `approach` walks toward a target it can already see in the room —
+  // NARROW ON PURPOSE. `chat`, `converse` and the private channels stay out. DUM composes
+  // exactly two fixed lines: the one naming the food it just took, and the one it yells
+  // over the Streets of Tos when it has put its loot down for whoever wants it. Both are
+  // constants in this repository, not text that travels from anywhere. `approach` walks toward a target it can already see in the room —
   // it is not a route across the world, which is `travel`.
   'approach',
   'say',

@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { isStranded, isDoctrineDestination } from '../src/decide/rules/station.mjs';
+import { isStranded, isDoctrineDestination, onAJourney } from '../src/decide/rules/station.mjs';
 
 const test = globalThis.__dumTest;
 
@@ -66,4 +66,68 @@ test('station: the destination set is data, and says what it covers', () => {
   // Nonsense in, false out: a missing or non-integer room is not a destination.
   assert.equal(isDoctrineDestination(null, ON), false);
   assert.equal(isDoctrineDestination('953', ON), false);
+});
+
+// ------------------------------------------- the eleven hops BEFORE the destination
+//
+// THE ROOM-BASED EXEMPTION ABOVE ASKS WHERE THE CHARACTER IS, and that is the right question
+// only once it has arrived. For the walk itself it answers nothing: the Duke's hall is eleven
+// hops from where this fleet farms, and every room in between is somewhere the character is
+// "not supposed to be". In one watch that produced 28 recalls against zero food taken, with
+// the dispatch and the recall issued for the same character in the same pass.
+
+const NOW = 1_700_000_000_000;
+const MIN = 60_000;
+const FEAST_ON = { feast: { on: true }, station: { recall: true, room: 39, min_health: 0.5 } };
+// `assignedRoom` is on the character, not in the doctrine — stationFor reads
+// `row.policy.assignedRoom`, and without it there is no home to be away from and every
+// question below answers "not stranded" for the wrong reason.
+const walking = (agent, room, since, at = NOW) => ({
+  agent, in_game: true, room, at, health: { value: 44, max: 44 },
+  policy: { assignedRoom: 39 },
+  memory: { feast: { [agent]: { phase: 'outbound', since } } },
+});
+
+test('station: a character walking to the hall is not stranded on the way', () => {
+  // Room 52 is on the road and is not the hall, not the approach, and not home.
+  const row = walking('a', 52, NOW - 3 * MIN);
+  assert.equal(onAJourney(row, FEAST_ON, null), true);
+  assert.equal(isStranded(row, FEAST_ON, null), false, 'and so it is left to walk');
+});
+
+test('station: but only until the journey is stale', () => {
+  // THE SAME DEADLINE THE FEAST RULE USES TO GIVE UP. Two different numbers for "this walk
+  // has failed" is how a character ends up exempt from being rescued by one rule and
+  // abandoned by the other — alone in a room on the far side of the world, for ever.
+  const dead = walking('a', 52, NOW - 31 * MIN);
+  assert.equal(onAJourney(dead, FEAST_ON, null), false, 'past 30 minutes it is not a journey');
+  assert.equal(isStranded(dead, FEAST_ON, null), true, 'and the recall is exactly right');
+  const custom = { ...FEAST_ON, feast: { on: true, max_trip_ms: 5 * MIN } };
+  assert.equal(onAJourney(walking('a', 52, NOW - 6 * MIN), custom, null), false,
+               'a doctrine that sets its own deadline is obeyed');
+});
+
+test('station: the exemption needs an actual journey, not just a feast doctrine', () => {
+  // The failure mode to avoid is a blanket "the feast is on, so nobody is ever recalled".
+  const idle = { agent: 'a', in_game: true, room: 52, at: NOW, health: { value: 44, max: 44 },
+                 policy: { assignedRoom: 39 }, memory: {} };
+  assert.equal(onAJourney(idle, FEAST_ON, null), false);
+  assert.equal(isStranded(idle, FEAST_ON, null), true, 'an idle character IS out of position');
+  const arrived = walking('a', 52, NOW - MIN);
+  arrived.memory.feast.a.phase = 'home';
+  assert.equal(onAJourney(arrived, FEAST_ON, null), false, 'a finished journey exempts nothing');
+});
+
+test('station: an entry with no start time is stale, not an indefinite pass', () => {
+  // A memory written by an older version, or half-written. The safe reading is that the
+  // journey cannot be reasoned about — not that the character is exempt for ever.
+  const row = walking('a', 52, undefined);
+  assert.equal(onAJourney(row, FEAST_ON, null), false);
+});
+
+test('station: with the feast off, the journey memory means nothing', () => {
+  // Leftover memory from a doctrine that has since been switched off must not keep a
+  // character out of position indefinitely.
+  const row = walking('a', 52, NOW - MIN);
+  assert.equal(onAJourney(row, { feast: { on: false }, ...{} }, null), false);
 });

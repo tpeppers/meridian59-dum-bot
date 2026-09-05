@@ -1,6 +1,8 @@
 import assert from 'node:assert/strict';
 import { sellrunFleetRules } from '../src/decide/rules/sellrun.mjs';
 import { runErrand } from '../src/act/errands.mjs';
+import { SELL_KEEP, BARLOQUE_VAULT, BARLOQUE_STOPS, TOS_BANK }
+  from '../src/decide/rules/sellrun.mjs';
 
 const test = globalThis.__dumTest;
 const rule = sellrunFleetRules.find(r => r.id === 'barloque-sell-circuit');
@@ -28,10 +30,32 @@ const plan = sellrun => rule.decide({ at: 1_000_000, memory: {}, characters: [he
 const steps = sellrun => plan(sellrun).orders.steps;
 const tools = sellrun => steps(sellrun).map(s => s.tool);
 
-test('sellrun: with no vault or bank configured the circuit is what it always was', () => {
-  // The two stops are additive. A doctrine that names neither gets the shops and the walk
-  // home, unchanged — which is what every existing doctrine and every A/B baseline is.
-  assert.deepEqual(tools(base), ['travel', 'sell_all', 'travel', 'sell_all', 'travel']);
+test('sellrun: a doctrine that says nothing about them still gets both', () => {
+  // WHICH MERCHANT IS IN WHICH ROOM IS NOT AN ORDER, so a doctrine does not have to restate
+  // Barloque to switch selling on. Saying nothing about the vault or the bank gets both.
+  //
+  // This is the shape it takes, not a preference: the live prod doctrine descends from
+  // castle-victoria, not from the sell-circuit doctrine, so "turn selling on for this fleet"
+  // used to mean copying four lists into a gitignored file — and a copy drifts silently from
+  // the file the tests assert against.
+  assert.deepEqual(tools(base),
+    ['travel', 'vault', 'travel', 'sell_all', 'travel', 'sell_all', 'travel', 'bank', 'travel']);
+});
+
+test('sellrun: and `null` is how a doctrine declines one', () => {
+  // Saying nothing and saying no are different instructions. An absent key takes the default;
+  // an explicit null is an operator deciding this fleet does not make that stop, and it has
+  // to be expressible or the default becomes a policy.
+  assert.deepEqual(tools({ ...base, vault: null, bank: null }),
+    ['travel', 'sell_all', 'travel', 'sell_all', 'travel']);
+});
+
+test('sellrun: the defaults are the ones the doctrine file documents', () => {
+  const s = steps(base);
+  assert.equal(s.find(x => x.tool === 'vault').args.items.length > 0, true);
+  assert.equal(s[0].args.to, 114, 'the vault is the first place it walks');
+  assert.equal(steps({ ...base, bank: undefined }).find(x => x.tool === 'bank').args.keep, 500,
+               'and the walking float has a default too');
 });
 
 test('sellrun: the vault comes BEFORE the first shop', () => {
@@ -188,4 +212,46 @@ test('runner: a walk that timed out is cancelled even when it was optional', asy
       { tool: 'travel', args: { agent: 'a', to: 39 }, always: true },
     ]), { commit: true, holder: 'dum/test@pid-1' });
   assert.ok(seen.includes('cancel'), 'the dangling walk was cancelled');
+});
+
+// ---------------------------------------------- the keep list, against the shipped doctrine
+//
+// A KEEP LIST IS THE ONLY THING BETWEEN A MERCHANT AND EVERYTHING THE PACK HOLDS. `sell_all`
+// offers him what he will take; the list is a hand-written set of substrings, and the sale
+// reports success whether or not it sold the thing that mattered. So it is asserted against
+// the doctrine that actually ships, not against a fixture — a fixture would still pass on the
+// day somebody edits the file.
+
+const kept = name => SELL_KEEP.some(
+  k => name.toLowerCase().includes(String(k).toLowerCase()));
+
+test('sellrun: the free food is never offered to a merchant', () => {
+  // THE FEAST RUN AND THE SELL RUN WOULD OTHERWISE UNDO EACH OTHER. Resting stops awarding
+  // vigor at 80 of 200 and everything above it has to be eaten; the Duke's tables are where
+  // this fleet gets that for nothing. A courier can be carrying a hundred slices when its
+  // pack trips the carry trigger, and a sell run that does not name them sells the lot for a
+  // handful of shillings.
+  for (const meal of ['slice of pork', 'bowl of soup', 'edible mushroom', 'Inky-cap mushroom'])
+    assert.equal(kept(meal), true, `${meal} must never reach a counter`);
+});
+
+test('sellrun: four of the five mushrooms are still SOLD', () => {
+  // The other direction, and the one that costs money if it goes wrong. Only two of this
+  // world's five mushrooms are food; the rest are casting reagents that Joguer buys, and a
+  // keep list containing a bare "mushroom" would match all five and quietly stop the fleet
+  // selling its reagent loot. The operator lost a pack to the opposite reading on 2026-09-04.
+  for (const stock of ['mushroom', 'red mushroom', 'blue mushroom'])
+    assert.equal(kept(stock), false, `${stock} is a reagent and is meant to be sold`);
+});
+
+test('sellrun: the create-food reagents stay in the pack, and out of the vault', () => {
+  // Herbs and elderberry are what Create Food is made of, so they are kept from the merchant
+  // AND kept out of the vault — a reagent in Barloque is no use to a character casting in
+  // Castle Victoria, and retrieving it costs a fee and a trip.
+  assert.equal(kept('herb'), true);
+  assert.equal(kept('elderberry'), true);
+  const vaultItems = BARLOQUE_VAULT.items;
+  for (const r of ['herb', 'elderberry'])
+    assert.equal(vaultItems.some(v => r.includes(String(v).toLowerCase())), false,
+                 `${r} is wanted in the pack, not in Barloque`);
 });

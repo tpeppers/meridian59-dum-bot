@@ -39,6 +39,11 @@ import { activeFactionWork } from './factions.mjs';
 // doctrine's own errands send people to is not a room they are stranded in.
 import { FEAST_HALL } from '../feast-hall.mjs';
 
+// The feast rule's own default for how long a journey may take before it is given up. Kept
+// here as a number rather than imported so this module does not depend on the feast rule,
+// which depends on this one; a doctrine that sets `feast.max_trip_ms` overrides both.
+const DEFAULT_MAX_TRIP_MS = 30 * 60_000;
+
 // A CLAIM IS NOT AN OPERATION, and reading it as one made the first version vacuous.
 //
 // DUM's own claim shows up on the board as a commitment — `kind: "bot"`, "holds work,
@@ -120,6 +125,33 @@ export function isDoctrineDestination(room, doctrine = {}) {
 }
 
 /** Is this character somewhere other than the station this doctrine gave it? */
+/**
+ * Is this character part way through an errand of ours that ends somewhere else?
+ *
+ * Reads the feast journey out of the memory. The bound is `max_trip_ms`, the same number the
+ * feast rule uses to abandon a journey that never arrived (`outboundStale`) — deliberately
+ * the same, because two different deadlines for "this walk has failed" is how a character
+ * ends up exempt from being rescued by one rule and given up on by the other.
+ *
+ * @param {object} row        the board row
+ * @param {object} doctrine
+ * @param {object|null} fleetObs   the observation, for its `memory`
+ * @returns {boolean}
+ */
+export function onAJourney(row = {}, doctrine = {}, fleetObs = null) {
+  if (!doctrine.feast?.on) return false;
+  const mem = fleetObs?.memory?.feast ?? row?.memory?.feast ?? null;
+  const e = mem?.[row.agent];
+  if (e?.phase !== 'outbound') return false;
+  const maxTripMs = doctrine.feast?.max_trip_ms ?? DEFAULT_MAX_TRIP_MS;
+  // An entry with no start time is not a journey anybody can reason about. Treat it as
+  // stale rather than as an indefinite exemption.
+  if (typeof e.since !== 'number') return false;
+  const now = fleetObs?.at ?? row?.at ?? null;
+  if (typeof now !== 'number') return true;   // no clock on the observation: trust the phase
+  return now - e.since <= maxTripMs;
+}
+
 export function isStranded(row = {}, doctrine = {}, fleetObs = null) {
   if (!row.in_game) return false;
   if (holdsTheBody(row)) return false;
@@ -140,6 +172,20 @@ export function isStranded(row = {}, doctrine = {}, fleetObs = null) {
   // The general rule, not a special case for one hall: anywhere this doctrine's own errands
   // deliberately send a character is somewhere it is allowed to be.
   if (isDoctrineDestination(row.room, doctrine)) return false;
+
+  // AND NEITHER IS A CHARACTER PART WAY ALONG THE WALK TO ONE.
+  //
+  // The check above asks where the character IS. It is the right question once it has
+  // arrived and useless for the eleven hops before that: a courier crossing Tos on its way
+  // to the Duke's hall is in none of the rooms that journey ends at, so it read as out of
+  // position and was recalled — in one watch, 28 recalls against zero food taken, with the
+  // dispatch and the recall issued for the same character in the SAME pass.
+  //
+  // The journey is in the memory, which is where an errand this fleet started records
+  // itself. It is bounded by the same staleness the feast rule uses to give a journey up,
+  // so a walker that died on the road stops being exempt rather than being left alone for
+  // ever — the failure this rule exists to catch.
+  if (onAJourney(row, doctrine, fleetObs)) return false;
 
   const home = stationFor(row, doctrine);
   if (home == null || !Number.isInteger(row.room)) return false;

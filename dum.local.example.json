@@ -1,0 +1,39 @@
+{
+  "//": [
+    "THE SHAPE OF dum.local.json — this machine's answers to the questions the command line",
+    "would otherwise have to be told every single time. Copy it to dum.local.json, which is",
+    "gitignored, and edit. Every key is optional and every one is overridden by the matching",
+    "--flag.",
+    "",
+    "WHY IT IS NOT COMMITTED. Two of these keys are things tools/dum-guard.mjs refuses to let",
+    "into this repository: `fleet` is a roster name, and `doctrine` points under doctrines/local/,",
+    "which names characters. It is the same rule as the harness's gitignored roster files and",
+    "the same rule as this repository's own doctrines/local/ — the tooling is forever, the",
+    "fleet is not.",
+    "",
+    "AND WHY IT EXISTS AT ALL. A command line that has to be remembered is a command line that",
+    "gets typed wrong, and the way it gets typed wrong here is pointing a committed run at the",
+    "wrong roster. `--fleet` refuses that outright; this file means nobody has to type it."
+  ],
+
+  "doctrine": "doctrines/local/example.jsonc",
+
+  "//fleet": [
+    "The roster the broker must be holding. DUM checks and REFUSES on a mismatch rather than",
+    "warning — the caller of a committed run is a loop, and nobody reads a loop's warnings.",
+    "It is not a filter: with no --agent scope DUM drives every character that broker holds."
+  ],
+  "fleet": "example",
+
+  "//control": "The broker's loopback RPC. Default http://127.0.0.1:8901.",
+  "control": "http://127.0.0.1:8901",
+
+  "//log_dir": [
+    "Where a committed run writes its log, relative to the repository root. Default `var`.",
+    "A bot whose log went to the terminal that started it has no log the moment that terminal",
+    "closes; the harness paid for that lesson with a broker whose whole ancestry was dead and",
+    "whose output was going to a temp directory that gets cleaned up.",
+    "Use --log <path> for a one-off, or --no-log to print only."
+  ],
+  "log_dir": "var"
+}

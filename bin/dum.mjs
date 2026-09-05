@@ -25,18 +25,96 @@ import { StrategyStore } from '../src/record/strategies.mjs';
 import { FactionGoalStore } from '../src/record/factions.mjs';
 import { DetailStats } from '../src/record/detail-stats.mjs';
 import { StrategyControlServer } from '../src/link/strategy-control.mjs';
+import { existsSync, readFileSync, mkdirSync, createWriteStream } from 'node:fs';
+import { resolve, dirname } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { pass } from '../src/loop/tick.mjs';
 import { run } from '../src/loop/run.mjs';
 
+const HERE = dirname(fileURLToPath(import.meta.url));
 const argv = process.argv.slice(2);
 const cmd = argv.find(a => !a.startsWith('-')) ?? 'help';
-const flag = (name, dflt = null) => {
+const cliFlag = (name, dflt = null) => {
   const i = argv.indexOf('--' + name);
   if (i < 0) return dflt;
   const v = argv[i + 1];
   return (v && !v.startsWith('--')) ? v : true;
 };
 const has = name => argv.includes('--' + name);
+
+// ---------------------------------------------------------------- this machine's answers
+//
+// A COMMAND LINE THAT HAS TO BE REMEMBERED IS A COMMAND LINE THAT GETS TYPED WRONG.
+//
+// Everything this tool needs to run — which doctrine, which fleet, where the broker is,
+// where the log goes — is the same on any given machine every single time, and none of it
+// belongs in git: a doctrine path under doctrines/local/ and a fleet name are both things
+// tools/dum-guard.mjs refuses to let into this repository, for the same reason the roster
+// files are gitignored in the harness.
+//
+// So they live in `dum.local.json` beside this repository's root, gitignored, and the
+// command line overrides any of them. `dum.local.example.json` is the committed shape.
+// Nothing here is required: with no file and no flags, `plan` still runs against whatever
+// broker is on the default port, which is the "just works" case.
+const LOCAL_FILE = resolve(HERE, '..', 'dum.local.json');
+const local = (() => {
+  try {
+    if (!existsSync(LOCAL_FILE)) return {};
+    const v = JSON.parse(readFileSync(LOCAL_FILE, 'utf8'));
+    return (v && typeof v === 'object' && !Array.isArray(v)) ? v : {};
+  } catch (e) {
+    // Loud once, and carry on. A local file that will not parse must not stop the fleet
+    // being driven; it must also not be silently ignored, which is how a machine ends up
+    // running yesterday's doctrine and nobody knows why.
+    process.stderr.write(`dum.local.json did not parse (${e.message}) — using defaults\n`);
+    return {};
+  }
+})();
+
+// CLI first, then this machine's file, then the built-in default. Same order as everything
+// else here: most explicit wins.
+const flag = (name, dflt = null) => {
+  const fromCli = cliFlag(name, null);
+  if (fromCli !== null) return fromCli;
+  const key = name.replace(/-/g, '_');
+  if (local[key] !== undefined && local[key] !== null) return local[key];
+  return dflt;
+};
+
+// ---------------------------------------------------------------- the log, without asking
+//
+// A BOT WHOSE LOG WENT TO THE TERMINAL THAT STARTED IT HAS NO LOG. The harness learned this
+// the expensive way — a broker was found running with its whole ancestry dead and its output
+// going to a temp directory that gets cleaned up — and the answer there was the same as here:
+// write it down by default, somewhere predictable, without being asked.
+//
+// `--log <path>` chooses one; `--no-log` turns it off; otherwise a committed run writes to
+// <log_dir>/dum-<fleet>-<stamp>.log. Planning does not, because a plan is a thing you read.
+function openLog(fleetName) {
+  if (has('no-log')) return null;
+  const explicit = flag('log', null);
+  const dir = String(flag('log-dir', 'var'));
+  const stamp = new Date().toISOString().replace(/[-:T]/g, '').slice(0, 15);
+  const path = (explicit && explicit !== true) ? String(explicit)
+    : resolve(HERE, '..', dir, `dum-${fleetName || 'fleet'}-${stamp}.log`);
+  try {
+    mkdirSync(dirname(path), { recursive: true });
+    const out = createWriteStream(path, { flags: 'a' });
+    for (const stream of ['stdout', 'stderr']) {
+      const original = process[stream].write.bind(process[stream]);
+      process[stream].write = (chunk, enc, cb) => {
+        // Strip the colour codes on the way to disk: a log full of escape sequences is a
+        // log nobody greps twice.
+        try { out.write(String(chunk).replace(/\x1b\[[0-9;]*m/g, '')); } catch { /* keep going */ }
+        return original(chunk, enc, cb);
+      };
+    }
+    return path;
+  } catch (e) {
+    process.stderr.write(`could not open a log (${e.message}) — printing only\n`);
+    return null;
+  }
+}
 
 const tty = process.stdout.isTTY;
 const c = {
@@ -64,6 +142,14 @@ function doctrine() {
                  : (raw !== '' && !Number.isNaN(Number(raw))) ? Number(raw) : raw;
   }
   if (flag('control')) overrides['link.control_url'] = String(flag('control'));
+  // --fleet NAMES THE ROSTER, AND NAMING IT IS THE WHOLE SAFETY.
+  //
+  // It is not a filter and it does not enumerate anybody: DUM already drives every character
+  // the broker holds when no --agent scope is given, so "attach to this fleet" is exactly
+  // "check the broker is holding this fleet, then run". The check is the point — `checkFleet`
+  // refuses when the broker is holding a different roster, which is the one mistake that
+  // operates on twenty-one characters nobody meant to touch and reports success doing it.
+  if (flag('fleet')) overrides['fleet'] = String(flag('fleet'));
   // --yield-to rest_below,max_carry,roam — fields something else owns. Validated
   // against ORDER_FIELDS, because a typo would silently NOT yield the field.
   if (flag('yield-to'))
@@ -223,8 +309,12 @@ async function commitRun() {
   // The precondition. Throws on a mismatch rather than warning, because the caller of
   // this is a loop and nobody reads a loop's warnings.
   await checkFleet(ctx.broker, config, { commit: true });
+  // Opened AFTER the fleet check, so a run that refuses does not leave an empty log behind
+  // to be mistaken for one that started.
+  const logPath = openLog(config.fleet);
   console.log(c.b(`running "${config.name}" against fleet ${c.ok(config.fleet)} — ` +
                   `journal: ${config.record.dir}`));
+  if (logPath) console.log(c.dim(`log: ${logPath}`));
   console.log(c.dim('Ctrl-C finishes the current tick, releases the claim, and stops.'));
   await run(ctx, { onPass: printPass });
 }
@@ -282,12 +372,25 @@ DUM — a Deterministic Unattended Mover for Meridian 59.
   plan      one pass against the live fleet, sending nothing
   run       the loop. Needs --commit, and --commit needs a matching fleet
 
+  --fleet <name>            attach to the fleet the broker is holding, and REFUSE if it is
+                            holding a different one. Not a filter: with no --agent scope DUM
+                            already drives every character that broker holds
   --doctrine <file.jsonc>   which doctrine to load
   --agent <name[,name]>     restrict the run to these characters (overrides apply only when one)
   --set key.path=value      override one leaf, recorded as "command line"
   --yield-to a,b,c          order fields something else owns — DUM will not write them
   --control <url>           broker control URL (default http://127.0.0.1:8901)
+  --log <path>              where a committed run writes. Default <log_dir>/dum-<fleet>-<stamp>.log
+  --no-log                  print only
   --commit                  actually send. Without it nothing is written, anywhere
+
+NONE OF THESE ARE REQUIRED. dum.local.json at the repository root supplies this machine's
+answers — doctrine, fleet, control, log_dir — and any flag above overrides it. It is
+gitignored, because a doctrine path and a fleet name are both things dum-guard refuses to
+let into this repository. dum.local.example.json is the shape.
+
+    node bin/dum.mjs plan            # against whatever the local file says
+    node bin/dum.mjs run --commit    # the same, for real, logging to var/
 
 DUM attaches to a broker that is already running. It never starts one, never stops
 one, and never calls the harness's 'leave' tool.

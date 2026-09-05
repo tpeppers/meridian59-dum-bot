@@ -22,3 +22,10 @@
 node_modules/
 .DS_Store
 Thumbs.db
+
+# Operator scripts. A restart command is an OPERATION, and the arguments one carries name
+# accounts on a shared server — so the script that performs it belongs on the machine that
+# owns the roster, next to the local doctrines, and not in a public repository. The tooling
+# it drives is all committed; this is the one line that says which fleet to point it at.
+/restart_all.ps1
+/restart_all.local.ps1

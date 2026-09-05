@@ -52,8 +52,6 @@
 // PURE, like every rule here: `now`, the past (obs.memory.feast) and the walk estimate
 // (row.travel_to_feast, put on the row by the tick) all arrive on the observation.
 
-import { giveawaySteps, GIVEAWAY_KEEP as GIVEAWAY_KEEP_LOCAL }
-  from '../street-giveaway.mjs';
 import { FEAST_HALL, FEAST_DISPENSERS, FEAST_PACK_FULL, dispenserNamed } from '../feast-hall.mjs';
 import { foodAmountOf } from './food.mjs';
 
@@ -287,11 +285,22 @@ export function feastStats(mem = {}) {
 }
 
 /** One line for the pass report. Empty string when nothing has happened yet. */
-export function feastStatsLine(mem = {}) {
+export function feastStatsLine(mem = {}, now = null) {
   const s = feastStats(mem);
   if (!s.dispatched && !s.arrived && !s.taken) return '';
   const per = s.trips_ok ? Math.round(s.taken / s.trips_ok) : 0;
-  return `feast: ${s.taken} food taken over ${s.trips_ok} trip(s)` +
+  // SAY HOW LONG THIS HAS BEEN ADDING UP. These counters never come down, so a bad hour is
+  // still in them a day later — and a reader who does not know the window reads a total as a
+  // rate and concludes the fleet is broken when it has been fixed for twenty minutes. That
+  // happened: "52 sent, 1 arrived, 48 abandoned" was six hours of history, most of it from
+  // before three separate bugs were fixed, and it was read as the current state.
+  //
+  // A counter that cannot come down is not a measurement, it is a monument. This does not
+  // make it a measurement; it labels the monument.
+  const at = Number.isFinite(now) ? now : Date.now();
+  const span = Number.isFinite(s.since) ? at - s.since : null;
+  const window = span !== null && span > 60_000 ? ` [since ${mins(span)} ago]` : '';
+  return `feast: ${s.taken} food taken over ${s.trips_ok} trip(s)` + window +
          (per ? ` (${per}/trip)` : '') +
          ` | ${s.dispatched} sent, ${s.arrived} arrived` +
          (s.packs_filled ? `, ${s.packs_filled} filled the pack` : '') +
@@ -334,36 +343,33 @@ export function grabsFor(row, cfg = {}, dispenser = FEAST_DISPENSERS[0]) {
 // Re-exported here because this rule was where they lived first.
 export { STREETS_OF_TOS, GIVEAWAY_YELL, GIVEAWAY_KEEP } from '../street-giveaway.mjs';
 
-/**
- * Would this character rather be taking its pack to Barloque than leaving it in the road?
- *
- * THE ORDER CHANGED, 2026-09-05, AND THIS GATE IS WHAT IS LEFT OF THE OLD ONE. The giveaway
- * used to be the feast run's alternative to selling: drop it here, or haul it to Barloque,
- * one or the other. It is now the LAST STEP OF BOTH — the sell circuit vaults, sells, banks
- * and then drops whatever none of those three would take, and only then walks to the hall.
- *
- * So a pack heavy enough for the circuit is not spared from being dropped, it is spared from
- * being dropped YET: this rule steps aside and the circuit takes the character, drops the
- * remainder in the same street a few minutes later, and arrives at the same tables. Reads the
- * circuit's own `carry_at` so the two cannot disagree about what heavy means.
- */
-export function boundForBarloque(row = {}, doctrine = {}) {
-  const sell = doctrine.sellrun ?? {};
-  if (sell.on !== true) return false;
-  const carryAt = sell.trigger?.carry_at ?? 24;
-  return (row.carrying ?? 0) >= carryAt;
-}
+// THE GIVEAWAY IS NOT HERE ANY MORE, AND THE REASON IS THE CLOCK.
+//
+// It lived on the outbound errand for a few hours: drop the pack in the Streets of Tos on the
+// way to the hall, for characters not heavy enough to be worth a Barloque trip. The behaviour
+// was right and the placement was a throughput bug — see `outboundSteps` below. It now runs
+// only on the sell circuit (src/decide/rules/sellrun.mjs), which is a deliberate long errand
+// and can afford to block, and which every character on this route takes anyway because the
+// circuit finishes at the Duke's tables.
+//
+// `boundForBarloque` went with it. It answered "would this character rather take its pack to
+// Barloque than leave it in the road", which was a real question while the two were
+// alternatives and is not one now that the circuit does both in order.
 
-function feastGiveawaySteps(agent, cfg, doctrine, row) {
-  const give = cfg.giveaway ?? {};
-  if (give.on !== true) return [];
-  if (boundForBarloque(row, doctrine)) return [];
-  return giveawaySteps(agent, { keep: give.keep ?? GIVEAWAY_KEEP_LOCAL,
-                                room: give.room, travelTimeoutMs: cfg.travel_timeout_ms });
-}
-
+// THE OUTBOUND ERRAND MUST STAY A LAUNCH, NOT A JOURNEY.
+//
+// It had the street giveaway bolted onto the front of it for a few hours, and that was a
+// throughput bug rather than a behaviour one: the giveaway's first step is a `travel` with
+// `expect: 'arrived'`, which BLOCKS — eight hops to Tos, then a drop, then a yell, before the
+// step that actually launches the walk to the hall. A fleet pass runs one errand, so every
+// dispatch held the whole table for ten minutes and the fleet managed one character per pass
+// at best.
+//
+// The giveaway belongs to the sell circuit, which is a deliberate long errand and can afford
+// to block. Here the whole design is that the walk is fired and forgotten and the arrival is
+// read off the board by a later tick. Keep it that way.
 function outboundSteps(agent, cfg, doctrine = {}, row = {}) {
-  return [...feastGiveawaySteps(agent, cfg, doctrine, row), {
+  return [{
     tool: 'travel',
     args: { agent, to: FEAST_HALL.room, background: true, run_errands: false },
     // No `expect: 'arrived'` on purpose — this errand LAUNCHES the walk and returns. The
@@ -557,16 +563,32 @@ export const feastFleetRules = [
       // 2. A JOURNEY THAT WENT STALE. Cancel the walk it may still be on and clear the
       // memory, with a backoff — and say the likeliest cause, because a locked hall looks
       // exactly like a slow road from here.
-      for (const [agent, e] of Object.entries(mem)) {
-        if (agent === STATS_KEY) continue;         // the counters are not a character
-        if (!outboundStale(e, now, maxTripMs)) continue;
+      // ALL OF THEM, IN ONE PASS. One per pass sounds tidier and is not: a stale entry
+      // BLOCKS re-dispatch (`phase === 'outbound'` is read as "already walking there"), the
+      // fleet pass is two minutes, and this rule is one of several competing for it. Nine
+      // stale entries therefore meant at least eighteen minutes during which nine characters
+      // could not be sent anywhere — and that is the good case, where this rule wins every
+      // pass. Measured on prod: nine journeys sat in `outbound` for over two hours.
+      //
+      // Only the FIRST one's dangling walk is cancelled, because `cancel_movement` needs a
+      // body and an errand has one agent. That is the right split anyway: the walk is a live
+      // thing worth cancelling one at a time, and the memory entry is just a lie that has to
+      // stop being told.
+      const stale = Object.entries(mem)
+        .filter(([agent, e]) => agent !== STATS_KEY && outboundStale(e, now, maxTripMs));
+      if (stale.length) {
+        const [agent, e] = stale[0];
         const row = byAgent.get(agent);
         const where = row?.room ?? null;
         const hustled = FEAST_HALL.approach.includes(where);
         return {
           kind: 'errand',
           orders: { errand: 'feast-abandon', agent, label: 'feast hall: give up a stale journey',
-                    context: { where, since: e.since ?? null },
+                    context: { where, since: e.since ?? null,
+                               // Every stale agent, so the record clears them together.
+                               also: stale.slice(1).map(([a]) => a),
+                               where_by_agent: Object.fromEntries(
+                                 stale.map(([a]) => [a, byAgent.get(a)?.room ?? null])) },
                     steps: [{ tool: 'cancel_movement', args: { agent }, estimate_ms: 2_000, always: true,
                               why: 'cancel whatever walk is still dangling from the journey' }] },
           why: `${agent} set off for the feast hall ${mins(now - (e.since ?? now))} ago and is ` +
@@ -574,7 +596,8 @@ export const feastFleetRules = [
                (hustled ? ' — standing on the approach, which is what a LOCKED hall does to a ' +
                           'visitor (duke4.kod:38-45): if the event has ended, turn feast.on off'
                         : ''),
-          evidence: { agent, where, since: e.since ?? null, hustled },
+          evidence: { agent, where, since: e.since ?? null, hustled,
+                      also_cleared: stale.length - 1 },
         };
       }
 
@@ -618,19 +641,41 @@ export const feastFleetRules = [
       // Nearest first, then hungriest: the short walk is the cheap one, and among equals
       // the character with least food gains most from going.
       candidates.sort((a, b) => (a.hops ?? 99) - (b.hops ?? 99) || a.meals - b.meals);
-      const pick = candidates[0];
+
+      // SEND SEVERAL, BECAUSE ONE PER PASS CANNOT KEEP A FLEET FED.
+      //
+      // The fleet pass is two minutes and this table returns one intent, so one dispatch per
+      // pass is one character every two minutes AT BEST — forty-two minutes to send
+      // twenty-one, against a round trip of about twenty-two. The fleet can never catch up
+      // with itself, and that is before any other rule takes a pass off it.
+      //
+      // It is safe to batch precisely because the outbound step is `background: true`: it
+      // launches a walk and returns, so N of them is N cheap calls rather than N journeys.
+      // The errand holds `busy` on its own agent only; the others are protected by the
+      // memory instead — `onAJourney` in the station rule reads `phase: 'outbound'` and
+      // leaves them on the road, which is the mechanism that already had to exist because
+      // the walk outlives the errand that started it.
+      const batch = Math.max(1, Number(cfg.dispatch_batch ?? 6));
+      const sending = candidates.slice(0, batch);
+      const pick = sending[0];
       const row = pick.row;
       const home = row.policy?.assignedRoom ?? row.assigned_room ?? row.room ?? null;
+      const also = sending.slice(1);
+      const homeOf = c => c.row.policy?.assignedRoom ?? c.row.assigned_room ?? c.row.room ?? null;
       return {
         kind: 'errand',
         orders: { errand: 'feast-outbound', agent: row.agent,
-                  label: `feast hall: set off (${pick.door === 'passing' ? 'near Tos'
-                            : 'worth the walk'})`,
-                  context: { home, door: pick.door, hops: pick.hops, ms: pick.ms },
+                  label: `feast hall: set off (${sending.length} character(s))`,
+                  context: { home, door: pick.door, hops: pick.hops, ms: pick.ms,
+                             also: also.map(c => c.row.agent),
+                             home_by_agent: Object.fromEntries(
+                               sending.map(c => [c.row.agent, homeOf(c)])),
+                             ms_by_agent: Object.fromEntries(
+                               sending.map(c => [c.row.agent, c.ms ?? null])) },
                   // Held `busy` for the walk, so the station recall and every other rule
                   // that reads `takeable` leave it on the road. See errands.mjs.
                   hold_busy_ms: holdFor(pick.ms ?? maxTravelMs, maxTripMs),
-                  steps: outboundSteps(row.agent, cfg, doctrine, row) },
+                  steps: sending.flatMap(c => outboundSteps(c.row.agent, cfg, doctrine, c.row)) },
         // NO "n ALREADY ON THE ROAD" ANY MORE, because nothing is bounded by it. The
         // number that matters now is how many the fleet is sending, which the counters
         // report, and how much food came back.
@@ -657,9 +702,19 @@ export function recordFeastOutbound({ agent, at, stopped, context, was = {} }) {
              read: { ok: false, agent, at, stopped } };
   // `ms` is the walk in, kept so the grab can hold the walker for a walk home of the same length.
   const ms = Number.isFinite(context?.ms) ? context.ms : null;
-  return { patch: { [agent]: { phase: 'outbound', since: at, from: context?.home ?? null, ms, ok: null },
-                    ...bumpFeastStats(was, { dispatched: 1 }, at) },
-           read: { ok: true, agent, at, phase: 'outbound', from: context?.home ?? null, ms } };
+  // EVERY CHARACTER THE ERRAND LAUNCHED, not just the one it was addressed to. A walk with
+  // no memory entry behind it is a walk the station rule reads as being out of position and
+  // recalls, which is the failure this whole topic exists to prevent.
+  const others = [].concat(context?.also ?? []).filter(a => a && a !== agent);
+  const homeOf = a => (context?.home_by_agent ?? {})[a] ?? context?.home ?? null;
+  const msOf = a => { const v = (context?.ms_by_agent ?? {})[a]; return Number.isFinite(v) ? v : ms; };
+  const patch = { [agent]: { phase: 'outbound', since: at, from: context?.home ?? null, ms, ok: null } };
+  for (const a of others)
+    patch[a] = { phase: 'outbound', since: at, from: homeOf(a), ms: msOf(a), ok: null };
+  return { patch: { ...patch,
+                    ...bumpFeastStats(was, { dispatched: 1 + others.length }, at) },
+           read: { ok: true, agent, at, phase: 'outbound', from: context?.home ?? null, ms,
+                   also: others } };
 }
 
 /** Grab: how much was taken, whether the pack filled, and that the trip is done. */
@@ -714,8 +769,18 @@ export function recordFeastPkCheck({ at, results = [], context, was = {}, rand =
 
 /** Abandon: the journey is over, and the next attempt waits the failure backoff. */
 export function recordFeastAbandon({ agent, at, context, was = {} }) {
-  return { patch: { [agent]: { phase: null, failed_at: at, ok: false,
-                               why: `never arrived; last seen in ${context?.where ?? '?'}` },
-                    ...bumpFeastStats(was, { abandoned: 1 }, at) },
-           read: { ok: false, agent, at, abandoned: true, where: context?.where ?? null } };
+  // `also` is every OTHER journey that had gone stale on the same pass. They are cleared
+  // together because a stale entry blocks re-dispatch, and clearing them one pass at a time
+  // is two minutes of nobody being sent anywhere for each one.
+  const others = [].concat(context?.also ?? []).filter(a => a && a !== agent);
+  const whereOf = a => (context?.where_by_agent ?? {})[a] ?? null;
+  const entry = a => ({ phase: null, failed_at: at, ok: false,
+                        why: `never arrived; last seen in ${(a === agent
+                          ? context?.where : whereOf(a)) ?? '?'}` });
+  const patch = { [agent]: entry(agent) };
+  for (const a of others) patch[a] = entry(a);
+  return { patch: { ...patch,
+                    ...bumpFeastStats(was, { abandoned: 1 + others.length }, at) },
+           read: { ok: false, agent, at, abandoned: true, where: context?.where ?? null,
+                   also_cleared: others } };
 }

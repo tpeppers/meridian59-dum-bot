@@ -126,20 +126,31 @@ export const fleetRules = new RuleSet('fleet', [
   ...factionActiveFleetRules,
   // The crate window closes and the strategy-selected checker is already in the castle.
   ...crateFleetRules,
-  // A full pack cannot pick up the next drop, so a heavy character earns nothing until it
-  // sells. The circuit is an errand (a sequence), gated by a per-character cooldown so it
-  // cannot re-fire every tick; it sits above standing maintenance and below anything with a
-  // closing window (the crate, an assigned faction quest) and below survival, which is the
-  // keeper's regardless.
-  ...sellrunFleetRules,
-  // THE FEAST HALL SITS WITH THE SELL CIRCUIT, AND ABOVE THE PATROL FOR ONE REASON: a
-  // character standing in the hall with an empty pack is earning nothing, and the grab
-  // that fills it is a two-minute errand. Its window closes too — the Duke locks the
-  // doors when the event ends — but the ordering argument is the arrival, not the event.
-  // It cannot starve the patrol below: dispatch is capped by `max_in_flight`, every
-  // character it sends is cooled down for the better part of an hour afterwards, and it
-  // returns `pass` the moment nobody is in the hall or hungry within reach.
+  // FOOD OUTRANKS SELLING, AND THE ORDER USED TO BE THE OTHER WAY ROUND.
+  //
+  // This table returns ONE intent per pass — the first rule that wants something wins and
+  // stops the table — and the fleet pass is every two minutes. So a rule above another does
+  // not merely go first; on a fleet where the upper rule usually has something to say, the
+  // lower one never runs at all.
+  //
+  // That is what happened. The sell circuit sat here and the feast below it, on an argument
+  // that no longer held: "it cannot starve the patrol, dispatch is capped by max_in_flight
+  // and every character is cooled down afterwards". Both of those caps were removed when the
+  // feast was uncapped, and then the circuit's own trigger came down from 32 carried items to
+  // 12 — so the circuit had something to say on nearly every pass and the feast rule stopped
+  // being reached. Measured over 386 minutes: 52 dispatched, ONE arrival, and nine journeys
+  // left in `outbound` for two and a half hours because even the sweep that gives up on a
+  // stale journey lives inside the rule that was never reached.
+  //
+  // Vigor above the resting cap of 80 comes only from EATING, so an unfed fleet is a fleet
+  // that fights at a fraction of its strength however much loot it is carrying. Selling is
+  // how the fleet gets richer; eating is how it gets to keep playing. Food first.
   ...feastFleetRules,
+  // A full pack cannot pick up the next drop, so a heavy character earns nothing until it
+  // sells. Below the feast, above standing maintenance, and below anything with a closing
+  // window. The circuit ends AT the Duke's tables now, so a character the feast rule did not
+  // reach this pass still arrives there by the long way round.
+  ...sellrunFleetRules,
   // Establish the hands-off patrol policy before its maintenance strategies try to
   // spend mana or hand over equipment. This is also the baseline a finite learning
   // errand returns to. It returns `pass` as soon as the policy agrees, so putting it

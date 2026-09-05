@@ -34,6 +34,74 @@
 // window is what stops the errand re-firing every tick and marching a character to town for
 // ever — the "character in a basement" failure the crate rule documents at length.
 
+// WHICH MERCHANT IS IN WHICH ROOM IS NOT AN ORDER. It is a fact about Barloque, like the
+// nutrition table or the room flags, and it belongs in the repository rather than in every
+// operator's local doctrine. What IS an order is whether to go at all and how full a pack has
+// to be first — `on` and `trigger` — and those stay in the doctrine, where an operator can
+// change them without a commit.
+//
+// The split matters because the alternative was making every doctrine restate the geography.
+// The live prod doctrine does not extend the sell-circuit doctrine (it descends from
+// castle-victoria, which descends from survive), so "turn selling on for this fleet" meant
+// copying four lists into a gitignored file — and a copy is a thing that drifts silently from
+// the file the tests assert against. Now it is `"sellrun": { "on": true }`.
+
+/** The three specialists, in the order a pack is routed across them. */
+export const BARLOQUE_STOPS = Object.freeze([
+  // The Royal Blacksmith of Barloque — body armour, shields, weapons. Singletons, so no cap.
+  { room: 113, merchant: "Fehr'loi Qan", max_stack: null },
+  // Sparkling Stone Shop — gems and sundries. Refuses a stack OVER 25 wholesale
+  // (bqmerch.kod:113), so a bigger gem stack is sold 25 at a time.
+  { room: 109, merchant: 'Herbutte', max_stack: 25 },
+  // Joguer's Herbs and Roots — loot mushrooms and other reagents. No cap.
+  { room: 104, merchant: 'Joguer', max_stack: null },
+]);
+
+// NEVER OFFERED TO A MERCHANT, however heavy the pack. Matched as case-insensitive
+// substrings, so "wand" covers every wand and "orb of" every orb.
+//
+// The free food is on this list and it is the half people forget. Resting stops awarding
+// vigor at 80 of 200 — everything above it has to be EATEN — and the Duke's tables are where
+// this fleet gets that for nothing. A courier can be carrying a hundred slices when its pack
+// trips the carry trigger, and `sell_all` offers a merchant everything he will take, so a
+// circuit that does not name them undoes the feast run that filled the pack for a handful of
+// shillings.
+//
+// A bare "mushroom" is deliberately NOT here. Four of this world's five are casting reagents
+// and are meant to be sold; only `edible mushroom` and `Inky-cap mushroom` are food, and both
+// are named. A substring that matched all five would quietly stop the fleet selling its
+// reagent loot, which is the mistake in the other direction and it costs money.
+export const SELL_KEEP = Object.freeze([
+  'inky', 'dragon scale', 'angel feather', 'wand', 'scroll', 'signet', 'orb of', 'potion',
+  'herb', 'elderberry',
+  'slice of pork', 'bowl of soup', 'edible mushroom', 'turkey leg', 'loaf',
+]);
+
+// Obert Cair'bre's office. VISITED BEFORE THE FIRST SHOP: what is in the vault cannot be sold
+// by a keep list that is wrong, and a keep list is a hand-written string match one forgotten
+// name away from selling the best thing the character owns. m59-fleetscript.mjs refuses the
+// other order outright. It costs two hops in forty, measured off the bake.
+//
+// The create-food reagents are NOT stored: a herb in Barloque is no use to a character casting
+// in Castle Victoria, and getting it back costs a retrieval fee and a trip.
+export const BARLOQUE_VAULT = Object.freeze({
+  room: 114,
+  items: ['dragon scale', 'angel feather', 'wand', 'scroll', 'signet', 'orb of', 'potion'],
+});
+
+// The First Royal Bank of Tos. THERE IS NO BANKER IN BARLOQUE — Setag'lib is a compiled class
+// that nothing ever creates — so this is a real detour, eleven hops from the vault.
+//
+// Tos rather than Jasper, and the reason is the leg after it rather than the leg to it. Both
+// are eleven hops from the vault and both pay into the same account (BANK_BASIC and BID_TOS
+// are both 1, blakston.khd:1275), but Tos is eight hops from Castle Victoria against Jasper's
+// ten — and Tos is the town this fleet already crosses for the Duke's tables.
+//
+// `keep` is a walking float rather than an amount. 500 is enough to buy reagents on the way
+// back without a withdrawal, and a withdrawal is the one bank operation that never states the
+// new balance (Lm_bnkr_did_withdraw, monster.kod:144).
+export const TOS_BANK = Object.freeze({ room: 54, keep: 500 });
+
 const mins = ms => `${Math.round(ms / 60000)}m`;
 
 // The same test `engine.mjs` exports as `takeable`, inlined to keep this rule out of the
@@ -182,7 +250,19 @@ export const sellrunFleetRules = [
     offWhy: 'sellrun.on is off. The circuit walks a character out of its hunting room across ' +
             'town and back, so it is opted into by a doctrine rather than assumed',
     decide(obs, doctrine) {
-      const cfg = doctrine.sellrun ?? {};
+      // The doctrine says WHETHER and WHEN; the constants above say WHERE. A doctrine that
+      // names its own stops, keep list, vault or bank still wins — this is a default, not a
+      // policy — but it does not have to restate Barloque to switch selling on.
+      const given = doctrine.sellrun ?? {};
+      const cfg = {
+        ...given,
+        stops: (given.stops ?? []).length ? given.stops : BARLOQUE_STOPS,
+        keep: given.keep ?? SELL_KEEP,
+        // `null` is how a doctrine says "do not make this stop at all", which is a different
+        // instruction from saying nothing. Only an absent key takes the default.
+        vault: given.vault === undefined ? BARLOQUE_VAULT : given.vault,
+        bank: given.bank === undefined ? TOS_BANK : given.bank,
+      };
       if (!(cfg.stops ?? []).length) return null;   // nothing to route to
       const now = obs.at;
       const mem = obs.memory?.sellrun ?? {};

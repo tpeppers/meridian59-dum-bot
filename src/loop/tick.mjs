@@ -43,7 +43,12 @@ export async function tickCharacter(ctx, row) {
 
   try {
     // ---- phase one: free
-    let obs = observeFromBoard(row, { now });
+    // THE MEMORY, WHICH THE PER-CHARACTER PATH DID NOT HAVE. It is a local file read, not a
+    // packet, and without it a rule here cannot see what an errand this fleet already started
+    // is doing. `return-to-station` is the one that needed it: a character eleven hops into a
+    // walk to the Duke's hall is in none of the rooms that walk ends at, so it read as
+    // out-of-position and was recalled — 28 times in one watch, against zero food taken.
+    let obs = { ...observeFromBoard(row, { now }), memory: ctx.memory?.read() ?? null };
     let { intent, considered } = decide(characterRules, obs, config);
     line.considered = considered;
 

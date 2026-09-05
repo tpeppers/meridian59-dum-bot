@@ -76,15 +76,20 @@ test('sellrun: one character\'s recent run does not gate another\'s', () => {
 
 // ---------------------------------------------------------------- the decision
 
-test('sellrun: a heavy pack routes across the three specialists and comes home', () => {
+test('sellrun: the vault, the three specialists, the bank, and home', () => {
+  // THIS USED TO BE THREE SHOPS AND A WALK HOME, and that circuit had converted a pack into a
+  // purse and then carried the purse across the same road the pack came over. Half this
+  // fleet's deaths are on that road. The two ends are now the point of the trip: the vault
+  // takes what must not be sold at all, and the bank takes what the shops paid.
   const intent = rule.decide(fleetObs([heavy('a')]), doctrineWith());
   ok(intent, 'a heavy character gets a trip');
   eq(intent.kind, 'errand', 'a sequence, not a policy write');
   eq(intent.orders.errand, 'sellrun-circuit', 'errand kind');
   eq(intent.orders.agent, 'a', 'the heavy one');
   const steps = intent.orders.steps;
-  eq(steps.map(s => s.tool).join(','), 'travel,sell_all,travel,sell_all,travel,sell_all,travel',
-     'three sell stops framed by travels, then the trip home');
+  eq(steps.map(s => s.tool).join(','),
+     'travel,vault,travel,sell_all,travel,sell_all,travel,sell_all,travel,bank,travel',
+     'the vault BEFORE the first shop, then the three lanes, then the bank, then home');
   eq(steps[steps.length - 1].always, true, 'the way home runs even after a stop failed');
   eq(steps[steps.length - 1].args.to, 544, 'home is the room it was hunting in');
 });

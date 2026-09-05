@@ -52,6 +52,8 @@
 // PURE, like every rule here: `now`, the past (obs.memory.feast) and the walk estimate
 // (row.travel_to_feast, put on the row by the tick) all arrive on the observation.
 
+import { giveawaySteps, GIVEAWAY_KEEP as GIVEAWAY_KEEP_LOCAL }
+  from '../street-giveaway.mjs';
 import { FEAST_HALL, FEAST_DISPENSERS, FEAST_PACK_FULL, dispenserNamed } from '../feast-hall.mjs';
 import { foodAmountOf } from './food.mjs';
 
@@ -327,37 +329,23 @@ export function grabsFor(row, cfg = {}, dispenser = FEAST_DISPENSERS[0]) {
 }
 
 /** The dispatch errand: one non-blocking travel, and a memory that says where home is. */
-// THE STREETS OF TOS, AND WHY THE STOP IS FREE.
-//
-// Room 50 is on the way and not a detour: Castle Victoria to the Duke's hall is 11 room hops
-// and so is Castle Victoria -> Streets of Tos -> the hall (8 + 3), measured off the bake. The
-// giveaway therefore costs the walk nothing, which is most of the argument for doing it here
-// rather than as an errand of its own.
-export const STREETS_OF_TOS = 50;
-
-// The line, and it is a constant here rather than anything composed. Operator's words.
-export const GIVEAWAY_YELL = 'free crap in streets';
-
-// Never dropped, on top of the two floors the harness enforces for itself (what is worn, and
-// money). Food is the whole reason the character is walking to the hall, so shedding it on
-// the way would be self-defeating; the reagents are what Create Food is made of. The rest of
-// the pack is loot on a route that passes no merchant.
-export const GIVEAWAY_KEEP = Object.freeze([
-  'slice of pork', 'bowl of soup', 'edible mushroom', 'inky', 'turkey leg', 'loaf',
-  'herb', 'elderberry',
-]);
+// The giveaway is shared with the sell circuit, which finishes the same way — see
+// src/decide/street-giveaway.mjs for the order and why each step names the one before it.
+// Re-exported here because this rule was where they lived first.
+export { STREETS_OF_TOS, GIVEAWAY_YELL, GIVEAWAY_KEEP } from '../street-giveaway.mjs';
 
 /**
  * Would this character rather be taking its pack to Barloque than leaving it in the road?
  *
- * THIS IS THE WHOLE GATE, and it is the operator's rule stated in code: the giveaway is for
- * personal routes that do not go to Barloque. A pack heavy enough to be worth the sell
- * circuit is worth the sell circuit — dropping it would throw away the trip that turns loot
- * into banked shillings. Anything lighter is being hauled to a feast and back past no
- * merchant at all, and pack space is worth more than it.
+ * THE ORDER CHANGED, 2026-09-05, AND THIS GATE IS WHAT IS LEFT OF THE OLD ONE. The giveaway
+ * used to be the feast run's alternative to selling: drop it here, or haul it to Barloque,
+ * one or the other. It is now the LAST STEP OF BOTH — the sell circuit vaults, sells, banks
+ * and then drops whatever none of those three would take, and only then walks to the hall.
  *
- * Reads the sell circuit's own trigger so the two rules cannot drift into disagreeing; a
- * doctrine with the circuit switched off has no Barloque route, so nothing is spared.
+ * So a pack heavy enough for the circuit is not spared from being dropped, it is spared from
+ * being dropped YET: this rule steps aside and the circuit takes the character, drops the
+ * remainder in the same street a few minutes later, and arrives at the same tables. Reads the
+ * circuit's own `carry_at` so the two cannot disagree about what heavy means.
  */
 export function boundForBarloque(row = {}, doctrine = {}) {
   const sell = doctrine.sellrun ?? {};
@@ -366,41 +354,16 @@ export function boundForBarloque(row = {}, doctrine = {}) {
   return (row.carrying ?? 0) >= carryAt;
 }
 
-/**
- * The three steps that put the loot in the road, or none.
- *
- * ORDER MATTERS AND SO DOES `needs`. The yell is an invitation to a pile that has to exist
- * before anybody is invited to it: yelling first, or yelling after a drop that refused,
- * advertises nothing and is the kind of thing a human player remembers a bot for.
- */
-function giveawaySteps(agent, cfg, doctrine, row) {
+function feastGiveawaySteps(agent, cfg, doctrine, row) {
   const give = cfg.giveaway ?? {};
   if (give.on !== true) return [];
   if (boundForBarloque(row, doctrine)) return [];
-  const keep = give.keep ?? GIVEAWAY_KEEP;
-  const room = give.room ?? STREETS_OF_TOS;
-  return [
-    { tool: 'travel', args: { agent, to: room, run_errands: false },
-      expect: 'arrived', optional: true, label: 'in-the-street',
-      timeout_ms: cfg.travel_timeout_ms ?? 240_000, estimate_ms: 120_000,
-      why: `to the Streets of Tos (${room}), which is on the way to the hall and not a detour` },
-    { tool: 'drop_all', args: { agent, keep },
-      // Optional and gated: a character that never reached the street must not shed its
-      // pack in whatever room the walk stalled in — a pile in a merchant's doorway or on a
-      // staging square is antisocial in a way the street is not.
-      optional: true, needs: 'in-the-street', estimate_ms: 20_000,
-      why: 'put down everything not worn — on this route it passes no merchant' },
-    { tool: 'say', args: { agent, text: GIVEAWAY_YELL, type: 'yell' },
-      // `needs` the street, not the drop: the runner has no way to say "only if that step
-      // put something down", and a yell over an empty street is a smaller mistake than the
-      // errand stopping. It is `optional` so a refused yell never costs the food run.
-      optional: true, needs: 'in-the-street', extend_busy: false, estimate_ms: 5_000,
-      why: 'tell the street the pile is there — a yell carries to the adjacent rooms too' },
-  ];
+  return giveawaySteps(agent, { keep: give.keep ?? GIVEAWAY_KEEP_LOCAL,
+                                room: give.room, travelTimeoutMs: cfg.travel_timeout_ms });
 }
 
 function outboundSteps(agent, cfg, doctrine = {}, row = {}) {
-  return [...giveawaySteps(agent, cfg, doctrine, row), {
+  return [...feastGiveawaySteps(agent, cfg, doctrine, row), {
     tool: 'travel',
     args: { agent, to: FEAST_HALL.room, background: true, run_errands: false },
     // No `expect: 'arrived'` on purpose — this errand LAUNCHES the walk and returns. The

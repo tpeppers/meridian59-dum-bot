@@ -1,6 +1,8 @@
 import assert from 'node:assert/strict';
 import { sellrunFleetRules } from '../src/decide/rules/sellrun.mjs';
 import { runErrand } from '../src/act/errands.mjs';
+import { GIVEAWAY_YELL, STREETS_OF_TOS } from '../src/decide/street-giveaway.mjs';
+import { FEAST_HALL } from '../src/decide/feast-hall.mjs';
 import { SELL_KEEP, BARLOQUE_VAULT, BARLOQUE_STOPS, TOS_BANK }
   from '../src/decide/rules/sellrun.mjs';
 
@@ -254,4 +256,89 @@ test('sellrun: the create-food reagents stay in the pack, and out of the vault',
   for (const r of ['herb', 'elderberry'])
     assert.equal(vaultItems.some(v => r.includes(String(v).toLowerCase())), false,
                  `${r} is wanted in the pack, not in Barloque`);
+});
+
+// --------------------------------------------------- the whole return route, in order
+//
+// THE OPERATOR'S ORDER, 2026-09-05: vault, sell, bank, drop, yell, then the Duke's tables.
+// Every step earns the next one, and the sequence is the argument:
+//
+//   * the vault takes what is worth keeping, before a keep list can get it wrong
+//   * the shops take what will sell
+//   * the bank takes what they paid, so the walk home carries no purse
+//   * and only THEN does anything go in the road — so what hits the street is exactly what
+//     no counter in the world wanted. Dropping earlier throws money away; carrying it home
+//     hauls it for nothing.
+//   * which leaves the pack empty immediately before the tables, which is the whole reason
+//     the food is last: everything the character can hold is now food.
+
+const FULL = { ...base, giveaway: { on: true }, finish: 'feast' };
+
+test('sellrun: vault, sell, bank, drop, yell, feast — in that order', () => {
+  assert.deepEqual(tools(FULL), [
+    'travel', 'vault',            // what is worth keeping
+    'travel', 'sell_all',         // what will sell
+    'travel', 'sell_all',
+    'travel', 'bank',             // what they paid
+    'travel', 'drop_all', 'say',  // what nobody wanted, and the shout about it
+    'travel',                     // the Duke's tables
+  ]);
+  const s = steps(FULL);
+  assert.equal(s[s.length - 1].args.to, FEAST_HALL.room, 'it ends at the hall, not at home');
+  assert.equal(s[s.length - 1].always, true, 'and gets there even after a stop failed');
+  assert.equal(s.find(x => x.tool === 'drop_all') && true, true);
+  assert.equal(s[s.findIndex(x => x.tool === 'drop_all') - 1].args.to, STREETS_OF_TOS);
+  assert.equal(s.find(x => x.tool === 'say').args.text, GIVEAWAY_YELL);
+  assert.equal(s.find(x => x.tool === 'say').args.type, 'yell');
+});
+
+test('sellrun: the drop comes AFTER every counter, never before one', () => {
+  // The ordering IS the correctness here, so it is asserted as an ordering rather than as a
+  // list: anything that could have been sold, banked or stored must have had its chance.
+  const t = tools(FULL);
+  const drop = t.indexOf('drop_all');
+  assert.ok(drop > t.lastIndexOf('sell_all'), 'after the last shop');
+  assert.ok(drop > t.indexOf('vault'), 'after the vault');
+  assert.ok(drop > t.indexOf('bank'), 'after the bank');
+  assert.ok(t.indexOf('say') > drop, 'and nobody is invited to a pile that is not there yet');
+});
+
+test('sellrun: exactly one weapon survives the shops — the one in hand', () => {
+  // `max_weapons` counts equipped plus carried, and OMITTING IT MEANS NULL, WHICH MEANS KEEP
+  // EVERY WEAPON. For as long as this circuit existed it walked every spare blade to
+  // Barloque, declined to sell any of them, and walked them home again. One rather than zero
+  // because a character with no weapon cannot fight and the keeper would buy one back.
+  for (const sell of steps(FULL).filter(x => x.tool === 'sell_all'))
+    assert.equal(sell.args.max_weapons, 1, sell.args.merchant);
+  assert.equal(steps({ ...FULL, max_weapons: 3 }).find(x => x.tool === 'sell_all')
+                 .args.max_weapons, 3, 'a doctrine may still say otherwise');
+});
+
+test('sellrun: a spare weapon is SOLD, not dropped — the keep list never spares one', () => {
+  // The two halves of the same instruction. The shops are told to keep one weapon, and the
+  // street keep list names only food and the create-food reagents — so a blade the smith
+  // refuses has been past the one counter that wanted it and has earned the road.
+  const keep = steps(FULL).find(x => x.tool === 'drop_all').args.keep;
+  for (const w of ['battle axe', 'long sword', 'mace', 'dagger'])
+    assert.equal(keep.some(k => w.includes(k)), false, `${w} must not be spared from the drop`);
+});
+
+test('sellrun: home is still the default, and the giveaway is still opt-in', () => {
+  // Dropped is gone, and a fleet with no feast running should still come home. Silence has
+  // to mean the behaviour that was already there.
+  const t = tools(base);
+  assert.equal(t.includes('drop_all'), false);
+  assert.equal(t.includes('say'), false);
+  assert.equal(steps(base)[steps(base).length - 1].args.to, 39, 'back where it was hunting');
+});
+
+test('sellrun: finishing at the feast does not require the giveaway, or vice versa', () => {
+  // Two switches, two decisions. Somebody may want the food run without the litter, or the
+  // litter without the food run, and neither should silently imply the other.
+  const feastOnly = tools({ ...base, finish: 'feast' });
+  assert.equal(feastOnly.includes('drop_all'), false);
+  assert.equal(steps({ ...base, finish: 'feast' }).slice(-1)[0].args.to, FEAST_HALL.room);
+  const dropOnly = tools({ ...base, giveaway: { on: true } });
+  assert.ok(dropOnly.includes('drop_all'));
+  assert.equal(steps({ ...base, giveaway: { on: true } }).slice(-1)[0].args.to, 39);
 });

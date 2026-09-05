@@ -59,6 +59,14 @@ export const WRITE = new Set([
   'travel', 'spread', 'walk_to', 'cancel_movement',
   // Economy.
   'bank', 'sell', 'sell_all', 'shop', 'supply', 'quartermaster',
+  // THE OTHER HALF OF SURVIVING A DEATH. A bank holds money and a vault holds OBJECTS, and
+  // everything in neither is on the floor of wherever the character fell. It is on the write
+  // list rather than in NOT_YET because the decision it encodes - "this pack has more in it
+  // than the walk home is worth risking" - is an economy decision on a minutes clock, which
+  // is DUM's side of the boundary. Storing is also the recoverable direction: a vaultman
+  // sells your own deposit back at a retrieval fee, so the worst a wrong deposit costs is
+  // that fee. Nothing here retrieves.
+  'vault',
   // Errands the harness already knows how to run end to end.
   'loot_run', 'rest_up', 'equip_best', 'wear_best', 'escape_underworld',
   // One bounded, localhost-only planner errand. The harness chooses from the first

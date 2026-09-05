@@ -228,6 +228,8 @@ export async function runErrand(broker, intent, { commit = false, holder = null,
   if (announced?.error || announced?.refused)
     stopped = `could not mark busy (${announced.error ?? announced.refused})`;
 
+  // Labels of the steps that got as far as they were meant to, for `needs` below.
+  const reachedLabels = new Set();
   for (let i = 0; i < steps.length; i++) {
     const step = steps[i];
     // EXTEND AS IT GOES, rather than asking for the worst case once.
@@ -260,6 +262,13 @@ export async function runErrand(broker, intent, { commit = false, holder = null,
           stopped = `could not extend busy (${extended.error ?? extended.refused})`;
       }
     }
+    if (step.needs && !reachedLabels.has(step.needs)) {
+      // The step it depends on did not get far enough. Skipped, and said out loud, rather
+      // than sent into a room where the thing it addresses is not.
+      results.push({ tool: step.tool, skipped: true,
+                     why: `"${step.needs}" did not complete` });
+      continue;
+    }
     if (stopped && !step.always) {
       results.push({ tool: step.tool, skipped: true, why: `after ${stopped}` });
       continue;
@@ -289,7 +298,24 @@ export async function runErrand(broker, intent, { commit = false, holder = null,
       const said = r.messages.find(m => step.stop_when.test(String(m)));
       if (said) satisfied = `the room said "${said}"`;
     }
-    if (r?.error) { stopped = `${step.tool} failed: ${r.error}`; continue; }
+    // `optional` MEANS THE ERRAND SURVIVES THIS STEP FAILING, and it is a different word from
+    // `always`. `always` is about a step running after the errand has already stopped — the
+    // way home. `optional` is about a step's own failure not stopping the errand: a detour
+    // that did not come off, where everything after it is still worth doing.
+    //
+    // IT WAS A COMMENT AND NOT A BEHAVIOUR UNTIL NOW. Steps have carried `optional` since the
+    // feast errand's walk-to-the-table, on the belief that a failed approach could not cost a
+    // courier its food — and the runner had never read the field, so it could and did. The
+    // sell circuit made it matter twice more: a vaultman who is not at his counter must not
+    // also cancel the banking, and neither must cancel the walk home.
+    let stepOk = true;
+    const failed = f => {
+      stepOk = false;
+      if (!step.optional) { stopped = f; return; }
+      results.push({ tool: step.tool, optional: true, failed: f,
+                     why: `optional — the errand continues past this` });
+    };
+    if (r?.error) { failed(`${step.tool} failed: ${r.error}`); continue; }
     if (step.expect === 'arrived') {
       if (r?.started === true) {
         // The async keeper-backed walk: block here until it actually arrives, or the next
@@ -299,14 +325,25 @@ export async function runErrand(broker, intent, { commit = false, holder = null,
           // CANCEL THE DANGLING WALK. A travel that timed out is still walking toward its
           // destination in the broker; leaving it running makes this errand's own return leg —
           // and the NEXT errand's first travel — fail "busy: walk to ...". cancel_movement is a
-          // no-op if nothing is moving.
+          // no-op if nothing is moving. THIS RUNS FOR AN OPTIONAL STEP TOO: a walk nobody is
+          // waiting for any more is still a walk in flight, and it is what makes the next
+          // step fail "busy".
           await broker.call('cancel_movement', { agent }).catch(() => {});
-          stopped = `${step.tool} did not arrive at ${step.args?.to} (${reached.why})`;
+          failed(`${step.tool} did not arrive at ${step.args?.to} (${reached.why})`);
         }
       } else if (r?.arrived === false) {
-        stopped = `${step.tool} did not arrive (${r.reason ?? 'no reason given'})`;
+        failed(`${step.tool} did not arrive (${r.reason ?? 'no reason given'})`);
       }
     }
+    // AND A STEP THAT DEPENDS ON AN OPTIONAL ONE HAVING WORKED HAS TO SAY SO. A vault deposit
+    // after a walk that did not arrive would be sent from whatever room the character is
+    // actually in, where there is no vaultman — harmless, because the tool resolves the NPC
+    // off the live room and refuses, but it is a packet sent hopefully, which is the habit
+    // this codebase keeps paying for. `needs` names an earlier step's label.
+    // ONLY WHEN IT ACTUALLY GOT THERE. Recording the label regardless is the same bug
+    // `needs` exists to prevent: a walk that did not arrive would still mark itself
+    // reached, and the deposit after it would be sent from the wrong room anyway.
+    if (step.label && stepOk) reachedLabels.add(step.label);
   }
 
   // FREE IT IN A `finally`-SHAPED WAY: unconditionally, including after a step failed.

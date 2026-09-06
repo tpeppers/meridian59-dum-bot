@@ -87,7 +87,14 @@ export const ORDER_FIELDS = {
   drop_junk:         { policy: 'dropJunk' },
   use_safe_spots:    { policy: 'useSafeSpots' },
   hold_resume_above: { policy: 'holdResumeAbove' },
+  // THE BAND IS TWO FIELDS. `fight_above_vigor` is the FLOOR — the vigor needed to start a
+  // fight — and `vigor_ceiling` is what the character keeps eating to. One number was
+  // answering both questions, and the ceiling could only be inherited from whichever
+  // strategy plan was selected: on prod all 21 characters reported `vigorCeiling: undefined`
+  // while every one of them was in fact eating to 200, and ten sat on a floor of 200 against
+  // that same ceiling, which means "must be exactly full to swing".
   fight_above_vigor: { policy: 'fightAboveVigor' },
+  vigor_ceiling:     { policy: 'vigorCeiling' },
   pull_within:       { policy: 'pullWithin' },
   decide_ms:         { policy: 'decideMs' },
   resync_ms:         { policy: 'resyncMs' },

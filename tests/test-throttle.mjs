@@ -226,3 +226,15 @@ test('throttle: a keeper with the right floor but the wrong ceiling is still cor
   ok(half, 'the floor agrees and the ceiling does not, so it still corrects');
   eq(half.orders.vigor_ceiling, 200, 'back to the top of the band');
 });
+
+test('throttle: vigor_ceiling is a routable order field, not a silently discarded one', async () => {
+  // DUM REFUSES TO SEND A FIELD IT HAS NOT BEEN TAUGHT, LOUDLY — and it caught this exact
+  // mistake in production the first time the rule sent a ceiling: "rule throttle-vigor wants
+  // to set vigor_ceiling, which is not in ORDER_FIELDS ... or the setting is silently
+  // discarded". That guard is the reason a whole afternoon of turbo did not quietly do
+  // nothing, so this pins the registration rather than trusting it.
+  const { ORDER_FIELDS } = await import('../src/act/orders.mjs');
+  ok(ORDER_FIELDS.vigor_ceiling, 'vigor_ceiling is registered');
+  eq(ORDER_FIELDS.vigor_ceiling.policy, 'vigorCeiling', 'and maps to the keeper policy key');
+  eq(ORDER_FIELDS.fight_above_vigor.policy, 'fightAboveVigor', 'the floor still maps to its own');
+});

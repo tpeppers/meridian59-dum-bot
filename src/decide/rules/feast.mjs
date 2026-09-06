@@ -707,6 +707,20 @@ export const feastFleetRules = [
         // not reach this pass still arrives there by the long way round") assumed the
         // circuit got reached sometimes.
         //
+        // CORRECTION, same day, after watching it live. The starvation is real and the
+        // mechanism above is not the one doing it. `kind: 'pass'` does NOT stop the table
+        // (engine.mjs), so a feast rule with nobody to send lets the circuit through. What
+        // actually takes every pass is `feast-abandon`: the trip succeeds 56 times in 438
+        // — nine of the fifteen journeys outstanding right now are standing in their OWN
+        // HOME ROOM, dispatched and never departed — so failed journeys are produced about
+        // as fast as they are cleared, and cleaning one up is an errand, which wins the
+        // pass exactly like a dispatch.
+        //
+        // So this refusal is necessary and not sufficient: it guarantees a heavy character
+        // is not sent to the hall bare, and it cannot on its own get the circuit a turn.
+        // The thing to fix is the 13% arrival rate; until then the circuit runs only on
+        // the passes where nothing has gone wrong with the feast, which are rare.
+        //
         // So the feast rule declines the characters the circuit wants, which is the only
         // filter that makes the two cooperate rather than take turns starving each other.
         // It costs the feast nothing: `sellrun.finish` is `feast`, so the circuit ENDS at

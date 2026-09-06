@@ -172,3 +172,46 @@ test('giveaway: the surface lets it put things down, and still not pick them up'
   assert.match(deny('act', { verb: 'get', target: 'wand' }) ?? '', /reaches into/);
   assert.equal(deny('say', { text: GIVEAWAY_YELL, type: 'yell' }), null);
 });
+
+// ---------------------------------------------------------------- the two rules cooperate
+//
+// A CHARACTER WALKED OUT OF THE FEAST HALL WITH TEN LONG SWORDS AND 150 MUSHROOMS.
+//
+// Both halves of the design existed and the ORDERING starved one of them. The rule table
+// returns one intent per pass; the feast sits above the sell circuit and is uncapped, so it
+// had something to say on nearly every pass and the circuit below it was never reached.
+// Measured on prod the same day, 20,340 journal lines: sell 0, vault 0, bank 0, drop_all 0.
+// Not rare — never. So the giveaway, which lives on the circuit, could not run either, and
+// characters arrived at the free food with no room to carry any of it.
+//
+// The fix is that the feast rule declines the characters the circuit wants. It costs the
+// feast nothing, because `sellrun.finish` is `feast` — the circuit ENDS at the Duke's tables.
+test('feast: a heavy character is left to the sell circuit, which ends at the hall anyway', () => {
+  const withSell = { ...doctrine, sellrun: { on: true, trigger: { carry_at: 32, min_health: 0.8 } } };
+  const heavy = rule.decide({ at: NOW, characters: [row({ carrying: 40 })], memory: {} }, withSell);
+  assert.notEqual(heavy?.orders?.errand, 'feast-outbound',
+                  'a heavy character must not be dispatched straight to the hall');
+  // And the refusal says which rule is taking it, so an operator reading the skip list is
+  // not left thinking the character was simply ignored.
+  const why = JSON.stringify(heavy?.evidence ?? heavy ?? {});
+  assert.match(why + JSON.stringify(heavy?.why ?? ''), /sell circuit|heavy/i);
+});
+
+test('feast: a light character is still dispatched — the refusal is about the pack, not the trip', () => {
+  const withSell = { ...doctrine, sellrun: { on: true, trigger: { carry_at: 32, min_health: 0.8 } } };
+  const light = rule.decide({ at: NOW, characters: [row({ carrying: 6 })], memory: {} }, withSell);
+  assert.equal(light?.orders?.errand, 'feast-outbound', 'a light pack has nothing to sell');
+});
+
+test('feast: turning the sell circuit off does not quietly stop the feast', () => {
+  // The refusal reads the circuit's own config, so it switches itself off with it. Otherwise
+  // an operator disabling selling would strand every heavy character with no route to food.
+  const off = { ...doctrine, sellrun: { on: false, trigger: { carry_at: 32 } } };
+  const d = rule.decide({ at: NOW, characters: [row({ carrying: 40 })], memory: {} }, off);
+  assert.equal(d?.orders?.errand, 'feast-outbound');
+});
+
+test('feast: with no sellrun block at all the feast behaves as it always did', () => {
+  const d = rule.decide({ at: NOW, characters: [row({ carrying: 6 })], memory: {} }, doctrine);
+  assert.equal(d?.orders?.errand, 'feast-outbound');
+});

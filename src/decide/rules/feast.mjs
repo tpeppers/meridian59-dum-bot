@@ -54,6 +54,9 @@
 
 import { FEAST_HALL, FEAST_DISPENSERS, FEAST_PACK_FULL, dispenserNamed } from '../feast-hall.mjs';
 import { foodAmountOf } from './food.mjs';
+// The circuit's own carry/purse/health test. Imported rather than re-derived so the two
+// rules cannot disagree about which characters are heavy — see `sellCircuitWants`.
+import { sellCircuitWants } from './sellrun.mjs';
 
 const mins = ms => `${Math.round(ms / 60000)}m`;
 
@@ -687,6 +690,39 @@ export const feastFleetRules = [
         if ((row.health?.pct ?? 1) < minHealth) { skipped.push(`${row.agent}: hurt`); continue; }
         // THE ONE REFUSAL LEFT. Both halves: mostly food AND nearly full by weight.
         if (packTooFullForFood(row)) { skipped.push(`${row.agent}: pack full of food`); continue; }
+        // AND A HEAVY CHARACTER GOES BY WAY OF BARLOQUE. LEAVE IT FOR THE SELL CIRCUIT.
+        //
+        // A character was found walking OUT of the feast hall carrying ten long swords and
+        // a hundred and fifty mushrooms — arriving at the free food with no room for any, and
+        // hauling a fortune in sellable stock past every merchant that would have bought it.
+        //
+        // Both errands exist and the ordering starved one of them. This table returns ONE
+        // intent per pass, and the comment above `feastFleetRules` in decide/index.mjs
+        // explains exactly what that does — it was written when the sell circuit sat above
+        // the feast and the feast never ran. Moving the feast up fixed that and created the
+        // mirror image: the feast is uncapped, so it has something to say on nearly every
+        // pass, and the circuit below it stopped being reached. Measured on prod today,
+        // 20,340 journal lines: `sell` 0, `vault` 0, `bank` 0, `drop_all` 0. Not rare —
+        // NEVER. The reassurance written beside that move ("a character the feast rule did
+        // not reach this pass still arrives there by the long way round") assumed the
+        // circuit got reached sometimes.
+        //
+        // So the feast rule declines the characters the circuit wants, which is the only
+        // filter that makes the two cooperate rather than take turns starving each other.
+        // It costs the feast nothing: `sellrun.finish` is `feast`, so the circuit ENDS at
+        // the Duke's tables — a heavy character still gets there, having first vaulted,
+        // sold, banked, dropped what nobody would buy in the Streets of Tos and yelled
+        // about it. That is strictly more than this rule was going to do for it, and it
+        // arrives with a pack that can hold the food.
+        //
+        // Read from the circuit's OWN config, never a number of our own: two thresholds for
+        // one question is how they drift apart, and this one is set per fleet in the
+        // doctrine. If the circuit is off, this refusal switches itself off with it —
+        // otherwise turning selling off would quietly stop the feast too.
+        if (sellCircuitWants(row, doctrine.sellrun ?? {})) {
+          skipped.push(`${row.agent}: heavy — the sell circuit takes it, and that ends here anyway`);
+          continue;
+        }
         const meals = mealsAboard(row);
         const est = row.travel_to_feast ?? null;
         const hops = Number.isFinite(est?.hops) ? est.hops : null;

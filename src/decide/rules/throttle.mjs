@@ -21,6 +21,9 @@
 import { mealsAboard, canCook } from './feast.mjs';
 
 const clamp01 = v => Math.max(0, Math.min(1, Number(v)));
+// The top of the vigor bar. Named because "turbo" means exactly "the ceiling is this,
+// whatever the floor is", and a bare 200 in three places is how the two drift apart.
+const MAX_VIGOR = 200;
 
 /**
  * A vigor reading, however the layer it came from spells it.
@@ -86,10 +89,41 @@ export function throttleFloors(throttle) {
     const noFood = floorForThrottle(throttle.no_food);
     // A `no_food` above `with_food` is not a fleet that eats to relax; it is a typo, and
     // obeying it would idle exactly the characters this split exists to keep fighting.
-    return { withFood, noFood: Math.min(noFood, withFood), split: true };
+    return { withFood, noFood: Math.min(noFood, withFood), split: true,
+             ceiling: throttleCeiling(throttle) };
   }
   const flat = floorForThrottle(throttle);
-  return { withFood: flat, noFood: flat, split: false };
+  return { withFood: flat, noFood: flat, split: false, ceiling: throttleCeiling(throttle) };
+}
+
+/**
+ * "TURBO": THE CEILING STAYS AT THE TOP WHATEVER THE FLOOR IS.
+ *
+ * The operator's phrasing, 2026-09-05, and it names a real distinction the fleet had lost:
+ *
+ *     "0.8 turbo"  ->  160 minimum to start a fight, keep eating until 200
+ *     "0.4 turbo"  ->   80 minimum to start a fight, keep eating until 200
+ *
+ * A floor and a ceiling are different questions and one number was answering both. Health
+ * returns as ((200-vigor)^2/6 + 1000) ms a point — 1.0 hp/s at 200 against 0.29 at 80 — so
+ * the BAND is where the value is: set out at the top of it, keep fighting down to the floor,
+ * eat back up. A character pinned at its floor has thrown away the regeneration it just paid
+ * food for.
+ *
+ * WHAT IT LOOKED LIKE WITHOUT THIS. Measured on prod: ten of twenty-one characters were on
+ * `fight_above_vigor: 200` against a ceiling that was also 200 — they had to be at exactly
+ * full to swing and dropped out of the fight on the first tick of vigor burn — and all
+ * twenty-one reported `vigorCeiling: undefined`, because the ceiling could only be inherited
+ * from whichever strategy plan happened to be selected. The band was real, nobody had
+ * declared it, and nothing reported it.
+ *
+ * `turbo: false` gives the old behaviour of not sending a ceiling at all, which leaves the
+ * strategy's own. An explicit `ceiling` wins over both.
+ */
+export function throttleCeiling(throttle) {
+  if (throttle == null || typeof throttle !== 'object') return MAX_VIGOR;
+  if (throttle.ceiling != null) return floorForThrottle(throttle.ceiling);
+  return throttle.turbo === false ? null : MAX_VIGOR;
 }
 
 /**
@@ -153,16 +187,24 @@ export const throttleRules = [
         : true;
       const target = fed ? floors.withFood : floors.noFood;
       const live = obs.keeper?.policy ?? obs.policy ?? {};
-      if (live.fightAboveVigor === target) return null;
+      // A NO-OP IS BOTH HALVES AGREEING. Checking only the floor meant a keeper with the
+      // right floor and the wrong ceiling was left alone for ever.
+      const wantCeiling = floors.ceiling == null ? null : Math.max(floors.ceiling, target);
+      if (live.fightAboveVigor === target &&
+          (wantCeiling == null || live.vigorCeiling === wantCeiling)) return null;
       const meals = mealsAboard(row);
       return {
         kind: 'orders',
-        orders: { action: 'start', fight_above_vigor: target },
+        // BOTH HALVES, EVERY TIME. Sending only the floor is how the band became something
+        // nobody had chosen: the ceiling came from whatever strategy was selected, so a
+        // strategy change would silently retune how hard the fleet runs.
+        orders: { action: 'start', fight_above_vigor: target,
+                  ...(floors.ceiling != null ? { vigor_ceiling: Math.max(floors.ceiling, target) } : {}) },
         why: floors.split
           ? `${fed ? 'fed' : 'nothing to eat and nothing to cook'} -> fight_above_vigor=${target} ` +
             `(${floors.withFood} fed / ${floors.noFood} not)`
           : `throttle ${Math.round(clamp01(doctrine.throttle) * 100)}% -> fight_above_vigor=${target}`,
-        evidence: { throttle: doctrine.throttle, target, fed, meals,
+        evidence: { throttle: doctrine.throttle, target, ceiling: wantCeiling, fed, meals,
                     can_cook: canCook(row, doctrine.food ?? {}),
                     floors: floors.split ? { with_food: floors.withFood, no_food: floors.noFood } : null,
                     keeper_has: live.fightAboveVigor ?? null },

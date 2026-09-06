@@ -147,11 +147,82 @@ test('throttle: sets fight_above_vigor when the keeper does not hold the target'
   ok(/throttle 100% -> fight_above_vigor=200/.test(intent.why), `readable why: ${intent.why}`);
 });
 
-test('throttle: returns null once the keeper already holds the floor', () => {
-  eq(rule.decide(obsWith(0.9, 180), { throttle: 0.9 }), null, 'converged, so no order');
+test('throttle: returns null once the keeper already holds the floor AND the ceiling', () => {
+  // CONVERGENCE NOW MEANS BOTH HALVES. It used to mean the floor alone, which is how the
+  // ceiling became something nobody had chosen: a keeper on the right floor was left alone
+  // for ever whatever its ceiling said, and on prod all 21 characters reported
+  // `vigorCeiling: undefined` while every one of them was in fact eating to 200.
+  //
+  // The contract this test exists for — the rule cannot wedge the table — is unchanged: one
+  // order sets both, and the pass after it returns null.
+  eq(rule.decide({ agent: 'a', keeper: { policy: { fightAboveVigor: 180, vigorCeiling: 200 } } },
+                 { throttle: 0.9 }), null, 'converged, so no order');
+  const half = rule.decide(obsWith(0.9, 180), { throttle: 0.9 });
+  ok(half, 'a keeper with no ceiling at all is still corrected once');
+  eq(half.orders.vigor_ceiling, 200, '...to the top of the band');
+  eq(half.orders.fight_above_vigor, 180, '...without disturbing the floor it already had');
 });
 
 test('throttle: reads obs.policy when there is no keeper snapshot', () => {
   const intent = rule.decide({ agent: 'a', policy: { fightAboveVigor: 80 } }, { throttle: 0.9 });
   eq(intent?.orders?.fight_above_vigor, 180, 'raises the floor from 80 to 180');
+});
+
+// ---------------------------------------------------------------- "turbo": floor moves, ceiling does not
+//
+// The operator's phrasing, 2026-09-05, and it names a distinction the fleet had lost:
+//
+//     "0.8 turbo"  ->  160 minimum to start a fight, keep eating until 200
+//     "0.4 turbo"  ->   80 minimum to start a fight, keep eating until 200
+//
+// A floor and a ceiling are different questions and one number was answering both. Health
+// returns as ((200-vigor)^2/6 + 1000) ms a point — 1.0 hp/s at 200 against 0.29 at 80 — so
+// the BAND is the whole value: set out at the top, fight down to the floor, eat back up.
+//
+// Measured on prod before this: ten of twenty-one characters were on fight_above_vigor 200
+// against a ceiling that was also 200, so they had to be at exactly full to swing and dropped
+// out of the fight on the first tick of vigor burn; and all twenty-one reported
+// `vigorCeiling: undefined`, because the ceiling could only be inherited from whichever
+// strategy plan happened to be selected. The band was real, nobody had chosen it, and nothing
+// reported it.
+test('throttle: turbo keeps the ceiling at 200 however low the floor goes', () => {
+  eq(throttleFloors({ with_food: 0.8, no_food: 0.4 }).ceiling, 200, '0.8 turbo tops out at 200');
+  eq(throttleFloors({ with_food: 0.8, no_food: 0.4 }).withFood, 160, '...and starts fights at 160');
+  eq(throttleFloors({ with_food: 0.4, no_food: 0.4 }).ceiling, 200, '0.4 turbo still tops out at 200');
+  eq(throttleFloors({ with_food: 0.4, no_food: 0.4 }).withFood, 80, '...and starts fights at 80');
+  // A flat throttle is turbo too — the ceiling is not a property of the split.
+  eq(throttleFloors(0.8).ceiling, 200, 'a flat throttle also eats to the top');
+  // Opting out returns the old behaviour: send no ceiling, leave the strategy's own alone.
+  eq(throttleFloors({ with_food: 0.8, turbo: false }).ceiling, null, 'turbo:false sends no ceiling');
+  // And an explicit ceiling beats both.
+  eq(throttleFloors({ with_food: 0.8, ceiling: 180 }).ceiling, 180, 'an explicit ceiling wins');
+});
+
+test('throttle: the order carries both halves, and the ceiling never lands below the floor', () => {
+  const d = { throttle: { with_food: 0.8, no_food: 0.4 }, food: {} };
+  const row = normalizeFleetRow({ agent: 'a', in_game: true, vigor: 150,
+                                  larder_vigor: 500, pack_items: [{ name: 'slice of pork', amount: 50 }] });
+  const out = rule.decide({ ...row, keeper: { policy: { fightAboveVigor: 0 } } }, d);
+  ok(out, 'it wants something');
+  eq(out.orders.fight_above_vigor, 160, 'the floor');
+  eq(out.orders.vigor_ceiling, 200, 'and the ceiling, in the same order');
+  // A CEILING BELOW THE FLOOR IS A CHARACTER THAT MUST EAT DOWNWARDS. There is no such
+  // action, so the broker refuses it — this makes sure we never send one.
+  const tight = rule.decide({ ...row, keeper: { policy: { fightAboveVigor: 0 } } },
+                            { throttle: { with_food: 1.0, ceiling: 100 }, food: {} });
+  ok(tight.orders.vigor_ceiling >= tight.orders.fight_above_vigor,
+     `ceiling ${tight.orders.vigor_ceiling} must not be under floor ${tight.orders.fight_above_vigor}`);
+});
+
+test('throttle: a keeper with the right floor but the wrong ceiling is still corrected', () => {
+  // Checking only the floor is how the band became something nobody had chosen: a keeper on
+  // the right floor was left alone for ever whatever its ceiling said.
+  const d = { throttle: { with_food: 0.8, no_food: 0.4 }, food: {} };
+  const row = normalizeFleetRow({ agent: 'a', in_game: true, vigor: 150,
+                                  larder_vigor: 500, pack_items: [{ name: 'slice of pork', amount: 50 }] });
+  const agreed = rule.decide({ ...row, keeper: { policy: { fightAboveVigor: 160, vigorCeiling: 200 } } }, d);
+  eq(agreed, null, 'both halves agree — nothing to do');
+  const half = rule.decide({ ...row, keeper: { policy: { fightAboveVigor: 160, vigorCeiling: 160 } } }, d);
+  ok(half, 'the floor agrees and the ceiling does not, so it still corrects');
+  eq(half.orders.vigor_ceiling, 200, 'back to the top of the band');
 });

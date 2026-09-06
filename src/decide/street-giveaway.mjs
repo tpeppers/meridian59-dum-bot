@@ -66,11 +66,16 @@ export const GIVEAWAY_KEEP = Object.freeze([
  * @returns {object[]} errand steps
  */
 export function giveawaySteps(agent, { keep = GIVEAWAY_KEEP, room = STREETS_OF_TOS,
-                                       travelTimeoutMs = 240_000 } = {}) {
+                                       // Tos is eight hops from Castle Victoria and the
+                                       // broker estimates 792s for it. The old 240s default
+                                       // cancelled the walk at four minutes every time, so
+                                       // the drop and the yell — both of which `needs` the
+                                       // arrival — never ran. See the note in sellrun.mjs.
+                                       travelTimeoutMs = 900_000 } = {}) {
   return [
     { tool: 'travel', args: { agent, to: room, run_errands: false },
       expect: 'arrived', optional: true, label: 'in-the-street',
-      timeout_ms: travelTimeoutMs, estimate_ms: 120_000,
+      timeout_ms: travelTimeoutMs, estimate_ms: 800_000,
       why: `to the Streets of Tos (${room}) — on the way to the hall, not a detour` },
     { tool: 'drop_all', args: { agent, keep },
       optional: true, needs: 'in-the-street', estimate_ms: 20_000,

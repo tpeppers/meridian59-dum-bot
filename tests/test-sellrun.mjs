@@ -160,3 +160,35 @@ test('sellrun: a completed run cools down fully; a failed one retries after the 
   eq(sellrunWindow(bad, 'a', NOW + 6 * 60_000, COOL, BACK).ready, true, 'a failed run retries after the backoff');
   eq(sellrunWindow(ok,  'a', NOW + 6 * 60_000, COOL, BACK).ready, false, 'a completed run is still cooling down');
 });
+
+// ---------------------------------------------------------------- the timeout must exceed the walk
+//
+// FOUR MINUTES WAS SHORTER THAN EVERY LEG, SO NO LEG EVER FINISHED.
+//
+// Measured 2026-09-06 off the broker's own `travel_estimate`, from Castle Victoria where
+// this fleet lives: vault 702s, smith 666s, jeweler 659s, herbalist 700s, bank 680s,
+// Streets of Tos 792s, feast hall 830s. The step timeout was 240s — 2.7x to 3.5x short of
+// every one of them.
+//
+// The journal shape was unmistakable once looked at: `travel` ok, `cancel_movement` 241
+// seconds later, next `travel`, `cancel_movement` 242 seconds later. The `vault` and
+// `sell_all` steps between them never ran, because each `needs` an arrival that never came.
+// Every call returned ok throughout.
+test('sellrun: every travel step outlives the walk it is waiting for', () => {
+  const steps = rule.decide(fleetObs([heavy('a', { carrying: 40 })]),
+                            doctrineWith({ trigger: { carry_at: 20 } }))
+                    ?.orders?.steps ?? [];
+  const travels = steps.filter(s => s.tool === 'travel');
+  ok(travels.length >= 4, `expected the full circuit, got ${travels.length} travels`);
+  // The longest leg this circuit plans is the feast hall at 830s. A timeout under that
+  // cancels a walk that was merely still walking.
+  const LONGEST_LEG_MS = 830_000;
+  for (const t of travels)
+    ok(t.timeout_ms > LONGEST_LEG_MS,
+       `a ${Math.round(t.timeout_ms / 1000)}s timeout cannot outlast an 830s leg`);
+  // And the pacing estimate sizes the busy hold. A hold that lapses mid-walk makes the
+  // walker takeable on the road, which is where this fleet dies.
+  for (const t of travels)
+    ok(t.estimate_ms >= 600_000,
+       `estimate_ms ${t.estimate_ms} is far below the ~700s these legs really take`);
+});

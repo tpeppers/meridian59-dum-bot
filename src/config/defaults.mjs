@@ -464,7 +464,14 @@ export const DEFAULTS = {
     // is retried soon rather than stranded for the full cooldown.
     cooldown_ms: 20 * 60_000,
     fail_backoff_ms: 5 * 60_000,
-    travel_timeout_ms: 240_000,
+    // A STEP TIMEOUT SHORTER THAN THE WALK CANCELS EVERY WALK. This was 240s. Measured
+    // 2026-09-06 off the broker's own travel_estimate, from Castle Victoria: the vault is
+    // 15 hops and 702s, the smith 666s, the jeweler 659s, the herbalist 700s, the bank
+    // 680s, the Streets of Tos 792s and the feast hall 830s. Every leg is 2.7x to 3.5x
+    // that timeout, so the runner cancelled each walk four minutes in, mid-journey, every
+    // time — and the `vault` and `sell_all` steps after them never ran, because each
+    // `needs` an arrival that never came. The circuit has never once completed a leg.
+    travel_timeout_ms: 900_000,
     return_home: true,
   },
 

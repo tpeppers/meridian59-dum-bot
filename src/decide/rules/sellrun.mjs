@@ -169,6 +169,38 @@ export function sellrunWindow(mem = {}, agent, now, cooldownMs, failBackoffMs = 
     ? `${agent} has no recorded circuit run` : `${mins(since)} since ${agent}'s last circuit` };
 }
 
+/**
+ * Would this circuit take this character? The carry/purse/health test, and nothing else.
+ *
+ * TWO RULES ASK THIS AND ONLY ONE OF THEM OWNS THE THRESHOLDS. The feast rule asks it to
+ * decide whether to leave a heavy character alone — a character the circuit wants should
+ * arrive at the Duke's tables by way of Barloque, having emptied its pack, rather than
+ * being dispatched straight there with ten long swords in it. One did exactly that.
+ *
+ * So it is a function rather than a repeated comparison: two thresholds for one question
+ * drift apart, and `carry_at` is set per fleet in the doctrine, so a copy in the feast rule
+ * would be a second opinion about somebody else's setting.
+ *
+ * DELIBERATELY NOT THE WHOLE ELIGIBILITY. The per-agent cooldown window, `piloted`,
+ * `parked` and takeability are the circuit's own bookkeeping — the feast rule tests those
+ * for itself and must not be made to wait on a cooldown that only means "this character
+ * sold recently".
+ *
+ * @param {object} row      a fleet row
+ * @param {object} cfg      the `sellrun` doctrine block
+ * @returns {boolean}
+ */
+export function sellCircuitWants(row, cfg = {}) {
+  if (!row || cfg?.on === false) return false;
+  const t = cfg.trigger ?? {};
+  const heavy = (row.carrying ?? 0) >= (t.carry_at ?? 24);
+  const broke = (t.broke_under ?? 0) > 0 && (row.purse ?? 0) < t.broke_under;
+  if (!heavy && !broke) return false;
+  // Do not march a hurt character across town. Selling is not survival; if it is below the
+  // floor the keeper's ladder is the thing that should be acting, not this.
+  return (row.health?.pct ?? 1) >= (t.min_health ?? 0.8);
+}
+
 /** Build the ordered step list for one character's circuit. Pure; args only. */
 function circuitSteps(agent, cfg, back) {
   const travelTimeout = cfg.travel_timeout_ms ?? 240_000;
@@ -342,12 +374,9 @@ export const sellrunFleetRules = [
         // tick before the claim, and never again. A takeable `bot` commitment is DUM's own
         // ownership, not an operation in flight, and is exactly who should get the sell trip.
         if (row.piloted || row.parked || !isTakeable(row)) continue;
-        const heavy = (row.carrying ?? 0) >= carryAt;
-        const broke = brokeUnder > 0 && (row.purse ?? 0) < brokeUnder;
-        if (!heavy && !broke) continue;
-        // Do not march a hurt character across town. Selling is not survival; if it is below
-        // the floor the keeper's ladder is the thing that should be acting, not this.
-        if ((row.health?.pct ?? 1) < minHealth) continue;
+        // ONE PREDICATE, TWO READERS. The feast rule asks this exact question to decide
+        // whether to leave a character alone for this circuit, so it lives in one place.
+        if (!sellCircuitWants(row, cfg)) continue;
         const win = sellrunWindow(mem, row.agent, now, cooldownMs, failBackoffMs);
         if (!win.ready) continue;   // per-agent window; try the next candidate
 
@@ -364,7 +393,9 @@ export const sellrunFleetRules = [
             steps,
           },
           why: `${row.agent} is carrying ${row.carrying ?? 0}` +
-               `${heavy ? ' (pack heavy)' : ''}${broke ? ` and is nearly broke (${row.purse ?? 0})` : ''}` +
+               `${(row.carrying ?? 0) >= carryAt ? ' (pack heavy)' : ''}` +
+               `${brokeUnder > 0 && (row.purse ?? 0) < brokeUnder
+                  ? ` and is nearly broke (${row.purse ?? 0})` : ''}` +
                `; route the pack across the Barloque specialists (${merchants}) rather than Roq`,
           evidence: { agent: row.agent, carrying: row.carrying ?? 0, purse: row.purse ?? 0,
                       stops: (cfg.stops ?? []).map(s => s.room), window: win.why },

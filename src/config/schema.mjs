@@ -42,6 +42,11 @@ import { HUNT_ROOMS } from '../strategies/catalog.mjs';
 // One reader of the throttle's two spellings, so the schema and the rule cannot disagree
 // about what 180 and 0.9 mean.
 import { floorForThrottle } from '../decide/rules/throttle.mjs';
+// The band reader and the hunt-list reader, imported rather than restated. A schema that
+// parses a station differently from the rule that acts on it validates a doctrine nobody
+// runs — and this is exactly the field where that would be silent, because a band the
+// schema read one way and the shift read another still produces a fleet standing somewhere.
+import { stationBand, huntList } from '../decide/rules/shift.mjs';
 
 export function validate(c) {
   const bad = [];
@@ -356,11 +361,43 @@ export function validate(c) {
           'is added there — with its threat and what it generates — rather than here');
         return;
       }
-      if (!room.generates.includes(st?.hunt))
-        say(where, `${room.name} does not generate "${st?.hunt}" — it makes ` +
+      // ONE NAME OR SEVERAL, AND EVERY ONE OF THEM IS CHECKED. A station naming a pair —
+      // which room 39 wants, because its spawn cap is a room-wide TOTAL and a cohort that
+      // declines the zombies standing next to it lets them hold the cap that would otherwise
+      // have spawned more skeletons — used to fail this outright, since
+      // `generates.includes([...])` is false for every array. So the pair was unsayable here
+      // and had to live in the castle block instead.
+      const hunts = huntList(st);
+      if (!hunts.length)
+        say(where, 'a station with no `hunt` puts a character in a room and tells it to kill ' +
+          'nothing, which reads as a working assignment on every board');
+      const cannot = hunts.filter(q => !room.generates.includes(q));
+      if (cannot.length)
+        say(where, `${room.name} does not generate ${cannot.map(q => `"${q}"`).join(', ')} — it makes ` +
           `${room.generates.join(' or ')}. A quarry a room cannot produce is a character ` +
           'hunting nothing, and the keeper will not say so because its own room check reads ' +
           'the spawn table, which lists placed-once residents for ever');
+      // A BAND THAT ADMITS NOBODY IS AN EMPTY ROOM WITH ORDERS IN IT.
+      const b = st?.max_health;
+      if (b !== undefined) {
+        if (!b || typeof b !== 'object' || Array.isArray(b))
+          say(`${where}.max_health`, 'must be {at_least: N} or {below: N} or both — the band of ' +
+            'max health this station is for');
+        else {
+          for (const k of Object.keys(b))
+            if (!['at_least', 'below'].includes(k))
+              say(`${where}.max_health.${k}`, 'unknown band bound. `at_least` is inclusive and ' +
+                '`below` is exclusive, which is what lets two stations tile a range with no gap ' +
+                'and no overlap at the boundary');
+          const lo = b.at_least, hi = b.below;
+          if (lo !== undefined && !num(lo)) say(`${where}.max_health.at_least`, 'must be a number');
+          if (hi !== undefined && !num(hi)) say(`${where}.max_health.below`, 'must be a number');
+          if (num(lo) && num(hi) && lo >= hi)
+            say(`${where}.max_health`, `at_least ${lo} and below ${hi} admit nobody, so this ` +
+              'station is a room with orders in it and no characters — and the fleet would ' +
+              'quietly pile into whichever station is left');
+        }
+      }
       // A NIGHT ROOM WITHOUT `when` IS THE EXPENSIVE MISTAKE. The undead generators make
       // nothing for 85 minutes in every 120, so a station on one without a gate parks a
       // shift in an empty field for most of the day and looks fine doing it.
@@ -375,6 +412,42 @@ export function validate(c) {
       if (st?.max != null && !(Number.isInteger(Number(st.max)) && Number(st.max) >= 0))
         say(where, '`max` is a whole number of characters');
     });
+
+    // A HOLE BETWEEN TWO BANDS IS THE SILENT ONE, AND IT IS WHY THIS CHECK EXISTS.
+    //
+    // The bands decide where a character works. A character no band admits is left unplaced
+    // with `roam: false`, which means it stands wherever it is, indefinitely, hunting a
+    // creature that does not spawn there — not stalled, not flagged, and reporting itself
+    // healthy the entire time. That is the same failure `station.recall` was written for and
+    // it would arrive here through a typo: `{below: 50}` and `{at_least: 51}` looks like a
+    // pair and leaves everybody at exactly 50 with nowhere to go.
+    //
+    // Only checked when SOME station declares a band. A doctrine with no bands has the old
+    // behaviour, where an unbanded station admits whoever its ceiling allows, and there is
+    // no range to cover.
+    const banded = stations.filter(st => stationBand(st) != null);
+    if (banded.length && banded.length === stations.length) {
+      // Walk the boundaries in order and look for a value nothing claims. The bands are
+      // half-open [at_least, below), so the only places a hole can start are 0 and each
+      // `below`; anything above the last band's ceiling is a hole too.
+      const claims = banded.map(st => stationBand(st));
+      const edges = [0, ...claims.flatMap(b => [b.at_least, b.below].filter(v => v != null))]
+        .filter(v => Number.isFinite(v)).sort((x, y) => x - y);
+      const covered = v => claims.some(b =>
+        (b.at_least == null || v >= b.at_least) && (b.below == null || v < b.below));
+      const holes = [...new Set(edges)].filter(v => !covered(v));
+      const openTop = !claims.some(b => b.below == null);
+      if (holes.length)
+        say('shift.stations', `no station admits max health ${holes.join(', ')}. A character ` +
+          'in no band is left unplaced with roaming off, so it stands where it is for ever ' +
+          'hunting something that does not spawn there — and reports itself healthy while it ' +
+          'does. `at_least` is inclusive and `below` is exclusive, so {below: N} and ' +
+          '{at_least: N} are the pair that tiles cleanly');
+      if (openTop)
+        say('shift.stations', 'every station has a `below`, so a character that grows past the ' +
+          'highest one falls out of the shift entirely. The top band is the one you are ' +
+          'willing to leave people in: give it `at_least` and no `below`');
+    }
   }
 
   return bad;

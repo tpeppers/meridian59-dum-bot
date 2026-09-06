@@ -361,6 +361,13 @@ export const DEFAULTS = {
   //
   // `share` is a fraction of the units each station can actually take, not of the whole
   // fleet, and the last station takes the remainder so rounding cannot lose anybody.
+  //
+  // A STATION MAY ALSO NAME THE BAND OF CHARACTER IT IS FOR — `max_health: {at_least, below}`
+  // — and each of the four postures below may be restated per station, which is what lets one
+  // doctrine run two cohorts with different combat settings. Membership then follows from the
+  // board rather than from a list of names somebody maintains, and the fleet re-sorts itself
+  // as characters grow and as deaths take max health off them. See stationBand() in
+  // src/decide/rules/shift.mjs for the argument.
   shift: {
     on: false,
     stations: [],
@@ -368,6 +375,12 @@ export const DEFAULTS = {
     flee_below: 0.35,
     fight_above_vigor: 180,
     use_safe_spots: true,
+    // WHAT HAPPENS TO A CHARACTER THE MOMENT ITS BAND CHANGES. On by default, and it is not
+    // a new errand: it lets the Barloque sell circuit take a graduate once, immediately,
+    // rather than waiting for its pack to fill — so the crossing to the new station happens
+    // by way of the counters and the Duke's tables instead of three times over. Off means the
+    // character is reassigned and sells when it next would have anyway.
+    handover: { on: true },
   },
   crate: {
     // ON BY DEFAULT, WHICH IS THE ONE PLACE THIS BLOCK DIFFERS FROM EVERY OTHER OPT-IN

@@ -267,6 +267,29 @@ export async function tickFleet(ctx, { decide: runRules = true, only = null } = 
     const applied = await apply(broker, intent, obs, { commit, yieldTo: config.yield_to ?? [], holder: ctx.holder });
     line.applied = applied;
 
+    // A DECISION THAT CANNOT BE RE-DERIVED FROM THE NEXT BOARD HAS TO SAY SO WHEN IT IS MADE.
+    //
+    // Until now the only way into the memory was `readErrand`, which is right for an errand
+    // — its whole product is what the world said back — and impossible for anything else. A
+    // fleet PLAN has no transcript to interpret, so a rule that learned something while
+    // deciding had nowhere to put it and had to re-derive it next pass from a board that no
+    // longer showed it.
+    //
+    // The worked case is the hunting shift's max-health bands. "This character is in the
+    // 50-and-over band" is on every row for ever; "this character CROSSED 50 and owes a last
+    // sell run at the station it is leaving" is true for about two minutes, and after the
+    // deploy lands nothing distinguishes a graduate from a character that was always here.
+    //
+    // ONLY ON A REAL WRITE. `acted` is false for a dry run and for a plan the diff found
+    // nothing to send in, and remembering either would have `plan` change what the fleet
+    // believes — which is the one thing a plan must never do. Memory is also constructed
+    // with `enabled:false` for `plan`, so this is the second of two locks and deliberately
+    // so: the first is a constructor argument somebody could pass wrongly.
+    if (intent.remember?.topic && applied.acted) {
+      line.memory_patch = intent.remember;
+      ctx.memory?.patch(intent.remember.topic, intent.remember.patch);
+    }
+
     // WHAT AN ERRAND LEARNED, WRITTEN DOWN BEFORE ANYTHING ELSE CAN FAIL.
     //
     // An errand's whole product is what the world said back to it, and that answer exists

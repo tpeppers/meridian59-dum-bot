@@ -733,8 +733,13 @@ export const feastFleetRules = [
         // one question is how they drift apart, and this one is set per fleet in the
         // doctrine. If the circuit is off, this refusal switches itself off with it —
         // otherwise turning selling off would quietly stop the feast too.
-        if (sellCircuitWants(row, doctrine.sellrun ?? {})) {
-          skipped.push(`${row.agent}: heavy — the sell circuit takes it, and that ends here anyway`);
+        // THE MEMORY GOES IN TOO, so a character that owes a handover run at the station it
+        // has just left is also left to the circuit. Both trips end at the same tables; only
+        // one of them empties the pack at a counter on the way, and a graduate dispatched
+        // straight here would arrive with no room for the food it walked eleven hops for.
+        if (sellCircuitWants(row, doctrine.sellrun ?? {}, obs.memory)) {
+          skipped.push(`${row.agent}: heavy, or owes a last run at the station it is leaving — ` +
+                       'the sell circuit takes it, and that ends here anyway');
           continue;
         }
         const meals = mealsAboard(row);

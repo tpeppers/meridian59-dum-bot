@@ -203,7 +203,30 @@ export function sellCircuitWants(row, cfg = {}) {
 
 /** Build the ordered step list for one character's circuit. Pure; args only. */
 function circuitSteps(agent, cfg, back) {
-  const travelTimeout = cfg.travel_timeout_ms ?? 240_000;
+  // FOUR MINUTES WAS SHORTER THAN EVERY LEG OF THIS CIRCUIT, SO NO LEG EVER FINISHED.
+  //
+  // The step timeout was 240s. Measured 2026-09-06 off the broker's own `travel_estimate`,
+  // from Castle Victoria where this fleet lives:
+  //
+  //     vault (114)   15 hops  702s        bank (54)        8 hops  680s
+  //     smith (113)   13 hops  666s        Streets of Tos    8 hops  792s
+  //     jeweler (109) 13 hops  659s        feast hall (953) 11 hops  830s
+  //     herbalist (104) 14 hops  700s
+  //
+  // Every one of them is 2.7x to 3.5x the timeout. So the runner cancelled the walk at four
+  // minutes, mid-journey, every time, for every character — and the journal shows exactly
+  // that shape and nothing else: `travel` ok, then `cancel_movement` 241 seconds later, then
+  // the next `travel`, then `cancel_movement` 242 seconds later. The `vault` and `sell_all`
+  // steps in between never ran at all, because they `needs` an arrival that never came.
+  //
+  // Nothing reported a failure. Every call returned ok, the circuit was dispatched over and
+  // over, and the fleet-facing symptom was a character walking into the Duke's feast hall
+  // with ten long swords still in its pack.
+  //
+  // 900s is the longest leg plus a margin, not a guess at "long enough". A journey that has
+  // not arrived in fifteen minutes has genuinely gone wrong and cancelling it is right; one
+  // cancelled at four was simply still walking.
+  const travelTimeout = cfg.travel_timeout_ms ?? 900_000;
   const keep = cfg.keep ?? [];
   const minPrice = cfg.min_price ?? 1;
   const steps = [];
@@ -229,7 +252,7 @@ function circuitSteps(agent, cfg, back) {
   if (cfg.vault?.room != null) {
     steps.push({ tool: 'travel', args: { agent, to: cfg.vault.room, run_errands: false },
       expect: 'arrived', optional: true, label: 'at-the-vault',
-      timeout_ms: travelTimeout, estimate_ms: 120_000,
+      timeout_ms: travelTimeout, estimate_ms: 700_000,
       why: `to the vault (${cfg.vault.room}) BEFORE any shop, so a wrong keep list cannot sell it` });
     steps.push({ tool: 'vault', args: { agent, action: 'deposit',
         items: cfg.vault.items ?? keep },
@@ -247,7 +270,7 @@ function circuitSteps(agent, cfg, back) {
     // keeper's default merchant before it ever reaches the Barloque specialist. That is the
     // very thing this circuit replaces.
     steps.push({ tool: 'travel', args: { agent, to: stop.room, run_errands: false }, expect: 'arrived',
-      timeout_ms: travelTimeout, estimate_ms: 120_000, why: `to ${stop.merchant} (${stop.room})` });
+      timeout_ms: travelTimeout, estimate_ms: 700_000, why: `to ${stop.merchant} (${stop.room})` });
     // Omit max_stack when there is no cap rather than sending null: the errand runner skips any
     // step with a null argument (it means "a value was not known"), which would silently drop
     // the sale at an uncapped shop. sell_all defaults to no cap when the field is absent.
@@ -285,7 +308,8 @@ function circuitSteps(agent, cfg, back) {
   if (cfg.bank?.room != null) {
     steps.push({ tool: 'travel', args: { agent, to: cfg.bank.room, run_errands: false },
       expect: 'arrived', optional: true, label: 'at-the-bank',
-      timeout_ms: travelTimeout, estimate_ms: 180_000,
+      // 680s to the bank from Castle Victoria, measured; 180_000 was the old guess.
+      timeout_ms: travelTimeout, estimate_ms: 700_000,
       why: `to the bank (${cfg.bank.room})` });
     steps.push({ tool: 'bank', args: { agent, action: 'deposit',
         keep: cfg.bank.keep ?? 500 },
@@ -323,7 +347,7 @@ function circuitSteps(agent, cfg, back) {
     // ALWAYS: the last leg runs even if a stop failed, so a half-done circuit does not strand
     // a character in a shop it could not reach the far side of.
     steps.push({ tool: 'travel', args: { agent, to: endsAt, run_errands: false }, always: true,
-      timeout_ms: travelTimeout, estimate_ms: 120_000,
+      timeout_ms: travelTimeout, estimate_ms: 700_000,
       why: finishAtFeast
         ? `on to ${FEAST_HALL.name} (${endsAt}) to fill the pack with food`
         : 'back to the room it was hunting in' });

@@ -20,7 +20,8 @@ import { loadDoctrine } from '../src/config/load.mjs';
 import { validate } from '../src/config/schema.mjs';
 import { shiftAssignments, shiftFleetRules, stationBand, bandAdmits, huntList,
   stationIndexFor, bandMemory } from '../src/decide/rules/shift.mjs';
-import { handoverOwed, sellCircuitWants, sellrunFleetRules } from '../src/decide/rules/sellrun.mjs';
+import { handoverOwed, handoverWaiting, sellCircuitWants,
+  sellrunFleetRules } from '../src/decide/rules/sellrun.mjs';
 import { HUNT_ROOMS, QUARRY_LEVEL } from '../src/strategies/catalog.mjs';
 
 const test = globalThis.__dumTest;
@@ -316,4 +317,25 @@ test('bands: a station may name a PAIR of quarry, and a wrong one is still refus
     { room: 39, max_health: { at_least: 50 } },
     { room: 544, hunt: 'fungus beast', max_health: { below: 50 } }] });
   assert.ok(validate(none).some(b => /tells it to kill\s+nothing/.test(b.why)));
+});
+
+test('handover: the feast dispatch yields the pass, because it is starved otherwise', () => {
+  // ONE INTENT PER PASS, and the feast sits above the sell circuit. The feast has something
+  // to say on nearly every pass — 464 dispatches against a 13% arrival rate, measured on prod
+  // the day this was written — so a handover starved behind it never happens, and nothing
+  // looks wrong: the character IS reassigned, it DOES walk to its new station, and the
+  // wrap-up quietly does not occur.
+  const cfg = { on: true, trigger: { carry_at: 20, min_health: 0.8 } };
+  const rows = [
+    { agent: 'a', in_game: true, carrying: 2, health: { pct: 1 }, commitment: null },
+    { agent: 'b', in_game: true, carrying: 2, health: { pct: 1 }, commitment: null },
+  ];
+  assert.equal(handoverWaiting(rows, cfg, { band: {} }), null, 'nobody owes one');
+  assert.equal(handoverWaiting(rows, cfg, { band: { b: { handover_since: 5 } } }), 'b');
+  // A character too hurt to make the trip must NOT hold the feast up waiting for it — the
+  // circuit would refuse it on the same floor, so the pass would be yielded to nobody.
+  const hurt = [{ ...rows[0] }, { ...rows[1], health: { pct: 0.3 } }];
+  assert.equal(handoverWaiting(hurt, cfg, { band: { b: { handover_since: 5 } } }), null);
+  // And with the circuit switched off there is nothing to yield to.
+  assert.equal(handoverWaiting(rows, { on: false }, { band: { b: { handover_since: 5 } } }), null);
 });

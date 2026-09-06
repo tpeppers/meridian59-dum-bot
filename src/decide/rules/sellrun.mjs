@@ -240,6 +240,44 @@ export function handoverOwed(agent, memory) {
   return !(typeof ran === 'number' && ran >= since);
 }
 
+/**
+ * Is there a character this circuit would take RIGHT NOW for a handover?
+ *
+ * WHY THIS IS EXPORTED AND WHO ASKS. The feast rule sits ABOVE this one and the table returns
+ * ONE intent per pass, so a handover competes with every larder in the fleet — and the feast
+ * has something to say on nearly every pass. Measured on prod the day this was written: 464
+ * feast dispatches against a 13% arrival rate, which is a rule that fires constantly. A
+ * handover starved behind that is a handover that never happens, and the failure is invisible:
+ * the character is reassigned correctly, walks to its new station, and the wrap-up simply does
+ * not occur. Everything works and the feature does nothing.
+ *
+ * So the feast DISPATCH yields the pass when this answers yes — and only the dispatch. The
+ * grab and the abandon are completion and cleanup; deferring the grab would strand a courier
+ * standing in the hall.
+ *
+ * IT COSTS THE FEAST NOTHING, which is what makes this safe rather than a trade. `finish:
+ * "feast"` means the circuit ENDS at the Duke's tables, so the deferred pass sends this
+ * character to the same hall by the longer route — vaulting, selling, banking and dropping on
+ * the way, and arriving with a pack that can actually hold the food.
+ *
+ * @param {object[]} rows      the board
+ * @param {object} cfg         the `sellrun` doctrine block
+ * @param {object|null} memory the whole `obs.memory`
+ * @returns {string|null}      the agent, or null
+ */
+export function handoverWaiting(rows = [], cfg = {}, memory = null) {
+  if (cfg?.on !== true) return null;
+  for (const row of rows) {
+    if (!row?.in_game || row.piloted || row.parked || !isTakeable(row)) continue;
+    if (!handoverOwed(row.agent, memory)) continue;
+    // The same health floor the circuit itself applies. A character that owes a handover and
+    // is too hurt to make the trip must NOT hold the feast up waiting for it.
+    if ((row.health?.pct ?? 1) < (cfg.trigger?.min_health ?? 0.8)) continue;
+    return row.agent;
+  }
+  return null;
+}
+
 /** Build the ordered step list for one character's circuit. Pure; args only. */
 function circuitSteps(agent, cfg, back) {
   // FOUR MINUTES WAS SHORTER THAN EVERY LEG OF THIS CIRCUIT, SO NO LEG EVER FINISHED.

@@ -56,7 +56,7 @@ import { FEAST_HALL, FEAST_DISPENSERS, FEAST_PACK_FULL, dispenserNamed } from '.
 import { foodAmountOf } from './food.mjs';
 // The circuit's own carry/purse/health test. Imported rather than re-derived so the two
 // rules cannot disagree about which characters are heavy — see `sellCircuitWants`.
-import { sellCircuitWants } from './sellrun.mjs';
+import { sellCircuitWants, handoverWaiting } from './sellrun.mjs';
 
 const mins = ms => `${Math.round(ms / 60000)}m`;
 
@@ -675,10 +675,29 @@ export const feastFleetRules = [
         };
       }
 
-      // 3. DISPATCH — UNCAPPED. See `packTooFullForFood`: every gate that was about the
-      // FLEET is gone (how many are on the road, who is a named courier, whether they
-      // already have some food, how recently they went). The tables are free and cannot run
-      // dry, so the only question left is whether this particular character has room.
+      // 3. DISPATCH — but a HANDOVER GOES FIRST, and it is the dispatch that yields rather
+      // than the whole rule.
+      //
+      // This table returns one intent per pass and the feast sits above the sell circuit, so
+      // a character that has just changed station competes with every empty larder in the
+      // fleet — and the feast has something to say on nearly every pass (464 dispatches
+      // against a 13% arrival rate, measured on prod the day this was written). Starved there,
+      // the handover simply never happens, and nothing looks wrong: the character IS
+      // reassigned, it DOES walk to its new station, and the wrap-up quietly does not occur.
+      //
+      // `pass` does not stop the table, so this hands the turn down rather than away — and it
+      // costs the feast nothing, because `sellrun.finish: "feast"` means the circuit ends at
+      // these same tables. The deferred character reaches the hall by the longer route, having
+      // vaulted, sold, banked and dropped on the way, with a pack that can hold the food.
+      //
+      // ONLY THE DISPATCH. The grab and the abandon above are completion and cleanup; yielding
+      // the grab would leave a courier standing in the hall it walked eleven hops to reach.
+      const owed = handoverWaiting(rows, doctrine.sellrun ?? {}, obs.memory);
+      if (owed)
+        return { kind: 'pass',
+                 why: `${owed} has just changed station and owes a last run at the counters; ` +
+                      'the sell circuit ends at these tables anyway, so it gets this pass' };
+
       const candidates = [];
       const skipped = [];
       for (const row of rows) {

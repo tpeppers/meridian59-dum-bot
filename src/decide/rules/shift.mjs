@@ -24,6 +24,90 @@ import { takeable } from '../engine.mjs';
 const sameList = (a, b) => Array.isArray(a) && Array.isArray(b) &&
   a.length === b.length && a.every((x, i) => x === b[i]);
 
+// A STATION MAY NAME THE BAND OF CHARACTER IT IS FOR, AND THAT IS WHAT LETS ONE DOCTRINE
+// RUN TWO COHORTS.
+//
+// Until this existed, "these ten work here and those eleven work there" could not be said
+// inside a doctrine at all. It was said with `--agent` and two DUM processes, and the cost
+// was not the second process — it was that MEMBERSHIP WAS A LIST OF NAMES somebody had to
+// maintain. Such a list is a snapshot of one afternoon: prod-valley-ileria.jsonc says
+// "rotate them back the moment max health reaches 50", and rotating them back meant an
+// operator noticing, editing two files and restarting two processes. Between the noticing
+// and the restart the graduates went on killing a level-50 fungus beast that no longer paid
+// them anything, at 28 kills an hour, reading healthy on every board. `yield_check` was the
+// only field in the whole system that said so.
+//
+// So the band is a PREDICATE ON THE CHARACTER rather than a roster. A kill advances a
+// character only while the creature's level is strictly above its max health, which makes
+// max health the number that decides which room pays — and it is on every board row. The
+// fleet re-sorts itself every pass and nobody has to be told.
+//
+// `at_least` is inclusive and `below` is exclusive, so `{at_least: 50}` and `{below: 50}`
+// tile the whole range with no gap and no overlap at the boundary. That pair is the point,
+// and the schema refuses a set of bands that leaves a hole: a character in no band is left
+// unplaced with `roam: false` and then stands where it is for ever, which looks exactly
+// like a character that is working.
+
+/** The band a station declares, or null when it takes anyone its ceiling admits. */
+export function stationBand(st = {}) {
+  const b = st.max_health;
+  if (!b || typeof b !== 'object') return null;
+  const at_least = Number.isFinite(Number(b.at_least)) ? Number(b.at_least) : null;
+  const below = Number.isFinite(Number(b.below)) ? Number(b.below) : null;
+  return (at_least == null && below == null) ? null : { at_least, below };
+}
+
+/**
+ * Is this character's max health inside this station's band?
+ *
+ * A station with no band admits everyone — that is what every doctrine written before this
+ * had, and it must not change under them.
+ *
+ * UNKNOWN MAX HEALTH IS REFUSED BY A BANDED STATION, and that direction is deliberate. The
+ * whole feature is "put this character where its size says"; a row with no size is a
+ * question rather than a permission, and admitting it would place a character on the
+ * strength of a field that was missing.
+ */
+export function bandAdmits(st = {}, maxHealth) {
+  const band = stationBand(st);
+  if (!band) return true;
+  const mh = Number(maxHealth);
+  if (!Number.isFinite(mh)) return false;
+  if (band.at_least != null && mh < band.at_least) return false;
+  if (band.below != null && mh >= band.below) return false;
+  return true;
+}
+
+// ONE NAME OR SEVERAL. The harness's `hunt` has taken a list since 03982c3 and the castle
+// cohort depends on it: room 39's spawn cap is a room-wide TOTAL, so a cohort that declines
+// the zombies standing next to it lets them hold the cap that would otherwise have spawned
+// more skeletons. A station that says one name still means one name.
+export const huntList = st => Array.isArray(st?.hunt) ? st.hunt.filter(Boolean)
+  : (st?.hunt == null ? [] : [st.hunt]);
+
+// EVERY NAMED QUARRY HAS TO CLEAR THE CEILING, NOT JUST THE FIRST. A station naming two
+// creatures is telling the keeper it may take either, so a character admitted on the
+// strength of the softer one would stand in the room refusing the other half of what
+// appears — which is the "everything works and none of it is worth anything" shape.
+const admitsStation = (st, maxHealth) => {
+  const hunts = huntList(st);
+  return hunts.length > 0 && hunts.every(q => admits(maxHealth, Number(st.room), q));
+};
+
+/**
+ * Which of these stations this character belongs to, by index, or -1 for none.
+ *
+ * Exported because three other things have to agree with it and must not re-derive it: the
+ * schema's coverage check, the handover that notices a character has changed band, and the
+ * `plan` output an operator reads.
+ */
+export function stationIndexFor(stations = [], maxHealth) {
+  return stations.findIndex(st => bandAdmits(st, maxHealth) && admitsStation(st, maxHealth));
+}
+
+/** A stable name for a station, for the memory and for the journal. */
+export const stationKey = st => `${st?.room}`;
+
 /**
  * Split the opted-in units across the doctrine's stations by share, and give each one the
  * station its engagement ceiling actually admits.
@@ -157,8 +241,14 @@ export function shiftAssignments(rows = [], doctrine = {}, fleetObs = { characte
 
   // Per station, who could work it at all. Computed before any allocation so a share is a
   // share of the eligible, and a unit eligible for nothing is named rather than absorbed.
+  // A BAND IS A HARD GATE AND NOT A PREFERENCE, so it belongs here rather than in the
+  // allocation below: everything downstream — the share, the capacity overflow, and the
+  // fallback that catches whoever is left — reads this set, and a band that only narrowed
+  // the first of the three would hand an under-50 character to the castle by the back door
+  // and call it an overflow.
   const eligible = stations.map(st => new Set(opted
-    .filter(row => admits(row.level, Number(st.room), st.hunt)).map(row => row.agent)));
+    .filter(row => bandAdmits(st, row.level) && admitsStation(st, row.level))
+    .map(row => row.agent)));
 
   const taken = new Set();
   stations.forEach((st, i) => {
@@ -180,13 +270,25 @@ export function shiftAssignments(rows = [], doctrine = {}, fleetObs = { characte
     // first one got. The last station has no cap and absorbs whatever is left, which is
     // why it must be the one you are willing to have everybody in.
     const cap = Number.isFinite(Number(st.max)) ? Number(st.max) : Infinity;
-    const want = Math.min(cap, i === stations.length - 1 ? pool.length
+    // A BANDED STATION TAKES ITS WHOLE BAND, AND SAYING SO EXPLICITLY IS THE POINT.
+    //
+    // Without this line a station with a band and no `share` computes `want = round(n * 0)`
+    // = 0, every character falls through to the fallback loop at the bottom, and the
+    // fallback — which walks the stations in order and takes the first the band admits —
+    // happens to produce exactly the right answer. That is the worst possible arrangement:
+    // correct today, by accident, through a path whose comment says it exists for units too
+    // SMALL for the first quarry. The next person to touch either half breaks it silently.
+    //
+    // A share still wins where one is written, because "put a third of the eligible over
+    // there" is a different instruction from "this room is for these characters".
+    const bandTakesAll = stationBand(st) != null && !Number.isFinite(share);
+    const want = Math.min(cap, (bandTakesAll || i === stations.length - 1) ? pool.length
       : Math.round(opted.filter(row => eligible[i].has(row.agent)).length *
           (Number.isFinite(share) ? share : 0)));
     for (const row of pool.slice(0, Math.max(0, want))) {
       const entry = HUNT_ROOMS[Number(st.room)];
       taken.add(row.agent);
-      out.set(row.agent, { row, to: entry.room, hunt: st.hunt, room_name: entry.name,
+      out.set(row.agent, { row, to: entry.room, hunt: st.hunt, room_name: entry.name, station: st,
         // Sized to the ROOM's strongest occupant, never to the quarry.
         max_threat_over: Math.max(0, entry.threat - (row.level ?? entry.threat)) });
     }
@@ -209,18 +311,43 @@ export function shiftAssignments(rows = [], doctrine = {}, fleetObs = { characte
       continue;
     }
     const st = stations[i], entry = HUNT_ROOMS[Number(st.room)];
-    out.set(row.agent, { row, to: entry.room, hunt: st.hunt, room_name: entry.name,
+    out.set(row.agent, { row, to: entry.room, hunt: st.hunt, room_name: entry.name, station: st,
       max_threat_over: Math.max(0, entry.threat - (row.level ?? entry.threat)) });
   }
 
   return ordered.map(row => out.get(row.agent));
 }
 
+// THE POSTURE IS THE STATION'S FIRST AND THE SHIFT'S SECOND, because two rooms that need
+// the same posture do not need this feature and two that do cannot use one number.
+//
+// The worked case is the pair this was built for: the Valley of Ileria measured BETTER with
+// safe spots off (`takeSafeSpot -> returnToSpot` oscillates on the fine walker there — hours
+// of "travelling / NOT MOVING" with fungus beasts in reach and zero kills, against 16 in the
+// first hour with it off), while Upstairs Castle Victoria is a difficulty-4 fight where the
+// wall is worth having. Before this, expressing both meant two doctrines, which meant two
+// processes, which meant cohort membership was a hand-maintained list of names.
+const posture = (st, shift, key) => st?.[key] ?? shift?.[key];
+
 const needsOrders = (row, orders) => {
   const p = row.policy ?? {};
-  return row.mode !== 'farm' || p.assignedRoom !== orders.to || p.hunt !== orders.hunt ||
-    p.roam !== false || p.purpose !== 'advance';
+  return row.mode !== 'farm' || p.assignedRoom !== orders.to ||
+    !sameHunt(p.hunt, orders.hunt) || p.roam !== false || p.purpose !== 'advance';
 };
+
+// A HUNT IS A SET, AND COMPARING IT WITH `!==` MEANT REDEPLOYING EVERY PASS.
+//
+// The keeper's `hunt` comes back as an array whenever more than one quarry was ordered
+// (m59-spawns.mjs huntNames), and the doctrine may write either shape. `['battered
+// skeleton','zombie'] !== ['battered skeleton','zombie']` is true for two arrays that are
+// equal in every way that matters, so a station naming a pair would have looked like drift
+// on every single pass: deploy, stop the keeper, restart it, read the same value back,
+// deploy again. That is the exact deploy/re-order loop the castle doctrine's
+// `fight_above_vigor` comment paid for once already.
+function sameHunt(a, b) {
+  const list = v => (Array.isArray(v) ? v : (v == null ? [] : [v])).map(String);
+  return sameList(list(a), list(b));
+}
 
 export const shiftFleetRules = [{
   id: 'hunt-shift',
@@ -299,11 +426,37 @@ export const shiftFleetRules = [{
         // moment the fleet changed weapon doctrine, quietly reimposing short swords on a
         // shift that had gone back to blunt.
         max_threat_over: a.max_threat_over,
-        flee_below: doctrine.shift.flee_below,
-        rest_below: doctrine.shift.rest_below,
-        fight_above_vigor: doctrine.shift.fight_above_vigor,
-        use_safe_spots: doctrine.shift.use_safe_spots !== false,
-        why: `${a.hunt} in ${a.room_name} (${a.to}), roaming off — 2602 is thrashers at level 150`,
+        flee_below: posture(a.station, doctrine.shift, 'flee_below'),
+        rest_below: posture(a.station, doctrine.shift, 'rest_below'),
+        fight_above_vigor: posture(a.station, doctrine.shift, 'fight_above_vigor'),
+        use_safe_spots: posture(a.station, doctrine.shift, 'use_safe_spots') !== false,
+        // THE WALL CAP TRAVELS WITH THE STATION OR IT IS NOT SENT AT ALL. `undefined` is
+        // dropped by the order diff, which is what a doctrine that says nothing should get —
+        // the keeper keeps whatever it had. A doctrine that DOES say so is stating the number
+        // that has killed somebody on this project: raised to the size of the fleet, every
+        // character is entitled to the same wall square, and the postmortem is wedged 113
+        // seconds, gross squares 0, ten monsters in the room, health 40 -> 4 at -0.44/s. Not
+        // out-fought — unable to move, with every escape the ladder has being a walk. So it
+        // is written beside the room it applies to and not somewhere central.
+        max_bots_per_safe_spot: posture(a.station, doctrine.shift, 'max_bots_per_safe_spot'),
+        hold_resume_above: posture(a.station, doctrine.shift, 'hold_resume_above'),
+        // `strategy` AND `fight_above_vigor` TRAVEL TOGETHER OR THE FLOOR IS ZEROED.
+        //
+        // The harness's start handler reads the pair: `if (a.strategy !== undefined) { ... if
+        // (a.fight_above_vigor === undefined) p.policy.fightAboveVigor = plan.fightAboveVigor
+        // ?? 0 }`. `fieldrest` names no floor of its own, so sending the strategy without a
+        // vigor floor does not leave the throttle's value alone — it sets it to ZERO, which is
+        // not a low floor, it is no floor: the character fights at any vigor however exhausted
+        // and never rests to climb. Measured on prod 2026-09-04. `fight_above_vigor` is
+        // unconditional above, which is what makes this safe to add.
+        //
+        // AND WHICH STRATEGY IS LOAD-BEARING. `wellfed` carries `restInTown: true` — it walks
+        // a hurt character back to an inn, a journey, with its assignment still reading its
+        // station and every board still reading healthy, which is exactly how a confinement
+        // leaks. `fieldrest` is the one that never walks back to town.
+        strategy: posture(a.station, doctrine.shift, 'strategy'),
+        why: `${[].concat(a.hunt).join(' or ')} in ${a.room_name} (${a.to}), roaming off` +
+             `${stationBand(a.station) ? ` — ${bandWhy(a.station)} and this unit is ${a.row.level}` : ''}`,
       }];
     });
 
@@ -312,9 +465,72 @@ export const shiftFleetRules = [{
         ? `${busy} of ${placeable.length} unit(s) are mid-errand; the rest hold their station orders`
         : `${placeable.length} unit(s) already hold their station orders` };
     return { kind: 'act', plan,
+      // WHAT THE FLEET RE-SORTED ITSELF INTO, WRITTEN DOWN BEFORE ANYTHING WALKS.
+      //
+      // A band change is the one decision here nobody asked for — the doctrine did not
+      // name this character and no operator typed its name — so it has to leave a record
+      // that the next rule can read and a person can argue with. `handover` is the reading
+      // the sell circuit acts on; the journal gets the same object.
+      remember: bandMemory(placeable, plan, observation, doctrine),
       why: `deploy ${plan.length} unit(s) into their assigned stations`,
       evidence: { rooms: [...new Set(placeable.map(a => a.to))],
-        quarry: [...new Set(placeable.map(a => a.hunt))],
+        quarry: [...new Set(placeable.flatMap(a => [].concat(a.hunt)))],
+        bands: placeable.filter(a => stationBand(a.station))
+          .map(a => `${a.row.agent} ${a.row.level} -> ${a.to}`),
         unplaceable: assignments.filter(a => a.to == null).length } };
   },
 }];
+
+const bandWhy = st => {
+  const b = stationBand(st);
+  if (!b) return 'no band';
+  if (b.at_least != null && b.below != null) return `max health ${b.at_least}-${b.below - 1}`;
+  if (b.at_least != null) return `max health ${b.at_least} and over`;
+  return `max health under ${b.below}`;
+};
+
+/**
+ * What this pass learned about who belongs where — the `band` topic, keyed by agent.
+ *
+ * WHY THIS IS WRITTEN AT ALL, when the band is derivable from the board on any tick. The
+ * band is; the CHANGE is not. "This character crossed 50 and should wrap up at the old
+ * station before it settles at the new one" is answerable for about two minutes and then
+ * the evidence is gone — the orders match, the room matches, and nothing distinguishes a
+ * graduate from a character that has always been here. So the crossing is recorded at the
+ * moment it is acted on, which is this one.
+ *
+ * IT IS DELIBERATELY NOT CLEARED BY ANYTHING. `handover_since` is a timestamp, and the sell
+ * circuit reads it against its own `last_run_at`: a run that happened AFTER the crossing
+ * satisfies it. That is what makes the flag self-clearing without a second write — and a
+ * second write is exactly what this repository has no mechanism for, because `readErrand`
+ * returns one topic and the shift is not an errand.
+ *
+ * FIRST SIGHT IS NOT A CROSSING. A fleet that has never run this doctrine has no memory at
+ * all, and treating that as "everybody just changed band" would send twenty-one characters
+ * to Barloque in one round — down the roads that are the only thing killing this fleet.
+ * An agent with no entry gets its band recorded and no handover.
+ */
+export function bandMemory(placeable = [], plan = [], observation = {}, doctrine = {}) {
+  const banded = placeable.filter(a => stationBand(a.station));
+  if (!banded.length || doctrine.shift?.handover?.on === false) return null;
+  const was = observation.memory?.band ?? {};
+  const now = observation.at;
+  // ONLY THE UNITS THIS PASS ACTUALLY DEPLOYED. A character that was stepped over for being
+  // mid-errand has not moved station yet, and recording its new band now would owe a
+  // handover run that ends by walking home to the room it has not been reassigned to.
+  const moved = new Set(plan.filter(s => s.do === 'deploy').map(s => s.agent));
+  const patch = {};
+  for (const a of banded) {
+    const key = stationKey(a.station);
+    const prev = was[a.row.agent];
+    if (prev?.band === key) continue;                       // nothing changed; leave it alone
+    if (prev && !moved.has(a.row.agent)) continue;          // changed, but not acted on yet
+    patch[a.row.agent] = {
+      band: key, at: now, max_health: a.row.level ?? null,
+      // A first sighting owes nothing. Only a character that was somewhere else does.
+      handover_since: prev ? now : null,
+      from: prev?.band ?? null,
+    };
+  }
+  return Object.keys(patch).length ? { topic: 'band', patch } : null;
+}

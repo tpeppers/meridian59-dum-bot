@@ -132,6 +132,11 @@ export function decide(ruleSet, obs, doctrine) {
       plan: Array.isArray(out.plan) ? out.plan : null,
       shortfalls: out.shortfalls ?? null,
       notes: out.notes ?? null,
+      // WHAT THIS DECISION LEARNED, for the handful of decisions that cannot be re-derived
+      // from the next board. `{topic, patch}`, written by the tick and only when the intent
+      // actually acted — see the note there. Rules stay pure: this is the same shape they
+      // already RECEIVE on `observation.memory`, handed back out rather than written.
+      remember: out.remember ?? null,
       why: out.why ?? rule.why,
       evidence: out.evidence ?? {},
     };

@@ -190,15 +190,54 @@ export function sellrunWindow(mem = {}, agent, now, cooldownMs, failBackoffMs = 
  * @param {object} cfg      the `sellrun` doctrine block
  * @returns {boolean}
  */
-export function sellCircuitWants(row, cfg = {}) {
+export function sellCircuitWants(row, cfg = {}, memory = null) {
   if (!row || cfg?.on === false) return false;
   const t = cfg.trigger ?? {};
   const heavy = (row.carrying ?? 0) >= (t.carry_at ?? 24);
   const broke = (t.broke_under ?? 0) > 0 && (row.purse ?? 0) < t.broke_under;
-  if (!heavy && !broke) return false;
+  if (!heavy && !broke && !handoverOwed(row.agent, memory)) return false;
   // Do not march a hurt character across town. Selling is not survival; if it is below the
   // floor the keeper's ladder is the thing that should be acting, not this.
+  //
+  // THE HEALTH FLOOR APPLIES TO A HANDOVER TOO, and it is the only gate that does. A
+  // character that just changed band by DYING is the commonest way into this branch, and
+  // it comes out of the Underworld at a fraction of its bar. Forty hops in that state is
+  // not a wrap-up run, it is the road deaths this fleet already has too many of.
   return (row.health?.pct ?? 1) >= (t.min_health ?? 0.8);
+}
+
+/**
+ * Does this character owe a last run at the station it has just left?
+ *
+ * THE CIRCUIT IS THE HANDOVER, AND THAT IS WHY THERE IS NO SECOND ERRAND FOR IT.
+ *
+ * A character whose max health crosses the doctrine's band boundary is reassigned across
+ * the world — Upstairs Castle Victoria and the Valley of Ileria are opposite ends of the
+ * map — and the route between them runs through the towns this circuit already visits. So
+ * the wrap-up an operator would do by hand IS this trip: empty the pack at the Barloque
+ * specialists, bank what they paid, drop what nobody wanted, and come home by way of the
+ * Duke's tables with a pack full of food. One crossing instead of three.
+ *
+ * THE ORDER IS REASSIGN FIRST, THEN RUN, and it is not a preference. The circuit ends at the
+ * feast hall and the feast rule walks the character home to `policy.assignedRoom` — so a
+ * handover that ran BEFORE the redeploy would carry forty slices of pork back to the room
+ * the character was leaving. The shift deploys and records the crossing in the same pass;
+ * this fires on the pass after.
+ *
+ * SELF-CLEARING, WITH NO SECOND WRITE. `handover_since` is a timestamp and it is compared
+ * against the circuit's own `last_run_at`, so a run that happened after the crossing
+ * satisfies it and the flag never has to be cleared by anybody. That matters because there
+ * is no mechanism to clear it: `readErrand` writes one topic per errand and this one is
+ * `sellrun`, while the crossing is recorded under `band`.
+ *
+ * @param {string} agent
+ * @param {object|null} memory   the whole `obs.memory`
+ */
+export function handoverOwed(agent, memory) {
+  const since = memory?.band?.[agent]?.handover_since;
+  if (typeof since !== 'number') return false;
+  const ran = memory?.sellrun?.[agent]?.last_run_at;
+  return !(typeof ran === 'number' && ran >= since);
 }
 
 /** Build the ordered step list for one character's circuit. Pure; args only. */
@@ -400,9 +439,20 @@ export const sellrunFleetRules = [
         if (row.piloted || row.parked || !isTakeable(row)) continue;
         // ONE PREDICATE, TWO READERS. The feast rule asks this exact question to decide
         // whether to leave a character alone for this circuit, so it lives in one place.
-        if (!sellCircuitWants(row, cfg)) continue;
+        if (!sellCircuitWants(row, cfg, obs.memory)) continue;
+        // A HANDOVER SKIPS THE COOLDOWN, AND IT IS THE ONLY THING THAT DOES.
+        //
+        // The window means "this character sold recently and its pack cannot be full again
+        // yet", which is true and beside the point: the trip is not being taken for the
+        // pack, it is being taken because the character has changed station and this is the
+        // road between the two. A graduate that happened to sell twenty minutes before it
+        // crossed 50 would otherwise walk to its new room, then walk back the way it came.
+        //
+        // It cannot loop. `handoverOwed` compares the crossing against `last_run_at`, which
+        // this errand writes on the way out — so satisfying it is the same act as running it.
+        const owed = handoverOwed(row.agent, obs.memory);
         const win = sellrunWindow(mem, row.agent, now, cooldownMs, failBackoffMs);
-        if (!win.ready) continue;   // per-agent window; try the next candidate
+        if (!win.ready && !owed) continue;   // per-agent window; try the next candidate
 
         const back = row.room;
         const steps = circuitSteps(row.agent, cfg, back);
@@ -416,12 +466,17 @@ export const sellrunFleetRules = [
             context: { stops: (cfg.stops ?? []).map(s => s.room), from: back },
             steps,
           },
-          why: `${row.agent} is carrying ${row.carrying ?? 0}` +
-               `${(row.carrying ?? 0) >= carryAt ? ' (pack heavy)' : ''}` +
-               `${brokeUnder > 0 && (row.purse ?? 0) < brokeUnder
-                  ? ` and is nearly broke (${row.purse ?? 0})` : ''}` +
-               `; route the pack across the Barloque specialists (${merchants}) rather than Roq`,
+          why: owed
+            ? `${row.agent} has changed station at ${row.level} max health — one last run at ` +
+              `the counters on the way, ending at the Duke's tables and walking home to the ` +
+              `new room with a full larder rather than crossing the world three times`
+            : `${row.agent} is carrying ${row.carrying ?? 0}` +
+              `${(row.carrying ?? 0) >= carryAt ? ' (pack heavy)' : ''}` +
+              `${brokeUnder > 0 && (row.purse ?? 0) < brokeUnder
+                 ? ` and is nearly broke (${row.purse ?? 0})` : ''}` +
+              `; route the pack across the Barloque specialists (${merchants}) rather than Roq`,
           evidence: { agent: row.agent, carrying: row.carrying ?? 0, purse: row.purse ?? 0,
+                      handover: owed ? (obs.memory?.band?.[row.agent] ?? true) : false,
                       stops: (cfg.stops ?? []).map(s => s.room), window: win.why },
         };
       }

@@ -1,0 +1,132 @@
+{
+  // THE FLEET SORTS ITSELF. A station says what SIZE of character it is for, and membership
+  // stops being a list of names.
+  //
+  // This is the doctrine shape for the problem every grinding fleet eventually has: one room
+  // pays the small characters and a different one pays the big ones, the boundary is a
+  // number, and characters cross it in both directions all day — upward by advancing,
+  // downward by dying, because a death here takes max health away permanently.
+  //
+  // WHAT IT REPLACES, AND WHY THAT WAS NOT GOOD ENOUGH. There was no way to say "these work
+  // here and those work there" inside a doctrine. It was said with two doctrine files and two
+  // DUM processes scoped by `--agent`, and the cost was not the second process — it was that
+  // MEMBERSHIP WAS A HAND-MAINTAINED LIST. A list of names is a snapshot of one afternoon.
+  // The failure it produced was silent in the worst way: characters kept killing things in a
+  // room that had stopped paying them, at a good rate, reading healthy on every board, for as
+  // long as nobody looked. Only `yield_check` said so — "level 50 is not above max health 50;
+  // AdvancementCheck never rolls" — and only if you asked it.
+  //
+  // THE MECHANIC THE BAND IS BUILT ON. A kill advances a character only while the creature's
+  // level is STRICTLY above its max health, and max health IS the level in this game. So the
+  // room that pays is a function of one number that is on every board row, which is exactly
+  // the kind of decision that should not need a person.
+
+  "extends": "survive.jsonc",
+  "name": "max health bands",
+  "why": "test whether a station that names the band of character it is for beats a hand-maintained cohort list, on time spent in a room that still pays",
+
+  // REQUIRED BEFORE THIS CAN BE COMMITTED, and there is no default. A real fleet name is not
+  // written here on purpose: it identifies a roster on one machine, so a stranger cloning
+  // this repository has no such fleet, and `tools/dum-guard.mjs` enforces that rather than
+  // trusting it.
+  // "fleet": "<your-fleet>",
+
+  "claim": { "work": "bot", "movement": "bot", "economy": "bot" },
+
+  "shift": {
+    "on": true,
+
+    // TWO STATIONS AND ONE BOUNDARY.
+    //
+    // `at_least` is INCLUSIVE and `below` is EXCLUSIVE, which is the whole reason those two
+    // bounds were chosen rather than a min/max pair: `{at_least: 50}` and `{below: 50}` tile
+    // the range with no gap and no overlap at the boundary. Both halves matter. A boundary
+    // claimed twice is won silently by whichever station is listed first, so the pair looks
+    // symmetric and is not. A boundary claimed by neither leaves a character UNPLACED with
+    // roaming off — standing where it is, indefinitely, hunting something that does not spawn
+    // there and reporting itself healthy the entire time.
+    //
+    // The schema refuses both mistakes at LOAD, which is the only place they are cheap.
+    "stations": [
+      {
+        // The room that pays a character the softer one has stopped paying. Listed first is
+        // not significant — the bands do not overlap, so order decides nothing.
+        "room": 39,
+        // One name or several. A LIST IS A SET OF ACCEPTABLE QUARRY, not a preference order:
+        // the keeper takes whichever is in front of it. That matters where a room's spawn cap
+        // is a room-wide TOTAL, because a cohort that declines half the room lets the declined
+        // half hold the cap and throttles the half it wants.
+        "hunt": ["battered skeleton", "zombie"],
+        "max_health": { "at_least": 50 },
+
+        // EACH STATION CARRIES ITS OWN POSTURE, and this is the second half of what makes one
+        // doctrine able to run two cohorts. Two rooms that want the same combat settings do
+        // not need this; two that want different ones could not previously be written in one
+        // file at all. Anything omitted falls back to the `shift` block below.
+        "use_safe_spots": true,
+        "max_bots_per_safe_spot": 3,
+        "rest_below": 0.85,
+        "flee_below": 0.45,
+        "fight_above_vigor": 80,
+        // `strategy` AND `fight_above_vigor` TRAVEL TOGETHER. The harness reads the pair, and
+        // a strategy sent without a floor does not leave the old floor alone — it sets it to
+        // ZERO, which is not a low floor but no floor: the character fights at any vigor
+        // however exhausted and never rests to climb.
+        "strategy": "fieldrest",
+        "hold_resume_above": 0.9
+      },
+      {
+        // THE SOFTER ROOM. Gentler AND worth more to a character under the boundary, which is
+        // the combination worth looking for: the smallest characters are the ones a hard fight
+        // costs most, because every death takes max health off them for good.
+        "room": 544,
+        "hunt": "fungus beast",
+        "max_health": { "below": 50 },
+        "use_safe_spots": true,
+        "max_bots_per_safe_spot": 3,
+        "rest_below": 0.85,
+        "flee_below": 0.45,
+        "fight_above_vigor": 80,
+        "strategy": "fieldrest",
+        "hold_resume_above": 0.9
+      }
+    ],
+
+    // THE CROSSING. On by default.
+    //
+    // When a character's max health crosses a boundary the shift reassigns it at once and
+    // records the crossing; the Barloque sell circuit then takes it ONCE on the next fleet
+    // pass, whatever is in its pack and whatever its cooldown says. That is not an extra trip
+    // — it is the trip between the two stations, routed through the counters and (with
+    // `sellrun.finish: "feast"`) the free tables, so the character arrives at its new room
+    // with an empty pack and a full larder instead of crossing the world three times.
+    //
+    // THE ORDER IS REASSIGN FIRST, THEN RUN. The circuit ends at the hall and the feast rule
+    // walks the character home to `policy.assignedRoom`, so a wrap-up that ran BEFORE the
+    // redeploy would carry the food back to the room it was leaving. That has happened.
+    //
+    // The one gate it does not skip is health: the commonest way to cross downward is DYING,
+    // and forty hops at a fraction of a bar is not a wrap-up, it is another road death.
+    //
+    // Off means the character is still reassigned and simply sells when it next would have.
+    "handover": { "on": true },
+
+    // The fallbacks, for any station that does not state its own.
+    "rest_below": 0.75,
+    "flee_below": 0.35,
+    "fight_above_vigor": 180,
+    "use_safe_spots": true
+  },
+
+  // BRING PEOPLE BACK TO EITHER STATION. This must name every room the shift can assign: a
+  // station the doctrine does not claim is treated as somebody else's business and nothing
+  // walks that character home, so a fleet with two bands and one room listed here recalls
+  // half of itself and abandons the other half wherever a death left it.
+  "station": { "recall": true, "rooms": [39, 544], "per_pass": 4 },
+
+  // Off. Turning it on would have DUM re-derive an assignment the shift has already made,
+  // and the first thing a re-derivation does is move somebody.
+  "placement": { "spread": false, "rooms": [39, 544] },
+
+  "cadence": { "character_ms": 30000, "fleet_ms": 120000, "backoff_ms": 60000 }
+}

@@ -146,14 +146,25 @@ export function packTooFullForFood(row, { foodShare = 0.5, weightShare = 0.8 } =
 // nothing but food, and the likeliest ambush is at the moment one walks OUT of the hall.
 //
 // SO THE BAN IS ON THE ROOM, NOT ON THE FEAST. Operator's call, 2026-09-04: whichever room
-// a character was murdered in is shut for an hour plus a random extra up to another hour.
-// That is the general fact — somebody is killing us there — and it happens to cover the
-// feast road because the feast road is where it will happen. A rule that only knew about
-// the hall would have to be written again for the next ambush.
+// a character was murdered in is shut. That is the general fact — somebody is killing us
+// there — and it happens to cover the feast road because the feast road is where it will
+// happen. A rule that only knew about the hall would have to be written again for the next
+// ambush.
 //
-// THE RANDOMNESS IS THE POINT. A fixed ban is a schedule, and a schedule is something to
-// wait out: a killer who knows it is exactly sixty minutes comes back at minute sixty-one.
-// Rolled ONCE when the ban is set and stored, so reading it does not move the deadline.
+// FIFTEEN MINUTES, NOT TWO HOURS. Operator's correction, 2026-09-05. This was an hour plus a
+// random extra up to another hour, so the real ban was one to TWO hours — and the cost of
+// that is not hypothetical: the feast hall is this fleet's only free food, every way into it
+// runs through 950 and 951, and a single murder in either shut the entire supply line for up
+// to two hours. One killer passing through bought themselves half an afternoon of a fleet
+// not eating. The threat that justified the ban is somebody LOITERING, and somebody who is
+// still there after fifteen minutes will still be there after two hours; the ban is for
+// letting a drive-by clear, not for outlasting a siege.
+//
+// THE RANDOMNESS IS STILL THE POINT, and it shrank with the base. A fixed ban is a schedule,
+// and a schedule is something to wait out: a killer who knows it is exactly fifteen minutes
+// comes back at minute sixteen. Five minutes of jitter on fifteen is a third of the ban —
+// plenty to make the return time unguessable — where five minutes on an hour would not have
+// been. Rolled ONCE when the ban is set and stored, so reading it does not move the deadline.
 //
 // HOW A MURDER IS RECOGNISED, and the first attempt at this had it wrong. The game does not
 // name the killer. system.kod:50 is a dedicated broadcast that names nobody at all:
@@ -164,8 +175,8 @@ export function packTooFullForFood(row, { foodShare = 0.5, weightShare = 0.8 } =
 // parses every form and labels them (m59-skills.mjs DEATH_FORMS), so the discriminator is
 // the label, not the killer's name — an earlier version of this looked for a bare
 // capitalised name after "killed by" and would have missed every real murder there is.
-export const PK_BAN_BASE_MS = 60 * 60_000;
-export const PK_BAN_EXTRA_MAX_MS = 60 * 60_000;
+export const PK_BAN_BASE_MS = 15 * 60_000;
+export const PK_BAN_EXTRA_MAX_MS = 5 * 60_000;
 export const BAN_KEY = '_pk';
 
 // The labels the harness puts on a death another PLAYER caused. `murdered by a player` is

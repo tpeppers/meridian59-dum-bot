@@ -39,15 +39,22 @@ test('feast/pk: the raw broadcast still works when nothing labelled it', () => {
   assert.equal(killedByPlayer({}), false, 'unknown is not a murder');
 });
 
-test('feast/pk: the ban is an hour plus a random hour, rolled once and stored', () => {
+test('feast/pk: the ban is fifteen minutes plus a random few, rolled once and stored', () => {
   // THE RANDOMNESS IS THE POINT. A fixed ban is a schedule, and a schedule is something to
-  // wait out — a killer who knows it is exactly sixty minutes returns at minute sixty-one.
+  // wait out — a killer who knows it is exactly fifteen minutes returns at minute sixteen.
   const b = how => pkBanFrom({ how, who: 'Aardvark' }, { at: 0, room: 951, rand: () => how });
   const low = pkBanFrom({ how: 'murdered by a player' }, { at: 0, room: 951, rand: () => 0 });
   const high = pkBanFrom({ how: 'murdered by a player' }, { at: 0, room: 951, rand: () => 0.999 });
-  assert.equal(low.until, PK_BAN_BASE_MS, 'the floor is one hour');
+  assert.equal(low.until, PK_BAN_BASE_MS, 'the floor is fifteen minutes');
   assert.ok(high.until > PK_BAN_BASE_MS && high.until <= PK_BAN_BASE_MS + PK_BAN_EXTRA_MAX_MS,
-            'and the ceiling is two');
+            'and the ceiling is twenty');
+  // AND IT IS SHORT, WHICH IS THE WHOLE CORRECTION. This was an hour plus a random hour, so
+  // one murder shut the fleet's only free food supply for up to TWO. The ban is for letting
+  // a drive-by clear; somebody still loitering after fifteen minutes will still be there
+  // after two hours, and the ban was never going to outlast them.
+  assert.equal(PK_BAN_BASE_MS, 15 * 60_000, 'fifteen minutes, per the operator 2026-09-05');
+  assert.ok(PK_BAN_BASE_MS + PK_BAN_EXTRA_MAX_MS <= 20 * 60_000,
+            'and never more than twenty all told');
   // Stored rather than recomputed, so reading it does not move the deadline.
   const mem = { [BAN_KEY]: { rooms: { 951: low } } };
   assert.equal(roomBanned(mem, 951, PK_BAN_BASE_MS - 1).remaining_ms, 1);

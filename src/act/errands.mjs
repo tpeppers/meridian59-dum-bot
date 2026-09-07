@@ -80,6 +80,22 @@ export async function finishSale(broker, step, signal = null, renew = null) {
   return { ...result, error: 'sale exceeded offer limit' };
 }
 
+export async function finishCleanup(broker, step, signal = null, renew = null) {
+  const result = { dropped: [], count: 0, refused_items: [] };
+  for (let batch = 0; batch < 200; batch++) {
+    if (signal?.aborted) return { ...result, error: 'DUM is stopping' };
+    const r = await broker.call('drop_all', step.args, { timeoutMs: step.timeout_ms });
+    if (r?.error || r?.refused || r?.refused_items?.length)
+      return { ...result, error: r.error ?? 'cleanup left refused cargo in the pack' };
+    result.dropped.push(...(r?.dropped ?? [])); result.count += r?.count ?? 0;
+    if (!(r?.not_offered > 0)) return result;
+    if (!r?.dropped?.length) return { ...result, error: 'cleanup made no inventory progress' };
+    const held = await renew?.();
+    if (held?.error || held?.refused) return { ...result, error: 'cleanup lost its busy lease' };
+  }
+  return { ...result, error: 'cleanup exceeded batch limit' };
+}
+
 const sleep = ms => new Promise(res => setTimeout(res, ms));
 
 // WAIT OUT AN ASYNCHRONOUS WALK. Keeper-backed `travel` returns the instant it sets off
@@ -344,7 +360,9 @@ export async function runErrand(broker, intent, { commit = false, holder = null,
     }
 
     const r = commit
-      ? await (step.tool === 'sell_all' && step.args.max_offers
+      ? await (step.tool === 'drop_all' && step.expect === 'cleared'
+          ? finishCleanup(broker, step, signal, holder ? () => claimBusy(CEILING_MS, intent.why) : null)
+          : step.tool === 'sell_all' && step.args.max_offers
           ? finishSale(broker, step, signal, holder ? () => claimBusy(CEILING_MS, intent.why + ' (selling)') : null)
           : broker.call(step.tool, step.args, { timeoutMs: step.timeout_ms }))
           .catch(e => ({ error: e.message }))

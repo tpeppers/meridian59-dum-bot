@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { finishSale, runErrand } from '../src/act/errands.mjs';
+import { finishSale, finishCleanup, runErrand } from '../src/act/errands.mjs';
 import { sellrunFleetRules, sellCircuitWants, recordSellrun } from '../src/decide/rules/sellrun.mjs';
 const test = globalThis.__dumTest;
 test('sale batches carry refusals forward and collect every confirmed receipt', async () => {
@@ -37,4 +37,21 @@ test('fuel circuit retries vault after earning its fee and preserves protected l
   assert.ok(steps.findIndex(s => s.expect === 'vaulted') > steps.findLastIndex(s => s.tool === 'sell_all'));
   assert.ok(steps.findIndex(s => s.expect === 'vaulted') < steps.findIndex(s => s.tool === 'bank'));
   assert.ok(steps.find(s => s.tool === 'drop_all').args.keep.includes('wand'));
+});
+
+test('old pending cargo gets a turn before recent retries', () => {
+  const rows = ['a', 'b'].map(agent => ({ agent, in_game: true, items: [], health: { pct: 1 } }));
+  const intent = sellrunFleetRules[0].decide({ at: 2000000, characters: rows,
+    memory: { sellrun: { a: { last_run_at: 1000000, ok: false }, b: { last_run_at: 1, pending: true, ok: false } } } },
+    { sellrun: { on: true, trigger: { food_empty: true } } });
+  assert.equal(intent.orders.agent, 'b');
+});
+test('cleanup finishes its batches and refuses to hide leftover cargo', async () => {
+  let n = 0;
+  const broker = { call: async () => ++n === 1
+    ? { dropped: [{ name: 'old boot', amount: 1 }], count: 1, not_offered: 1 }
+    : { dropped: [{ name: 'old boot', amount: 1 }], count: 1 } };
+  assert.equal((await finishCleanup(broker, { args: { max: 10 } })).count, 2);
+  broker.call = async () => ({ refused_items: ['old boot'] });
+  assert.match((await finishCleanup(broker, { args: {} })).error, /refused cargo/);
 });

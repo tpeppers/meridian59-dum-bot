@@ -137,6 +137,10 @@ export async function tickFleet(ctx, { decide: runRules = true, only = null } = 
     const strategies = ctx.strategies?.snapshot((observed.characters ?? [])
       .filter(r => r.in_game).map(r => r.agent)) ?? null;
     const agents = (observed.characters ?? []).filter(r => r.in_game).map(r => r.agent);
+    // Own the configured faculties before paid observation lets the keeper choose
+    // a new farming destination for a runner left in town by a process restart.
+    if (commit && ctx.circuits)
+      await ctx.ensureClaim?.(agents.filter(agent => !only || only.has(agent)));
     const factions = ctx.factions?.snapshot(agents) ?? null;
     const obs = { ...observed, memory, strategies, factions };
     if (factions) {
@@ -260,6 +264,8 @@ export async function tickFleet(ctx, { decide: runRules = true, only = null } = 
     // The current pass may predate a newly launched busy lease on the broker.
     // Exclude only actors with a local job, so no rule can take the same body.
     if (ctx.circuits) decideObs.characters = decideObs.characters.filter(r => !ctx.circuits.has(r.agent));
+    // Jobs can finish during enrichment; use their completed cooldowns now.
+    decideObs.memory = ctx.memory?.read() ?? memory;
     const { intent, considered } = decide(fleetRules, decideObs, config);
     line.considered = considered;
     line.intent = intent;

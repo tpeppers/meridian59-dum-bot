@@ -115,3 +115,36 @@ test('fuel: a pending journey does not block paced heartbeats or another charact
     await travel;
   } finally { finishTravel?.(); globalThis.fetch = originalFetch; }
 });
+
+test('fuel: empty farmers outside their station await refuelling instead of recall', async () => {
+  const { isStranded } = await import('../src/decide/rules/station.mjs');
+  const r = row('role-a', { room: 38 });
+  assert.equal(isStranded(r, cfg()), false);
+  r.items = [{ name: 'slice of pork', amount: 100 }];
+  assert.equal(isStranded(r, cfg()), true);
+});
+test('fuel: failed busy acquisition cannot run even an always travel step', async () => {
+  const calls = [];
+  const broker = { call: async (tool, args) => { calls.push({ tool, args }); return { refused: 'another owner' }; } };
+  const result = await runErrand(broker, { orders: { agent: 'role-a', errand: 'sellrun-circuit',
+    steps: [{ tool: 'travel', args: { agent: 'role-a', to: 953 }, always: true }] } },
+    { commit: true, holder: 'test' });
+  assert.equal(result.acted, false);
+  assert.equal(calls.some(x => x.tool === 'travel'), false);
+  assert.equal(calls.at(-1).args.action, 'free');
+});
+test('fuel: commerce waits for the room after launching an asynchronous journey', async () => {
+  const calls = [];
+  const broker = { call: async (tool, args) => {
+    calls.push({ tool, args });
+    if (tool === 'travel') return { started: true };
+    if (tool === 'fleet') return { fleet: [{ agent: 'role-a', room_num: 114 }] };
+    return {};
+  } };
+  await runErrand(broker, { orders: { agent: 'role-a', errand: 'sellrun-circuit', steps: [
+    { tool: 'travel', args: { agent: 'role-a', to: 114 }, expect: 'arrived' },
+    { tool: 'vault', args: { agent: 'role-a', action: 'deposit' } },
+  ] } }, { commit: true, holder: 'test' });
+  assert.equal(calls.find(x => x.tool === 'travel').args.background, true);
+  assert.ok(calls.findIndex(x => x.tool === 'fleet') < calls.findIndex(x => x.tool === 'vault'));
+});

@@ -117,7 +117,10 @@ export class Broker {
       // A CONNECTION REFUSED IS NOT A BUG IN THE ARGUMENTS, and the message should not
       // read like one. This is by far the most common failure and it has exactly one
       // remedy.
-      const why = /fetch failed|ECONNREFUSED|timed out|aborted/i.test(e.message)
+      const timedOut = e.name === 'TimeoutError' || /timed out|aborted/i.test(e.message);
+      const why = timedOut
+        ? `response timed out after ${Date.now() - began}ms; the keeper may still be completing this action`
+        : /fetch failed|ECONNREFUSED/i.test(e.message)
         ? `no broker answering on ${this.url}. DUM attaches to a running broker and ` +
           `never starts one — check with: node ../m59-harness/tools/m59-which.mjs`
         : e.message;

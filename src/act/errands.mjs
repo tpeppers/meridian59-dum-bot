@@ -58,6 +58,28 @@ import { recordFeastOutbound, recordFeastGrab, recordFeastAbandon, recordFeastPk
 
 import { JourneyProgress } from './journey-progress.mjs';
 
+// Each sale call is one bounded offer. Continue only after a receipt; rejected names
+// are carried forward so a merchant is asked about them once during this visit.
+export async function finishSale(broker, step, signal = null, renew = null) {
+  let args = { ...step.args };
+  const result = { sold: [], refused: [], total_received: 0, count: 0 };
+  for (let batch = 0; batch < 2000; batch++) {
+    if (signal?.aborted) return { ...result, error: 'DUM is stopping' };
+    const r = await broker.call('sell_all', args, { timeoutMs: step.timeout_ms });
+    if (r?.error) return { ...result, error: r.error };
+    result.sold.push(...(r?.sold ?? [])); result.refused.push(...(r?.refused ?? []));
+    result.total_received += r?.total_received ?? 0;
+    result.count += r?.count ?? 0;
+    if (r?.more !== true) return result;
+    if (!(r.sold?.length || r.refused?.length) || !Array.isArray(r.resume?.skip_names))
+      return { ...result, error: 'sale continuation made no confirmed progress' };
+    args = { ...args, ...r.resume };
+    const held = await renew?.();
+    if (held?.error || held?.refused) return { ...result, error: 'sale lost its busy lease' };
+  }
+  return { ...result, error: 'sale exceeded offer limit' };
+}
+
 const sleep = ms => new Promise(res => setTimeout(res, ms));
 
 // WAIT OUT AN ASYNCHRONOUS WALK. Keeper-backed `travel` returns the instant it sets off
@@ -322,7 +344,9 @@ export async function runErrand(broker, intent, { commit = false, holder = null,
     }
 
     const r = commit
-      ? await broker.call(step.tool, step.args, { timeoutMs: step.timeout_ms })
+      ? await (step.tool === 'sell_all' && step.args.max_offers
+          ? finishSale(broker, step, signal, holder ? () => claimBusy(CEILING_MS, intent.why + ' (selling)') : null)
+          : broker.call(step.tool, step.args, { timeoutMs: step.timeout_ms }))
           .catch(e => ({ error: e.message }))
       : await broker.write(step.tool, step.args, { why: step.why });
 
@@ -356,6 +380,7 @@ export async function runErrand(broker, intent, { commit = false, holder = null,
                      why: `optional — the errand continues past this` });
     };
     if (r?.error) { failed(`${step.tool} failed: ${r.error}`); continue; }
+    if (step.expect === 'vaulted' && r?.refused?.length) failed('vault refused protected cargo: ' + r.refused.join(', '));
     if (step.expect === 'arrived') {
       if (r?.started === true) {
         // The async keeper-backed walk: block here until it actually arrives, or the next

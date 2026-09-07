@@ -587,6 +587,7 @@ export const feastFleetRules = [
       // that hold; anything else (a keeper errand, a pilot, a park) is somebody else's.
       for (const row of rows) {
         if (row.room !== hall) continue;
+        if (doctrine.sellrun?.trigger?.food_empty === true && (obs.memory?.sellrun?.[row.agent]?.pending || obs.memory?.sellrun?.[row.agent]?.ok === false)) continue;
         if (row.piloted || row.parked) continue;
         if (!isTakeable(row) && row.commitment?.kind !== 'bot') continue;
         const e = mem[row.agent];

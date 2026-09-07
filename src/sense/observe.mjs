@@ -302,9 +302,37 @@ export async function enrichTravelEstimates(broker, rows = [], to,
   return rows;
 }
 
-/** Inspect only strategy-selected rooms for opposing visible token carriers. */
+/**
+ * Inspect only strategy-selected rooms for opposing visible token carriers.
+ *
+ * A NEUTRAL CHARACTER CANNOT PLAY A FACTION GAME, AND ASKING COSTS A ROUND TRIP TO BE TOLD
+ * SO. The broker refuses the scan outright — "faction games require observed faction
+ * membership; profile says neutral" — and this loop caught the error, wrote it to
+ * `faction_game_error`, and asked again on the very next tick.
+ *
+ * Measured on prod 2026-09-07: 20 of 21 characters are `neutral` and one is `rebel`, so
+ * 20 of every 21 scans could never succeed. In one fifteen-minute window that was 38 of
+ * 219 broker calls failing — about a sixth of every pass spent on a question whose answer
+ * was already on the fleet row, under a 45-second timeout each. The operator saw it as
+ * "faction_game errors" filling the log and asked for it to be switched off.
+ *
+ * It is not switched off. It is ASKED OF THE RIGHT CHARACTERS: the row already carries
+ * `faction`, so a neutral is skipped without a call and the one rebel still plays. Turning
+ * the whole capability off would have taken the working case with it.
+ *
+ * `faction_game` is set to null for a skipped row rather than left undefined, because the
+ * rules read `row.faction_game?.carrying` and an absent key and a null must mean the same
+ * thing to them — "nothing to deliver" — rather than one of them meaning "not asked yet".
+ */
 export async function enrichFactionGames(broker, rows = []) {
   for (const row of rows) {
+    const faction = String(row.faction ?? '').toLowerCase();
+    if (!faction || faction === 'neutral' || faction === 'none') {
+      row.faction_game = null;
+      row.faction_game_error = null;
+      row.faction_game_skipped = 'neutral — a faction game needs observed membership';
+      continue;
+    }
     try {
       row.faction_game = await broker.call('faction_game', { agent: row.agent, action: 'scan' },
         { timeoutMs: 45_000 });

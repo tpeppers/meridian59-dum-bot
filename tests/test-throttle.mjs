@@ -238,3 +238,28 @@ test('throttle: vigor_ceiling is a routable order field, not a silently discarde
   eq(ORDER_FIELDS.vigor_ceiling.policy, 'vigorCeiling', 'and maps to the keeper policy key');
   eq(ORDER_FIELDS.fight_above_vigor.policy, 'fightAboveVigor', 'the floor still maps to its own');
 });
+
+test('observe: a neutral character is never asked to play a faction game', async () => {
+  // A NEUTRAL CANNOT PLAY, AND ASKING COSTS A ROUND TRIP TO BE TOLD SO. The broker refuses
+  // the scan outright — "faction games require observed faction membership; profile says
+  // neutral" — and the loop used to catch that, record it, and ask again next tick.
+  //
+  // Measured on prod 2026-09-07: 20 of 21 characters neutral, one rebel, so 20 of every 21
+  // scans could never succeed. 38 of 219 broker calls in one fifteen-minute window, each
+  // under a 45s timeout — about a sixth of every pass spent on a question the fleet row had
+  // already answered.
+  const { enrichFactionGames } = await import('../src/sense/observe.mjs');
+  const asked = [];
+  const broker = { call: async (_t, a) => { asked.push(a.agent); return { carrying: [], targets: [] }; } };
+  const rows = [{ agent: 'a', faction: 'neutral' }, { agent: 'b', faction: 'rebel' },
+                { agent: 'c' }, { agent: 'd', faction: 'Neutral' }];
+  await enrichFactionGames(broker, rows);
+  eq(asked.length, 1, 'only the faction member is asked');
+  eq(asked[0], 'b', 'and it is the rebel');
+  // THE CAPABILITY IS NOT SWITCHED OFF — that would have taken the working case with it.
+  ok(rows[1].faction_game, 'the rebel still gets a scan result');
+  // null rather than undefined: the rules read `row.faction_game?.carrying`, so a skipped
+  // row and an empty one must mean the same thing to them.
+  eq(rows[0].faction_game, null, 'a skipped row reads as nothing to do, not as unasked');
+  ok(rows[0].faction_game_skipped, 'and it says why it was skipped');
+});

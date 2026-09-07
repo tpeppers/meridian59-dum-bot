@@ -161,6 +161,14 @@ export async function run(ctx, { onPass = () => {} } = {}) {
   ctx.ensureClaim = claimFor;
 
   if (config.sellrun?.background === true && ctx.commit) ctx.circuits = new CircuitJobs(ctx);
+  // An errand or paid observation must never suspend ownership renewal.
+  // One heartbeat at a time; the broker still paces every request start.
+  let heartbeating = null;
+  const beatNow = () => heartbeating ??= heartbeat().catch(e => {
+    journal.write({ kind: 'heartbeat-failed', why: e.message });
+  }).finally(() => { heartbeating = null; });
+  const heartbeatTimer = ctx.commit
+    ? setInterval(beatNow, Math.max(1000, Math.min(30000, leaseMs / 3))) : null;
   let lastFleetAt = 0;
   let consecutiveErrors = 0;
 
@@ -170,7 +178,7 @@ export async function run(ctx, { onPass = () => {} } = {}) {
     ctx.expediteFleet = false;
     try {
       const result = await pass(ctx, { only: ctx.only ?? null, decideFleet: doFleet });
-      await heartbeat();
+      await beatNow();
       if (doFleet) lastFleetAt = began;
       consecutiveErrors = 0;
       onPass(result);
@@ -194,6 +202,8 @@ export async function run(ctx, { onPass = () => {} } = {}) {
   // SAFETY net for a process that dies badly; a process that stops on purpose should not
   // leave a character owned by a pid that no longer exists for two more minutes.
   await ctx.circuits?.stop();
+  if (heartbeatTimer) clearInterval(heartbeatTimer);
+  if (heartbeating) await heartbeating;
   await releaseAll();
   await ctx.strategyServer?.stop();
   journal.write({ kind: 'shutdown', held: [...mine.keys()],

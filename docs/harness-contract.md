@@ -301,3 +301,5 @@ excluded from competing decisions, and shutdown cancels and drains the jobs
 before yielding their faculties. Memory is patched at completion against the
 latest shared state. Station recall runs on the character turn when enabled,
 so one unsuccessful recall cannot consume every fleet decision.
+
+Town jobs pace RPC starts without awaiting unrelated characters' journeys. The ownership heartbeat runs independently of decision passes, and station recalls share the per-character job guard. Keeper-backed claim, busy, free, yield and heartbeat must affect the keeper process that owns the socket.

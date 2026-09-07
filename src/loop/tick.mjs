@@ -77,6 +77,14 @@ export async function tickCharacter(ctx, row) {
     if (!['none', 'report'].includes(intent.kind))
       await ctx.ensureClaim?.([intent.agent].filter(Boolean));
 
+    if (commit && ctx.circuits && intent.kind === 'errand'
+        && intent.orders?.errand === 'return-to-station') {
+      const started = await ctx.circuits.start(intent);
+      line.applied = { acted: started, kind: 'background-errand', agent };
+      journal.write(line);
+      return line;
+    }
+
     const applied = await apply(broker, intent, obs, { commit, yieldTo: config.yield_to ?? [], holder: ctx.holder });
     line.applied = applied;
 
@@ -189,7 +197,7 @@ export async function tickFleet(ctx, { decide: runRules = true, only = null } = 
     // decides over only its in-scope characters (see the decideObs filter below), so it needs
     // facts for only those; reading the rest is pure cost with nothing downstream to consume it.
     const inScope = only ? (r => only.has(r.agent)) : (() => true);
-    const live = () => (obs.characters ?? []).filter(r => r.in_game && inScope(r));
+    const live = () => (obs.characters ?? []).filter(r => r.in_game && inScope(r) && !ctx.circuits?.has(r.agent));
     if (config.graveyard?.shift === true)
       await enrichEquipment(broker, live());
     if (config.moot?.hold === true || config.weapons?.provision?.enabled === true) {

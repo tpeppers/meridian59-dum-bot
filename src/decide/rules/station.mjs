@@ -38,6 +38,7 @@ import { activeFactionWork } from './factions.mjs';
 // Pure data — room numbers read off the kod. See the note in isStranded: a room this
 // doctrine's own errands send people to is not a room they are stranded in.
 import { FEAST_HALL } from '../feast-hall.mjs';
+import { mealsAboard } from './food.mjs';
 
 // The feast rule's own default for how long a journey may take before it is given up. Kept
 // here as a number rather than imported so this module does not depend on the feast rule,
@@ -154,6 +155,10 @@ export function onAJourney(row = {}, doctrine = {}, fleetObs = null) {
 
 export function isStranded(row = {}, doctrine = {}, fleetObs = null) {
   if (!row.in_game) return false;
+  // Refuel before returning to work. A repeated recall otherwise monopolises an
+  // empty farmer outside its station before the fleet can assign its town lap.
+  if (doctrine.sellrun?.on && doctrine.sellrun?.trigger?.food_empty === true
+      && mealsAboard(row) === 0) return false;
   if (holdsTheBody(row)) return false;
   if (fleetObs && activeFactionWork(fleetObs, row)) return false;
 

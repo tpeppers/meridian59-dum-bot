@@ -227,14 +227,23 @@ export async function runErrand(broker, intent, { commit = false, holder = null,
     return said;
   };
   const announced = await claimBusy(lease, `${intent.why} (expects about ${Math.round(lease / 1000)}s)`);
-  if (announced?.error || announced?.refused)
+  if (announced?.error || announced?.refused) {
     stopped = `could not mark busy (${announced.error ?? announced.refused})`;
+    // Release only our own stale busy marker; a different owner is refused.
+    if (commit && holder) await broker.call('autopilot', { agent, action: 'free', by: holder }).catch(() => {});
+    return { acted: false, kind: 'errand', errand, agent, sent: [], results,
+      transcript, stopped, context: intent.orders?.context ?? null };
+  }
 
   // Labels of the steps that got as far as they were meant to, for `needs` below.
   const reachedLabels = new Set();
   for (let i = 0; i < steps.length; i++) {
     if (signal?.aborted) { stopped = 'DUM is stopping'; break; }
-    const step = steps[i];
+    const planned = steps[i];
+    // A long HTTP response can time out while the keeper keeps walking. Launch
+    // each journey briefly and use the existing room-arrival wait for ordering.
+    const step = commit && planned.tool === 'travel' && planned.expect === 'arrived'
+      ? { ...planned, args: { ...planned.args, background: true } } : planned;
     // EXTEND AS IT GOES, rather than asking for the worst case once.
     //
     // A single up-front lease has to cover the whole errand, so it is either generous

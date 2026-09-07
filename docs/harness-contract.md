@@ -303,3 +303,5 @@ latest shared state. Station recall runs on the character turn when enabled,
 so one unsuccessful recall cannot consume every fleet decision.
 
 Town jobs pace RPC starts without awaiting unrelated characters' journeys. The ownership heartbeat runs independently of decision passes, and station recalls share the per-character job guard. Keeper-backed claim, busy, free, yield and heartbeat must affect the keeper process that owns the socket.
+
+Travel steps requiring arrival use background launch plus a room poll, so an HTTP response timeout cannot release a still-walking character. An empty farmer awaits its food circuit before any station recall.

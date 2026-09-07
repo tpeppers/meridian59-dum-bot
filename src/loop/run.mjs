@@ -26,6 +26,7 @@
 //    reconfigured and no record of which half.
 
 import { pass } from './tick.mjs';
+import { CircuitJobs } from './circuits.mjs';
 
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 
@@ -159,12 +160,14 @@ export async function run(ctx, { onPass = () => {} } = {}) {
   // where the first write happened and ownership was requested afterwards.
   ctx.ensureClaim = claimFor;
 
+  if (config.sellrun?.background === true && ctx.commit) ctx.circuits = new CircuitJobs(ctx);
   let lastFleetAt = 0;
   let consecutiveErrors = 0;
 
   while (!stopping) {
     const began = Date.now();
-    const doFleet = began - lastFleetAt >= config.cadence.fleet_ms;
+    const doFleet = ctx.expediteFleet || began - lastFleetAt >= config.cadence.fleet_ms;
+    ctx.expediteFleet = false;
     try {
       const result = await pass(ctx, { only: ctx.only ?? null, decideFleet: doFleet });
       await heartbeat();
@@ -190,6 +193,7 @@ export async function run(ctx, { onPass = () => {} } = {}) {
   // Hand back what we hold rather than waiting for the lease to lapse. The lease is the
   // SAFETY net for a process that dies badly; a process that stops on purpose should not
   // leave a character owned by a pid that no longer exists for two more minutes.
+  await ctx.circuits?.stop();
   await releaseAll();
   await ctx.strategyServer?.stop();
   journal.write({ kind: 'shutdown', held: [...mine.keys()],

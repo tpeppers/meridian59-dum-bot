@@ -66,7 +66,7 @@ const sleep = ms => new Promise(res => setTimeout(res, ms));
 // `status` until the character is standing in `dest`, or a timeout. Every errand here routes to
 // room NUMBERS; a non-numeric destination is not polled (nothing to compare) and is treated as
 // launched. A direct-session travel already blocked and reports `arrived`, so it never gets here.
-async function waitForArrival(broker, agent, dest, timeoutMs) {
+async function waitForArrival(broker, agent, dest, timeoutMs, signal = null) {
   const target = Number(dest);
   if (!Number.isFinite(target)) return { ok: true, why: 'destination not a room number; not polled' };
   // Read the room from the fleet BOARD, not `status`. A keeper-backed character is held INERT
@@ -80,7 +80,9 @@ async function waitForArrival(broker, agent, dest, timeoutMs) {
   const deadline = Date.now() + Math.max(15_000, timeoutMs || 180_000);
   let last = null;
   while (Date.now() < deadline) {
+    if (signal?.aborted) return { ok: false, why: 'DUM is stopping' };
     await sleep(4000);
+    if (signal?.aborted) return { ok: false, why: 'DUM is stopping' };
     const fl = await broker.call('fleet').catch(() => null);
     const rows = fl?.fleet ?? fl?.characters ?? [];
     const room = roomOf(Array.isArray(rows) ? rows.find(r => r.agent === agent) : null);
@@ -177,7 +179,7 @@ export function estimateFor(steps = []) {
 }
 
 export async function runErrand(broker, intent, { commit = false, holder = null,
-                                                  busyLeaseMs = null } = {}) {
+                                                  busyLeaseMs = null, signal = null } = {}) {
   const { errand, agent, steps = [] } = intent.orders ?? {};
   if (!ERRANDS[errand])
     // Loud rather than executed. An errand kind nothing can interpret would run, walk a
@@ -231,6 +233,7 @@ export async function runErrand(broker, intent, { commit = false, holder = null,
   // Labels of the steps that got as far as they were meant to, for `needs` below.
   const reachedLabels = new Set();
   for (let i = 0; i < steps.length; i++) {
+    if (signal?.aborted) { stopped = 'DUM is stopping'; break; }
     const step = steps[i];
     // EXTEND AS IT GOES, rather than asking for the worst case once.
     //
@@ -320,7 +323,7 @@ export async function runErrand(broker, intent, { commit = false, holder = null,
       if (r?.started === true) {
         // The async keeper-backed walk: block here until it actually arrives, or the next
         // travel step fires into a still-walking character and the errand dies "busy".
-        const reached = await waitForArrival(broker, agent, step.args?.to, step.timeout_ms ?? 180_000);
+        const reached = await waitForArrival(broker, agent, step.args?.to, step.timeout_ms ?? 180_000, signal);
         if (!reached.ok) {
           // CANCEL THE DANGLING WALK. A travel that timed out is still walking toward its
           // destination in the broker; leaving it running makes this errand's own return leg —
@@ -364,6 +367,10 @@ export async function runErrand(broker, intent, { commit = false, holder = null,
   // extension by the same holder does not cancel movement (m59-autopilot.mjs declareBusy
   // bumps the movement generation only when an operation BEGINS), so the walk it is
   // protecting is not the walk it interrupts. Bounded by CEILING_MS like every lease here.
+  if (commit && signal?.aborted) {
+    stopped = 'DUM is stopping';
+    await broker.call('cancel_movement', { agent, why: stopped }).catch(() => {});
+  }
   const hold = Number(intent.orders?.hold_busy_ms) || 0;
   if (commit && holder && hold > 0 && !stopped) {
     const held = await claimBusy(Math.min(CEILING_MS, hold),

@@ -1,14 +1,25 @@
 import { STRATEGY_IDS, strategyRows } from '../../strategies/catalog.mjs';
 
-const FOOD = /inky.?cap|chocolate mint|wheel of cheese|turkey leg|mug of|meat pie|stew|loaf of bread|waterskin|slice of pork|bowl of soup|spideye|bunch of grapes|apple|edible mushroom|drumstick|goblet/i;
+export const FOOD = /inky.?cap|chocolate mint|wheel of cheese|turkey leg|mug of|meat pie|stew|loaf of bread|water ?skin|slice of pork|bowl of soup|spideye|spider eye|fortune cookie|bunch of grapes|apple|edible mushroom|drumstick|goblet/i;
 const ELDERBERRY = /elder\s?berry/i;
 const HERB = /^herbs?$/i;
 
 const amountOf = (items, re) => (items ?? []).filter(i => re.test(String(i.name ?? '')))
   .reduce((n, i) => n + (Number(i.amount) || 1), 0);
 
+// A protected meal is cargo, not fuel. Keep counting unknown inventories as unknown.
+export function mealsAboard(row) {
+  const list = Array.isArray(row?.items) ? row.items
+    : Array.isArray(row?.pack_items) ? row.pack_items : null;
+  const protectedNames = [...(row?.policy?.vaultItems ?? []),
+    ...(row?.policy?.protectedItems ?? [])].map(s => String(s).toLowerCase());
+  if (list) return amountOf(list.filter(i => !protectedNames.some(p =>
+    String(i.name ?? '').toLowerCase().replace(/[^a-z0-9]/g, '') === p.replace(/[^a-z0-9]/g, ''))), FOOD);
+  return typeof row?.has_food === 'boolean' ? (row.has_food ? 1 : 0) : null;
+}
+
 export function createFoodReadiness(row, food) {
-  const meals = amountOf(row.items, FOOD);
+  const meals = mealsAboard(row) ?? 0;
   const elderberry = amountOf(row.items, ELDERBERRY);
   const herbs = amountOf(row.items, HERB);
   const mana = row.mana?.value ?? 0;

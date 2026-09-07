@@ -279,3 +279,25 @@ property that erodes silently as behavior migrates outward.
 A `bot: none` contract test in the harness's offline suite: with no bot attached,
 every faculty reports `keeper`, and the survival ladder is reachable. It should fail
 the day someone moves a survival decision out.
+
+
+### Food-driven farming laps
+
+The fleet board's has_food and larder_vigor exclude vaultItems and protectedItems.
+DUM's meal count also excludes that cargo; it does not turn a protected collection
+into food. An older board can still supply inventory names and amounts.
+
+sellrun.trigger.food_empty opts into departing when usable food reaches zero.
+In this mode inventory count alone does not end a fed lap; health and failed-trip
+backoff still apply. The circuit takes protected items to the vault before the
+configured merchants, then the configured bank and street, then the feast hall.
+The hall arrival is verified before the circuit completes. Local bank.keep can
+be zero; feast.max_grabs remains a bounded ceiling above the expected pack capacity.
+
+sellrun.background opts into per-character town circuits and feast pickup jobs.
+Each uses the existing leased errand runner, while fleet decisions and ownership
+heartbeats continue. Duplicate jobs for one character are refused, actors are
+excluded from competing decisions, and shutdown cancels and drains the jobs
+before yielding their faculties. Memory is patched at completion against the
+latest shared state. Station recall runs on the character turn when enabled,
+so one unsuccessful recall cannot consume every fleet decision.

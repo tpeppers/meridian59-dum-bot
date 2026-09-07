@@ -404,11 +404,13 @@ export const shiftFleetRules = [{
       // takes its new orders at the very next idle moment — which for a fleet on station is
       // seconds away — and a share change rolls through the fleet instead of interrupting
       // it all at once.
-      const busyDoing = /travel|fight|pull|rest|recover|park|eat/i.test(String(a.row.activity ?? ''));
+      const busyDoing = /travel|fight|pull|rest|recover|park|eat/i.test(String(a.row.doing ?? a.row.activity ?? ''));
       if (busyDoing) return [];
       if (!needsOrders(a.row, orders)) {
         const settled = a.row.room != null && a.row.room !== a.to;
-        if (settled)
+        // Station recall has its own character turn. A single failed relocation
+        // must not consume every fleet turn and starve all food and sale trips.
+        if (settled && doctrine.station?.recall !== true)
           return [{ do: 'relocate', agent: a.row.agent, to: a.to,
             why: `orders say ${a.to} and it is standing in ${a.row.room} — walk it there` }];
         return [];

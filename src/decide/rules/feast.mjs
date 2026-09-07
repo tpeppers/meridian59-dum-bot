@@ -53,7 +53,8 @@
 // (row.travel_to_feast, put on the row by the tick) all arrive on the observation.
 
 import { FEAST_HALL, FEAST_DISPENSERS, FEAST_PACK_FULL, dispenserNamed } from '../feast-hall.mjs';
-import { foodAmountOf } from './food.mjs';
+import { mealsAboard } from './food.mjs';
+export { mealsAboard } from './food.mjs';
 // The circuit's own carry/purse/health test. Imported rather than re-derived so the two
 // rules cannot disagree about which characters are heavy — see `sellCircuitWants`.
 import { sellCircuitWants, handoverWaiting } from './sellrun.mjs';
@@ -87,13 +88,7 @@ const ANY_FOOD = /inky.?cap|chocolate mint|wheel of cheese|turkey leg|mug of|mea
  * guess is the wrong direction to fail in, and the board carries pack_items on every
  * live row, so null is rare.
  */
-export function mealsAboard(row) {
-  const list = Array.isArray(row?.items) ? row.items
-             : Array.isArray(row?.pack_items) ? row.pack_items : null;
-  if (list) return foodAmountOf(list, ANY_FOOD);
-  if (typeof row?.has_food === 'boolean') return row.has_food ? 1 : 0;
-  return null;
-}
+
 
 // ---------------------------------------------------------------- the only thing that stops a trip
 //
@@ -762,6 +757,13 @@ export const feastFleetRules = [
           continue;
         }
         const meals = mealsAboard(row);
+        // In a fuel-driven lap the existing circuit owns every departure from the
+        // farm, including an empty pack. Do not short-circuit its vault/sale stops.
+        if (doctrine.sellrun?.trigger?.food_empty === true
+            && row.room === (row.policy?.assignedRoom ?? row.assigned_room)) {
+          skipped.push(row.agent + ': farming lap belongs to the town circuit');
+          continue;
+        }
         const est = row.travel_to_feast ?? null;
         const hops = Number.isFinite(est?.hops) ? est.hops : null;
         const ms = Number.isFinite(est?.ms) ? est.ms : null;

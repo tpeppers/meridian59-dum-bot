@@ -56,6 +56,8 @@ import { recordCrateCheck } from '../decide/rules/crate.mjs';
 import { recordSellrun } from '../decide/rules/sellrun.mjs';
 import { recordFeastOutbound, recordFeastGrab, recordFeastAbandon, recordFeastPkCheck } from '../decide/rules/feast.mjs';
 
+import { JourneyProgress } from './journey-progress.mjs';
+
 const sleep = ms => new Promise(res => setTimeout(res, ms));
 
 // WAIT OUT AN ASYNCHRONOUS WALK. Keeper-backed `travel` returns the instant it sets off
@@ -66,7 +68,7 @@ const sleep = ms => new Promise(res => setTimeout(res, ms));
 // `status` until the character is standing in `dest`, or a timeout. Every errand here routes to
 // room NUMBERS; a non-numeric destination is not polled (nothing to compare) and is treated as
 // launched. A direct-session travel already blocked and reports `arrived`, so it never gets here.
-async function waitForArrival(broker, agent, dest, timeoutMs, signal = null) {
+async function waitForArrival(broker, agent, dest, timeoutMs, signal = null, renew = null) {
   const target = Number(dest);
   if (!Number.isFinite(target)) return { ok: true, why: 'destination not a room number; not polled' };
   // Read the room from the fleet BOARD, not `status`. A keeper-backed character is held INERT
@@ -77,19 +79,32 @@ async function waitForArrival(broker, agent, dest, timeoutMs, signal = null) {
     const n = Number(row?.room_num ?? row?.room?.num ?? row?.where?.num);
     return Number.isFinite(n) ? n : null;
   };
-  const deadline = Date.now() + Math.max(15_000, timeoutMs || 180_000);
+  const progress = new JourneyProgress({ stallMs: Math.max(15000, Math.min(timeoutMs || 90000, 90000)) });
+  let renewedAt = Date.now();
   let last = null;
-  while (Date.now() < deadline) {
+  while (true) {
     if (signal?.aborted) return { ok: false, why: 'DUM is stopping' };
     await sleep(4000);
     if (signal?.aborted) return { ok: false, why: 'DUM is stopping' };
+    if (renew && Date.now() - renewedAt >= 30000) {
+      const held = await renew();
+      if (held?.error || held?.refused) return { ok: false, why: 'journey ownership was lost' };
+      renewedAt = Date.now();
+    }
     const fl = await broker.call('fleet').catch(() => null);
     const rows = fl?.fleet ?? fl?.characters ?? [];
-    const room = roomOf(Array.isArray(rows) ? rows.find(r => r.agent === agent) : null);
+    const row = Array.isArray(rows) ? rows.find(r => r.agent === agent) : null;
+    const room = roomOf(row);
     if (room != null) last = room;
-    if (room === target) return { ok: true, room };
+    // Crossing the last door precedes the journey's arrival rest. Wait until
+    // that mover releases the body before commerce or the next leg starts.
+    const travelling = /travelling/i.test(String(row?.activity ?? ''));
+    if (room === target && !row?.busy && !travelling) return { ok: true, room };
+    if (row?.failed && !row?.busy && !travelling && !row?.suspended_journey)
+      return { ok: false, why: String(row.failed) };
+    const stalled = progress.observe(row);
+    if (stalled) return { ok: false, why: stalled + ' (room ' + (last ?? '?') + ')' };
   }
-  return { ok: false, why: `still at ${last ?? '?'} after ${Math.round((timeoutMs || 180_000) / 1000)}s` };
 }
 
 /**
@@ -332,7 +347,8 @@ export async function runErrand(broker, intent, { commit = false, holder = null,
       if (r?.started === true) {
         // The async keeper-backed walk: block here until it actually arrives, or the next
         // travel step fires into a still-walking character and the errand dies "busy".
-        const reached = await waitForArrival(broker, agent, step.args?.to, step.timeout_ms ?? 180_000, signal);
+        const reached = await waitForArrival(broker, agent, step.args?.to, step.timeout_ms ?? 90000, signal,
+          holder ? () => claimBusy(CEILING_MS, intent.why + ' (journey is in progress)') : null);
         if (!reached.ok) {
           // CANCEL THE DANGLING WALK. A travel that timed out is still walking toward its
           // destination in the broker; leaving it running makes this errand's own return leg —

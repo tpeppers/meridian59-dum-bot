@@ -148,3 +148,52 @@ test('fuel: commerce waits for the room after launching an asynchronous journey'
   assert.equal(calls.find(x => x.tool === 'travel').args.background, true);
   assert.ok(calls.findIndex(x => x.tool === 'fleet') < calls.findIndex(x => x.tool === 'vault'));
 });
+
+test('fuel: arrival rest keeps the body until the preceding job has finished', async () => {
+  let polls = 0, deposited = false;
+  const broker = { call: async (tool) => {
+    if (tool === 'travel') return { started: true };
+    if (tool === 'fleet') return { fleet: [{ agent: 'role-a', room_num: 114,
+      ...(++polls === 1 ? { busy: 'walk to vault' } : {}) }] };
+    if (tool === 'vault') { assert.equal(polls, 2); deposited = true; }
+    return {};
+  } };
+  await runErrand(broker, { orders: { agent: 'role-a', errand: 'sellrun-circuit', steps: [
+    { tool: 'travel', args: { agent: 'role-a', to: 114 }, expect: 'arrived' },
+    { tool: 'vault', args: { agent: 'role-a', action: 'deposit' } },
+  ] } }, { commit: true, holder: 'test' });
+  assert.equal(deposited, true);
+});
+
+test('fuel: a terminal journey failure ends the wait without sending dependent commerce', async () => {
+  const calls = [];
+  const broker = { call: async (tool) => {
+    calls.push(tool);
+    if (tool === 'travel') return { started: true };
+    if (tool === 'fleet') return { fleet: [{ agent: 'role-a', room_num: 107,
+      failed: 'route_progressing_exits_exhausted' }] };
+    return {};
+  } };
+  const result = await runErrand(broker, { orders: { agent: 'role-a', errand: 'sellrun-circuit', steps: [
+    { tool: 'travel', args: { agent: 'role-a', to: 113 }, expect: 'arrived' },
+    { tool: 'sell_all', args: { agent: 'role-a' } },
+  ] } }, { commit: true, holder: 'test' });
+  assert.match(result.stopped, /route_progressing_exits_exhausted/);
+  assert.equal(calls.includes('sell_all'), false);
+});
+
+test('fuel: journey timeout follows new ground and recovery, not total duration or oscillation', async () => {
+  const { JourneyProgress } = await import('../src/act/journey-progress.mjs');
+  const watch = new JourneyProgress({ now: 0, stallMs: 100, maxMs: 1000 });
+  const at = (col, more = {}) => ({ room_num: 10, position: { row: 2, col }, ...more });
+  assert.equal(watch.observe(at(1), 0), null);
+  assert.equal(watch.observe(at(2), 90), null);
+  assert.equal(watch.observe(at(3), 180), null, 'a progressing trip outlives its idle budget');
+  assert.equal(watch.observe(at(2), 220), null);
+  assert.match(watch.observe(at(3), 281), /no new ground/, 'oscillation is not progress');
+  const rest = new JourneyProgress({ now: 0, stallMs: 100 });
+  assert.equal(rest.observe(at(1, { health: '10/50', vigor: 70, activity: 'holding a wall' }), 0), null);
+  assert.equal(rest.observe(at(1, { health: '20/50', vigor: 80, activity: 'holding a wall' }), 90), null);
+  assert.equal(rest.observe(at(1, { health: '30/50', vigor: 80, activity: 'holding a wall' }), 180), null);
+  assert.match(rest.observe(at(1, { health: '30/50', vigor: 80, activity: 'holding a wall' }), 281), /no new ground/);
+});

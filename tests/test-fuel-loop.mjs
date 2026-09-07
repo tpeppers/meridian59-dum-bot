@@ -88,3 +88,30 @@ test('fuel: shutdown cancels a town circuit before its next step and releases it
   assert.equal(calls.at(-1).args.action, 'free');
   assert.equal(result.stopped, 'DUM is stopping');
 });
+
+test('fuel: a pending journey does not block paced heartbeats or another character', async () => {
+  const { Broker } = await import('../src/link/broker.mjs');
+  const originalFetch = globalThis.fetch;
+  let finishTravel;
+  const starts = [];
+  globalThis.fetch = async (_url, options) => {
+    const request = JSON.parse(options.body).params;
+    starts.push({ request, at: Date.now() });
+    if (request.name === 'travel') await new Promise(resolve => { finishTravel = resolve; });
+    return { ok: true, json: async () => ({ result: { content: [{ text: '{}' }] } }) };
+  };
+  try {
+    const broker = new Broker({ controlUrl: 'http://127.0.0.1:1', concurrent: true,
+      dryRun: false, callsPerSecond: 50 });
+    const travel = broker.call('travel', { agent: 'role-a', to: 114 });
+    const heartbeat = broker.call('autopilot', { agent: 'role-a', action: 'heartbeat' });
+    const observation = broker.call('inventory', { agent: 'role-b' });
+    await Promise.race([Promise.all([heartbeat, observation]),
+      new Promise((_, reject) => setTimeout(() => reject(Error('journey blocked fleet')), 500))]);
+    assert.equal(starts.length, 3);
+    assert.ok(starts[1].at - starts[0].at >= 15);
+    assert.ok(starts[2].at - starts[1].at >= 15);
+    finishTravel();
+    await travel;
+  } finally { finishTravel?.(); globalThis.fetch = originalFetch; }
+});

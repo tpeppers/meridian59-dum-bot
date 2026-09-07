@@ -34,7 +34,7 @@ export class Broker {
    * @param {(entry:object)=>void} [opts.onCall] called with every attempt, for the journal
    */
   constructor({ controlUrl, timeoutMs = 30_000, callsPerSecond = 4,
-                dryRun = true, onCall = () => {} }) {
+                dryRun = true, onCall = () => {}, concurrent = false }) {
     this.url = controlUrl.replace(/\/+$/, '');
     this.timeoutMs = timeoutMs;
     this.dryRun = dryRun;
@@ -52,6 +52,7 @@ export class Broker {
     // an interleaving.
     this.minGapMs = 1000 / callsPerSecond;
     this.chain = Promise.resolve();
+    this.concurrent = concurrent;
     this.lastAt = 0;
     this.stats = { calls: 0, failures: 0, refused: 0, dry: 0 };
   }
@@ -79,10 +80,15 @@ export class Broker {
       const wait = this.minGapMs - (Date.now() - this.lastAt);
       if (wait > 0) await new Promise(r => setTimeout(r, wait));
       this.lastAt = Date.now();
-      return this.#send(tool, args, timeoutMs);
+      // Pace request STARTS, not completion of a cross-world walk. Each job
+      // awaits its own actions; unrelated characters and lease heartbeats can proceed.
+      const response = this.#send(tool, args, timeoutMs);
+      if (!this.concurrent) return response;
+      response.catch(() => {}); // consumed below; avoid an early unhandled rejection
+      return { response };
     };
     this.chain = this.chain.then(run, run);
-    return this.chain;
+    return this.concurrent ? this.chain.then(slot => slot.response) : this.chain;
   }
 
   async #send(tool, args, timeoutMs = null) {

@@ -193,6 +193,7 @@ function context({ config, commit }) {
     controlUrl: config.link.control_url,
     timeoutMs: config.link.timeout_ms,
     callsPerSecond: config.link.calls_per_second,
+    concurrent: config.sellrun?.background === true,
     dryRun: !commit,
     onCall: e => journal.write({ kind: 'call', ...e }),
   });

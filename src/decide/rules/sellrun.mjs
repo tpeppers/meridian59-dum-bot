@@ -314,6 +314,17 @@ function circuitSteps(agent, cfg, back) {
   const minPrice = cfg.min_price ?? 1;
   const fuelDriven = cfg.trigger?.food_empty === true;
   const steps = [];
+  // A previous lap can have banked its proceeds before discovering a storage
+  // refusal. Recover only the quoted fee, less the purse already on hand.
+  // This is a remembered counter response, never a guessed walking float.
+  if (fuelDriven && cfg.vault?.room != null && cfg.bank?.room != null && cfg.vault_fee_shortfall > 0) {
+    steps.push({ tool: 'travel', args: { agent, to: cfg.bank.room, run_errands: false },
+      expect: 'arrived', timeout_ms: travelTimeout, estimate_ms: 700_000,
+      why: 'reach the bank to fund the storage fee quoted on the previous attempt' });
+    steps.push({ tool: 'bank', args: { agent, action: 'withdraw', amount: cfg.vault_fee_shortfall },
+      expect: 'withdrawn', timeout_ms: 90_000, estimate_ms: 20_000,
+      why: 'withdraw only the missing vault fee from this character’s own savings' });
+  }
   // THE VAULT GOES FIRST, BEFORE A SINGLE SHOP, AND IT COSTS TWO HOPS TO DO IT.
   //
   // `sell_all` offers a merchant everything he will take, and the only thing standing between
@@ -527,6 +538,7 @@ export const sellrunFleetRules = [
         const back = row.policy?.assignedRoom ?? row.assigned_room ?? row.room;
         const vaultItems = [...new Set([...(cfg.vault?.items ?? cfg.keep), ...(row.policy?.vaultItems ?? [])])];
         const steps = circuitSteps(row.agent, { ...cfg,
+          vault_fee_shortfall: Math.max(0, (mem[row.agent]?.vault_fee ?? 0) - (row.purse ?? 0)),
           keep: [...new Set([...cfg.keep, ...vaultItems])],
           vault: cfg.vault ? { ...cfg.vault, items: vaultItems } : cfg.vault,
         }, back);
@@ -567,11 +579,23 @@ export const sellrunFleetRules = [
  * the finished errand's transcript and the pre-errand topic, and returns the shallow patch the
  * tick writes. Keyed by agent so one character's run does not reset another's clock.
  */
-export function recordSellrun({ agent, at, stopped, context, was }) {
+export function recordSellrun({ agent, at, stopped, context, was, results = [] }) {
   // `ok:false` shortens the next window to the fail-backoff instead of the full cooldown, so a
   // circuit that could not complete (usually a travel that stalled on the way to town) retries
   // soon rather than stranding a full pack for the whole cooldown.
   const ok = !stopped;
-  return { patch: { [agent]: { last_run_at: at, ok, ...((context?.fuel_driven || was?.[agent]?.pending) ? { pending: !ok } : {}) } },
+  let fee = was?.[agent]?.vault_fee ?? null;
+  for (const step of results) {
+    if (step.tool !== 'vault' || !step.result || step.result.error) continue;
+    const r = step.result;
+    if (Array.isArray(r.refused) && r.refused.length === 0) fee = null;
+    if (!r.refused?.length) continue;
+    for (const message of r.messages ?? []) {
+      const quote = String(message).match(/Storing these items would cost ([\d,]+) shillings.*which I see you do not have/i);
+      if (quote) fee = Number(quote[1].replaceAll(',', ''));
+    }
+  }
+  const funding = fee != null || was?.[agent]?.vault_fee != null ? { vault_fee: ok ? null : fee } : {};
+  return { patch: { [agent]: { last_run_at: at, ok, ...funding, ...((context?.fuel_driven || was?.[agent]?.pending) ? { pending: !ok } : {}) } },
            read: { ran: true, ok, agent, at, stopped: stopped ?? null } };
 }

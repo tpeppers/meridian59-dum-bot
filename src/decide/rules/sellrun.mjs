@@ -123,6 +123,7 @@ export const TOS_BANK = Object.freeze({ room: 54, keep: 500 });
 
 import { giveawaySteps, GIVEAWAY_KEEP } from '../street-giveaway.mjs';
 import { FEAST_HALL, FEAST_DISPENSERS } from '../feast-hall.mjs';
+import { mealsAboard } from './food.mjs';
 
 const mins = ms => `${Math.round(ms / 60000)}m`;
 
@@ -193,9 +194,14 @@ export function sellrunWindow(mem = {}, agent, now, cooldownMs, failBackoffMs = 
 export function sellCircuitWants(row, cfg = {}, memory = null) {
   if (!row || cfg?.on === false) return false;
   const t = cfg.trigger ?? {};
-  const heavy = (row.carrying ?? 0) >= (t.carry_at ?? 24);
+  const meals = mealsAboard(row);
+  const fuelDriven = t.food_empty === true;
+  const empty = fuelDriven && meals === 0;
+  // Carry thresholds include food itself. A freshly filled pack must finish its
+  // farming lap instead of being immediately sold and filled again.
+  const heavy = !fuelDriven && (row.carrying ?? 0) >= (t.carry_at ?? 24);
   const broke = (t.broke_under ?? 0) > 0 && (row.purse ?? 0) < t.broke_under;
-  if (!heavy && !broke && !handoverOwed(row.agent, memory)) return false;
+  if (!heavy && !broke && !empty && !handoverOwed(row.agent, memory)) return false;
   // Do not march a hurt character across town. Selling is not survival; if it is below the
   // floor the keeper's ladder is the thing that should be acting, not this.
   //
@@ -423,7 +429,7 @@ function circuitSteps(agent, cfg, back) {
   if (cfg.return_home !== false || finishAtFeast)
     // ALWAYS: the last leg runs even if a stop failed, so a half-done circuit does not strand
     // a character in a shop it could not reach the far side of.
-    steps.push({ tool: 'travel', args: { agent, to: endsAt, run_errands: false }, always: true,
+    steps.push({ tool: 'travel', args: { agent, to: endsAt, run_errands: false }, always: true, expect: 'arrived',
       timeout_ms: travelTimeout, estimate_ms: 700_000,
       why: finishAtFeast
         ? `on to ${FEAST_HALL.name} (${endsAt}) to fill the pack with food`
@@ -490,10 +496,16 @@ export const sellrunFleetRules = [
         // this errand writes on the way out — so satisfying it is the same act as running it.
         const owed = handoverOwed(row.agent, obs.memory);
         const win = sellrunWindow(mem, row.agent, now, cooldownMs, failBackoffMs);
-        if (!win.ready && !owed) continue;   // per-agent window; try the next candidate
+        const empty = t.food_empty === true && mealsAboard(row) === 0;
+        const depletedAfterSuccess = empty && mem[row.agent]?.ok !== false;
+        if (!win.ready && !owed && !depletedAfterSuccess) continue;   // per-agent window; try the next candidate
 
-        const back = row.room;
-        const steps = circuitSteps(row.agent, cfg, back);
+        const back = row.policy?.assignedRoom ?? row.assigned_room ?? row.room;
+        const vaultItems = [...new Set([...(cfg.vault?.items ?? cfg.keep), ...(row.policy?.vaultItems ?? [])])];
+        const steps = circuitSteps(row.agent, { ...cfg,
+          keep: [...new Set([...cfg.keep, ...vaultItems])],
+          vault: cfg.vault ? { ...cfg.vault, items: vaultItems } : cfg.vault,
+        }, back);
         const merchants = (cfg.stops ?? []).map(s => s.merchant).join(', ');
         return {
           kind: 'errand',
@@ -501,10 +513,12 @@ export const sellrunFleetRules = [
             errand: 'sellrun-circuit',
             agent: row.agent,
             label: `Barloque sell circuit (${(cfg.stops ?? []).length} stops)`,
-            context: { stops: (cfg.stops ?? []).map(s => s.room), from: back },
+            context: { stops: (cfg.stops ?? []).map(s => s.room), from: back, finish: cfg.finish },
             steps,
           },
-          why: owed
+          why: empty && !owed
+            ? row.agent + ' has exhausted its usable food; vault, sell, bank, clear leftovers, and refill at the feast hall'
+            : owed
             ? `${row.agent} has changed station at ${row.level} max health — one last run at ` +
               `the counters on the way, ending at the Duke's tables and walking home to the ` +
               `new room with a full larder rather than crossing the world three times`

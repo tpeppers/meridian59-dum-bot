@@ -193,6 +193,10 @@ export function validate(c) {
   // ---- the Barloque sell circuit: validated only when it is on, and only for the ways it
   // would fail SILENTLY. An empty stop list is the load-bearing one — the rule declines with a
   // true, useless reason and no character ever sells.
+  if (c.sellrun?.background != null && typeof c.sellrun.background !== 'boolean')
+    say('sellrun.background', 'must be boolean');
+  if (c.sellrun?.trigger?.food_empty != null && typeof c.sellrun.trigger.food_empty !== 'boolean')
+    say('sellrun.trigger.food_empty', 'must be boolean');
   if (c.sellrun?.on) {
     if (!Array.isArray(c.sellrun.stops) || !c.sellrun.stops.length)
       say('sellrun.stops', 'must be a non-empty list of {room, merchant} stops. An empty list ' +

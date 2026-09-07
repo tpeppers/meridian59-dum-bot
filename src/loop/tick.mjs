@@ -249,6 +249,9 @@ export async function tickFleet(ctx, { decide: runRules = true, only = null } = 
       ? { ...obs, characters: (obs.characters ?? []).filter(r => only.has(r.agent)) }
       : obs;
     if (only) line.scope = [...only];
+    // The current pass may predate a newly launched busy lease on the broker.
+    // Exclude only actors with a local job, so no rule can take the same body.
+    if (ctx.circuits) decideObs.characters = decideObs.characters.filter(r => !ctx.circuits.has(r.agent));
     const { intent, considered } = decide(fleetRules, decideObs, config);
     line.considered = considered;
     line.intent = intent;
@@ -263,6 +266,12 @@ export async function tickFleet(ctx, { decide: runRules = true, only = null } = 
     // gating this call on `kind === 'act'` computed the right character and then skipped
     // the claim, so `busy` correctly refused every crate mission.
     await ensureFleetIntentClaim(ctx, intent);
+    if (commit && ctx.circuits && intent.kind === 'errand'
+        && ['sellrun-circuit', 'feast-grab'].includes(intent.orders?.errand)) {
+      const started = await ctx.circuits.start(intent);
+      line.applied = { acted: started, kind: 'background-errand', agent: intent.orders.agent };
+      return write();
+    }
 
     const applied = await apply(broker, intent, obs, { commit, yieldTo: config.yield_to ?? [], holder: ctx.holder });
     line.applied = applied;
@@ -379,7 +388,7 @@ export async function pass(ctx, { only = null, decideFleet = true } = {}) {
              note: `none of "${[...scope].join(', ')}" is in game on this fleet` };
 
   const characters = [];
-  for (const r of rows) characters.push(await tickCharacter(ctx, {
+  for (const r of rows.filter(r => !ctx.circuits?.has(r.agent))) characters.push(await tickCharacter(ctx, {
     ...r, strategies: fleetLine.observation?.strategies ?? null,
     factions: fleetLine.observation?.factions ?? null,
   }));

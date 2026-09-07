@@ -445,6 +445,7 @@ export const DEFAULTS = {
   // herbalist (reagents/mushrooms) — rather than to Roq (110), the universal buyer who pays the
   // standard rate from behind an unsafe tunnel. See src/decide/rules/sellrun.mjs.
   sellrun: {
+    background: false, // concurrent leased circuits; the rest of DUM keeps ticking
     on: false,
     // The ordered stops. Each names the room, the exact merchant, and any per-offer stack cap
     // (the jeweler, bqmerch.kod:113, refuses a gem stack over 25 wholesale — null means no cap).

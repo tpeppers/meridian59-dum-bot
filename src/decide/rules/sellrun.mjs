@@ -450,6 +450,9 @@ function circuitSteps(agent, cfg, back) {
   if (fuelDriven) for (const step of steps) {
     if (step.tool !== 'say' && step.label !== 'at-the-vault' && step.needs !== 'at-the-vault') step.optional = false;
     step.always = false;
+    if (step.tool === 'drop_all') {
+      step.expect = 'cleared'; step.args.max = 10; step.timeout_ms = 90000;
+    }
   }
   return steps;
 }
@@ -489,7 +492,11 @@ export const sellrunFleetRules = [
       const cooldownMs = cfg.cooldown_ms ?? 20 * 60_000;
       const failBackoffMs = cfg.fail_backoff_ms ?? 5 * 60_000;
 
-      for (const row of (obs.characters ?? [])) {
+      // Old failed runners must get a turn before recent retries at the front
+      // of the roster. Otherwise a few stuck routes can starve its last rows.
+      const waiting = [...(obs.characters ?? [])].sort((a, b) =>
+        (mem[a.agent]?.last_run_at ?? 0) - (mem[b.agent]?.last_run_at ?? 0));
+      for (const row of waiting) {
         if (!row.in_game) continue;
         // Leave alone a character a human is playing, one parking for a fleet update, or one
         // that is BUSY with an operation. Ask `takeable`, never `!commitment`: DUM claims every

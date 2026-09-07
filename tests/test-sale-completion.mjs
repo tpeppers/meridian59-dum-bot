@@ -55,3 +55,16 @@ test('cleanup finishes its batches and refuses to hide leftover cargo', async ()
   broker.call = async () => ({ refused_items: ['old boot'] });
   assert.match((await finishCleanup(broker, { args: {} })).error, /refused cargo/);
 });
+
+test('a full pack in the hall still completes the return journey', async () => {
+  const { feastFleetRules, recordFeastGrab } = await import('../src/decide/rules/feast.mjs');
+  const obs = { at: 1000, memory: {}, characters: [{ agent: 'a', in_game: true, room: 953,
+    policy: { assignedRoom: 39 }, items: [{ name: 'slice of pork', amount: 260 }],
+    health: { pct: 1 }, carry: { load: { weight: 49 }, capacity: { weight: 50 } } }] };
+  const intent = feastFleetRules[0].decide(obs, { feast: { on: true, return_home: true } });
+  assert.equal(intent.orders.errand, 'feast-grab');
+  assert.equal(intent.orders.steps.some(s => s.tool === 'autopilot'), false);
+  assert.equal(intent.orders.steps.at(-1).expect, 'arrived');
+  const r = recordFeastGrab({ agent: 'a', at: 1001, transcript: ["You can't hold anything more!"] });
+  assert.equal(r.read.ok, true);
+});

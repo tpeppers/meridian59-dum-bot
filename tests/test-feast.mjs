@@ -370,7 +370,7 @@ test('feast: the runner stops taking on the full-pack sentence, skips the rest, 
         return { messages: [served < 3 ? 'You slice yourself a hefty slab of apple-glazed roast pork.'
                                        : "You can't hold anything more!"] };
       }
-      return { started: true };
+      return { arrived: true };
     },
     write: async () => ({ dry_run: true }),
   };
@@ -392,7 +392,7 @@ test('feast: the runner does not re-extend busy for every one of sixty grabs', a
     call: async (tool, args) => {
       if (tool === 'autopilot' && args.action === 'busy') busyCalls++;
       if (tool === 'autopilot') return {};
-      return tool === 'act' ? { messages: [] } : { started: true };
+      return tool === 'act' ? { messages: [] } : { arrived: true };
     },
     write: async () => ({ dry_run: true }),
   };
@@ -447,7 +447,7 @@ test('feast: the runner HOLDS busy for a launched walk instead of freeing it, an
   const broker = {
     call: async (tool, args) => {
       if (tool === 'autopilot') { calls.push(`${args.action}:${args.lease_ms ?? ''}`); return {}; }
-      return { started: true };
+      return { arrived: true };
     },
     write: async () => ({ dry_run: true }),
   };

@@ -50,8 +50,8 @@ test('feast stats: a pack that fills is counted, and is not a failure', () => {
 test('feast stats: a trip that took nothing is counted as empty', () => {
   // The case the whole investigation was about: arrived, and came away with nothing.
   let mem = {};
-  apply(mem, recordFeastGrab({ agent: 'a', at: 1, transcript: [FULL],
-                               results: [{ tool: 'act' }], context: ctx, was: mem }));
+  apply(mem, recordFeastGrab({ agent: 'a', at: 1, transcript: [],
+                               results: [], context: ctx, was: mem }));
   const s = feastStats(mem);
   assert.equal(s.taken, 0);
   assert.equal(s.trips_ok, 0);

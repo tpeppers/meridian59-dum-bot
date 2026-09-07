@@ -197,3 +197,21 @@ test('fuel: journey timeout follows new ground and recovery, not total duration 
   assert.equal(rest.observe(at(1, { health: '30/50', vigor: 80, activity: 'holding a wall' }), 180), null);
   assert.match(rest.observe(at(1, { health: '30/50', vigor: 80, activity: 'holding a wall' }), 281), /no new ground/);
 });
+
+test('fuel: cancelled movement releases its active and suspended work before another leg', async () => {
+  const { waitForMovementRelease } = await import('../src/act/errands.mjs');
+  const states = [
+    { busy: 'old walk', activity: 'travelling' },
+    { activity: 'resting', suspended_journey: { to: 114 } },
+    { activity: 'resting' },
+  ];
+  let polls = 0, time = 0;
+  const broker = { call: async () => ({ fleet: [{ agent: 'role-a', ...states[polls++] }] }) };
+  assert.equal(await waitForMovementRelease(broker, 'role-a', {
+    now: () => time, pause: async ms => { time += ms; },
+  }), true);
+  assert.equal(polls, 3);
+  assert.equal(await waitForMovementRelease({ call: async () => ({ fleet: [] }) }, 'role-a', {
+    now: () => time, pause: async ms => { time += ms; }, timeoutMs: 1000,
+  }), false, 'an absent snapshot is not confirmation that the body is free');
+});

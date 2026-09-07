@@ -68,6 +68,19 @@ const sleep = ms => new Promise(res => setTimeout(res, ms));
 // `status` until the character is standing in `dest`, or a timeout. Every errand here routes to
 // room NUMBERS; a non-numeric destination is not polled (nothing to compare) and is treated as
 // launched. A direct-session travel already blocked and reports `arrived`, so it never gets here.
+export async function waitForMovementRelease(broker, agent, { now = Date.now, pause = sleep,
+    timeoutMs = 30000 } = {}) {
+  const started = now();
+  do {
+    const fl = await broker.call('fleet').catch(() => null);
+    const row = (fl?.fleet ?? fl?.characters ?? []).find(r => r.agent === agent);
+    if (row && Number(row.snapshot_age_ms ?? 0) <= 15000 && !row.busy
+        && !/travelling/i.test(String(row.activity ?? '')) && !row.suspended_journey) return true;
+    await pause(500);
+  } while (now() - started < timeoutMs);
+  return false;
+}
+
 async function waitForArrival(broker, agent, dest, timeoutMs, signal = null, renew = null) {
   const target = Number(dest);
   if (!Number.isFinite(target)) return { ok: true, why: 'destination not a room number; not polled' };
@@ -359,6 +372,12 @@ export async function runErrand(broker, intent, { commit = false, holder = null,
           await broker.call('cancel_movement', { agent,
             why: `the errand runner clearing a dangling walk (${errand})` }).catch(() => {});
           failed(`${step.tool} did not arrive at ${step.args?.to} (${reached.why})`);
+          // A cancel acknowledges the request before the paced mover unwinds.
+          // Even an always/optional leg must wait for the body to be released.
+          if (!await waitForMovementRelease(broker, agent)) {
+            stopped = (stopped ?? reached.why) + '; cancelled movement has not released the body';
+            break;
+          }
         }
       } else if (r?.arrived === false) {
         failed(`${step.tool} did not arrive (${r.reason ?? 'no reason given'})`);

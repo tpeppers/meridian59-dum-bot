@@ -13,6 +13,10 @@ export class CircuitJobs {
   async start(intent) {
     const agent = intent.orders?.agent;
     if (!this.ctx.commit || !agent || this.has(agent)) return false;
+    if (intent.orders.errand === 'sellrun-circuit' && intent.orders.context?.fuel_driven) {
+      const was = this.ctx.memory?.read()?.sellrun?.[agent] ?? {};
+      this.ctx.memory?.patch('sellrun', { [agent]: { ...was, pending: true } });
+    }
     const control = new AbortController();
     const job = { control, promise: null };
     this.jobs.set(agent, job);

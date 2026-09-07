@@ -201,7 +201,7 @@ export function sellCircuitWants(row, cfg = {}, memory = null) {
   // farming lap instead of being immediately sold and filled again.
   const heavy = !fuelDriven && (row.carrying ?? 0) >= (t.carry_at ?? 24);
   const broke = (t.broke_under ?? 0) > 0 && (row.purse ?? 0) < t.broke_under;
-  if (!heavy && !broke && !empty && !handoverOwed(row.agent, memory)) return false;
+  if (!heavy && !broke && !empty && !(fuelDriven && (memory?.sellrun?.[row.agent]?.pending || memory?.sellrun?.[row.agent]?.ok === false)) && !handoverOwed(row.agent, memory)) return false;
   // Do not march a hurt character across town. Selling is not survival; if it is below the
   // floor the keeper's ladder is the thing that should be acting, not this.
   //
@@ -312,6 +312,7 @@ function circuitSteps(agent, cfg, back) {
   const travelTimeout = cfg.travel_timeout_ms ?? 900_000;
   const keep = cfg.keep ?? [];
   const minPrice = cfg.min_price ?? 1;
+  const fuelDriven = cfg.trigger?.food_empty === true;
   const steps = [];
   // THE VAULT GOES FIRST, BEFORE A SINGLE SHOP, AND IT COSTS TWO HOPS TO DO IT.
   //
@@ -366,10 +367,20 @@ function circuitSteps(agent, cfg, back) {
     // One, not zero: a character with no weapon at all is a character that cannot fight,
     // and the keeper's own rearming would then have to buy one back.
     const sellArgs = { agent, merchant: stop.merchant, keep, min_price: minPrice,
-                       max_weapons: cfg.max_weapons ?? 1 };
+                       max_weapons: cfg.max_weapons ?? 1, max_offers: 1 };
     if (stop.max_stack != null) sellArgs.max_stack = stop.max_stack;
-    steps.push({ tool: 'sell_all', args: sellArgs, collect: 'messages', estimate_ms: 15_000,
+    steps.push({ tool: 'sell_all', args: sellArgs, collect: 'messages', timeout_ms: 90_000, estimate_ms: 15_000,
       why: `sell this stop's lane to ${stop.merchant}` });
+  }
+  // A penniless arrival can be refused the vault fee. Protected cargo survives
+  // the shops; retry the vault with sale proceeds before banking all the money.
+  if (fuelDriven && cfg.vault?.room != null) {
+    steps.push({ tool: 'travel', args: { agent, to: cfg.vault.room, run_errands: false },
+      expect: 'arrived', timeout_ms: travelTimeout, estimate_ms: 700_000,
+      why: 'return to the vault with money for any storage fee' });
+    steps.push({ tool: 'vault', args: { agent, action: 'deposit', items: cfg.vault.items ?? keep },
+      expect: 'vaulted', timeout_ms: 90_000, estimate_ms: 20_000,
+      why: 'finish storing protected cargo before banking the sale proceeds' });
   }
   // THE BANK, WHICH IS THE EXPENSIVE LEG AND IS STILL THE POINT.
   //
@@ -412,7 +423,7 @@ function circuitSteps(agent, cfg, back) {
   // last and not first: a character arrives at the Duke's hall carrying its weapon, its
   // armour, its money and its reagents, and everything else it can hold is food.
   if (cfg.giveaway?.on === true)
-    steps.push(...giveawaySteps(agent, { keep: cfg.giveaway.keep ?? GIVEAWAY_KEEP,
+    steps.push(...giveawaySteps(agent, { keep: [...new Set([...(cfg.giveaway.keep ?? GIVEAWAY_KEEP), ...keep])],
                                          room: cfg.giveaway.room,
                                          travelTimeoutMs: travelTimeout }));
 
@@ -434,6 +445,12 @@ function circuitSteps(agent, cfg, back) {
       why: finishAtFeast
         ? `on to ${FEAST_HALL.name} (${endsAt}) to fill the pack with food`
         : 'back to the room it was hunting in' });
+  // Fuel laps must clear cargo before filling the pack. A failed required stop
+  // remains a pending town objective; neither feast collection nor recall may skip it.
+  if (fuelDriven) for (const step of steps) {
+    if (step.tool !== 'say' && step.label !== 'at-the-vault' && step.needs !== 'at-the-vault') step.optional = false;
+    step.always = false;
+  }
   return steps;
 }
 
@@ -513,7 +530,7 @@ export const sellrunFleetRules = [
             errand: 'sellrun-circuit',
             agent: row.agent,
             label: `Barloque sell circuit (${(cfg.stops ?? []).length} stops)`,
-            context: { stops: (cfg.stops ?? []).map(s => s.room), from: back, finish: cfg.finish },
+            context: { stops: (cfg.stops ?? []).map(s => s.room), from: back, finish: cfg.finish, fuel_driven: t.food_empty === true },
             steps,
           },
           why: empty && !owed
@@ -543,11 +560,11 @@ export const sellrunFleetRules = [
  * the finished errand's transcript and the pre-errand topic, and returns the shallow patch the
  * tick writes. Keyed by agent so one character's run does not reset another's clock.
  */
-export function recordSellrun({ agent, at, stopped }) {
+export function recordSellrun({ agent, at, stopped, context, was }) {
   // `ok:false` shortens the next window to the fail-backoff instead of the full cooldown, so a
   // circuit that could not complete (usually a travel that stalled on the way to town) retries
   // soon rather than stranding a full pack for the whole cooldown.
   const ok = !stopped;
-  return { patch: { [agent]: { last_run_at: at, ok } },
+  return { patch: { [agent]: { last_run_at: at, ok, ...((context?.fuel_driven || was?.[agent]?.pending) ? { pending: !ok } : {}) } },
            read: { ran: true, ok, agent, at, stopped: stopped ?? null } };
 }

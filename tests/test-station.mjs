@@ -116,3 +116,12 @@ test('station: a hurt character is recovering, not stranded', () => {
   assert.equal(stationRules[0].decide(row('hurt', { hp: { value: 1, max: 44 } }),
     doctrine()), null);
 });
+
+test('character recall reads pending town work from its own observation memory', () => {
+  const d = { ...doctrine(), sellrun: { on: true, trigger: { food_empty: true } } };
+  const obs = { ...row('away'), items: [{ name: 'slice of pork', amount: 20 }],
+    memory: { sellrun: { away: { pending: true, ok: false } } } };
+  assert.equal(stationRules[0].decide(obs, d), null);
+  obs.memory.sellrun.away = { pending: false, ok: true };
+  assert.equal(stationRules[0].decide(obs, d)?.orders?.errand, 'return-to-station');
+});

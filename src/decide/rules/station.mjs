@@ -157,8 +157,9 @@ export function isStranded(row = {}, doctrine = {}, fleetObs = null) {
   if (!row.in_game) return false;
   // Refuel before returning to work. A repeated recall otherwise monopolises an
   // empty farmer outside its station before the fleet can assign its town lap.
+  const town = (fleetObs?.memory ?? row?.memory)?.sellrun?.[row.agent];
   if (doctrine.sellrun?.on && doctrine.sellrun?.trigger?.food_empty === true
-      && (mealsAboard(row) === 0 || fleetObs?.memory?.sellrun?.[row.agent]?.pending || fleetObs?.memory?.sellrun?.[row.agent]?.ok === false)) return false;
+      && (mealsAboard(row) === 0 || town?.pending || town?.ok === false)) return false;
   if (holdsTheBody(row)) return false;
   if (fleetObs && activeFactionWork(fleetObs, row)) return false;
 

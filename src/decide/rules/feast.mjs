@@ -477,7 +477,7 @@ function grabSteps(agent, cfg, home, row) {
   // it there and keep it there. Leaving that in place means a character that has its food
   // and lives in the Duke's hall for ever. `always`, and BEFORE the walk home: the travel
   // below is a nudge, and the thing that actually keeps it home afterwards is this.
-  if (Number.isInteger(home))
+  if (Number.isInteger(home) && (row?.policy?.assignedRoom ?? row?.assigned_room) !== home)
     steps.push({
       tool: 'autopilot', args: { agent, action: 'start', assigned_room: home },
       always: true, estimate_ms: 2_000, extend_busy: false,
@@ -487,8 +487,8 @@ function grabSteps(agent, cfg, home, row) {
   if (cfg.return_home !== false && Number.isInteger(home))
     steps.push({
       tool: 'travel', args: { agent, to: home, background: true, run_errands: false },
-      always: true, estimate_ms: 10_000,
-      why: 'back to the room it was working in, non-blocking',
+      always: true, expect: 'arrived', timeout_ms: 900_000, estimate_ms: 10_000,
+      why: 'back to the assigned farming room, waiting for actual arrival',
     });
   return steps;
 }
@@ -595,7 +595,8 @@ export const feastFleetRules = [
         // or a fresh cooldown window; both are gone with the rest of the caps. A character
         // in the room with the free food, whatever brought it there, takes some — unless
         // its pack genuinely has no room, which is the only refusal left.
-        if (packTooFullForFood(row)) continue;
+        // A full pack in the hall still needs the return leg. One activation
+        // confirms capacity, then the normal grab completion walks it home.
         const home = Number.isInteger(e?.from) ? e.from
                    : (row.policy?.assignedRoom ?? row.assigned_room ?? null);
         const d = chosenDispenser(cfg);
@@ -875,7 +876,7 @@ export function recordFeastGrab({ agent, at, transcript = [], stopped, results =
   // and a cross-check for the ones that speak.
   const ran = (results ?? []).filter(r => r.tool === 'act' && !r.skipped && !r.result?.error).length;
   const grabbed = spoken ?? Math.max(0, ran - (full ? 1 : 0));
-  const ok = !stopped && grabbed > 0;
+  const ok = !stopped && (grabbed > 0 || full);
   return {
     patch: { [agent]: { phase: 'home', last_visit_at: at, ok, grabbed, pack_full: full,
                         ...(ok ? {} : { failed_at: at, why: stopped ?? 'took nothing' }) },

@@ -56,8 +56,8 @@ test('feast: the outbound errand launches and returns — nothing in it blocks',
 test('feast: the station is handed back, or the character lives at the feast', () => {
   // The outbound leg makes the hall this character's home so its keeper will go and stay.
   // Leaving it there is a character that has its food and never works again.
-  const grab = rule.decide({ at: NOW, memory: { feast: { a: { phase: 'outbound', since: NOW } } },
-                             characters: [row({ room: FEAST_HALL.room })] }, doctrine);
+  const grab = rule.decide({ at: NOW, memory: { feast: { a: { phase: 'outbound', since: NOW, from: 39 } } },
+                             characters: [row({ room: FEAST_HALL.room, policy: { assignedRoom: FEAST_HALL.room } })] }, doctrine);
   const back = (grab.orders.steps ?? []).filter(x => x.tool === 'autopilot');
   assert.equal(back.length, 1, 'exactly one hand-back');
   assert.equal(back[0].args.assigned_room, 39, 'to where it came from');

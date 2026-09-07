@@ -227,8 +227,8 @@ export const stationRules = [
             // Foreground and generous: a walk home from where a death leaves you can cross
             // most of the map, and the errand runner already waits out an asynchronous
             // keeper travel rather than judging it on the call returning.
-            { tool: 'travel', args: { agent: row.agent, to: home },
-              timeout_ms: 600_000,
+            { tool: 'travel', args: { agent: row.agent, to: home, run_errands: false },
+              expect: 'arrived', timeout_ms: 600_000,
               why: `out of position in ${row.room}, assigned to ${home}` },
           ],
         },

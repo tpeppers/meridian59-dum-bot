@@ -125,3 +125,9 @@ test('character recall reads pending town work from its own observation memory',
   obs.memory.sellrun.away = { pending: false, ok: true };
   assert.equal(stationRules[0].decide(obs, d)?.orders?.errand, 'return-to-station');
 });
+
+test('recall waits for arrival so its progress timer owns the return journey', () => {
+  const intent = stationRules[0].decide(row('away'), doctrine());
+  assert.equal(intent.orders.steps[0].expect, 'arrived');
+  assert.equal(intent.orders.steps[0].args.run_errands, false);
+});

@@ -4,7 +4,7 @@ import { runErrand } from '../src/act/errands.mjs';
 const test = globalThis.__dumTest;
 const rule = sellrunFleetRules.find(r => r.id === 'barloque-sell-circuit');
 const receipt = { tool: 'vault', result: { refused: ['scroll', 'wand'],
-  messages: ['The vaultman says, "Storing these items would cost 10 shillings - which I see you do not have."'] } };
+  vaultman_said: ['The vaultman says, "Storing these items would cost 10 shillings - which I see you do not have."'] } };
 const cfg = { on: true, trigger: { food_empty: true }, vault: { room: 114, items: ['scroll', 'wand'] },
   bank: { room: 54, keep: 0 }, stops: [{ room: 113, merchant: 'smith' }], finish: 'feast' };
 const plan = (purse = 0, fee = 10) => rule.decide({ at: 1000000,
@@ -31,7 +31,7 @@ test('sellrun: successful storage clears fee recovery even if a later journey fa
     results: [{ tool: 'vault', result: { refused: [] } }] });
   assert.equal(rec.patch.a.vault_fee, null);
   const refused = recordSellrun({ agent: 'a', at: 2, stopped: 'vault refused',
-    results: [{ tool: 'vault', result: { refused: ['wand'], messages: ['No room for that.'] } }] });
+    results: [{ tool: 'vault', result: { refused: ['wand'], vaultman_said: ['No room for that.'] } }] });
   assert.equal(refused.patch.a.vault_fee, undefined, 'capacity refusals do not invent a fee');
 });
 

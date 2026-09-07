@@ -590,7 +590,7 @@ export function recordSellrun({ agent, at, stopped, context, was, results = [] }
     const r = step.result;
     if (Array.isArray(r.refused) && r.refused.length === 0) fee = null;
     if (!r.refused?.length) continue;
-    for (const message of r.messages ?? []) {
+    for (const message of r.vaultman_said ?? []) {
       const quote = String(message).match(/Storing these items would cost ([\d,]+) shillings.*which I see you do not have/i);
       if (quote) fee = Number(quote[1].replaceAll(',', ''));
     }

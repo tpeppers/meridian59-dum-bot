@@ -399,6 +399,13 @@ export async function runErrand(broker, intent, { commit = false, holder = null,
     };
     if (r?.error) { failed(`${step.tool} failed: ${r.error}`); continue; }
     if (step.expect === 'vaulted' && r?.refused?.length) failed('vault refused protected cargo: ' + r.refused.join(', '));
+    if (step.expect === 'withdrawn') {
+      const paid = (r?.banker_said ?? []).some(message => {
+        const m = String(message).match(/Here are your ([\d,]+) shillings/i);
+        return m && Number(m[1].replaceAll(',', '')) === step.args.amount;
+      });
+      if (!paid) failed('the banker did not confirm the requested vault fee withdrawal');
+    }
     if (step.expect === 'arrived') {
       if (r?.started === true) {
         // The async keeper-backed walk: block here until it actually arrives, or the next

@@ -106,6 +106,9 @@ export const ORDER_FIELDS = {
   // reads as different on every pass and redeploys the whole station for ever.
   buff_allies:       { policy: 'buffAllies',
                        compare: (a, b) => JSON.stringify(a ?? null) === JSON.stringify(b ?? null) },
+  // A PROHIBITION, not a ranking: weapon_priority above says what to draw FIRST and its
+  // last entry is still an entry. This says what never to draw at all.
+  banned_weapons:    { policy: 'bannedWeapons', compare: sameList },
   drop_junk:         { policy: 'dropJunk' },
   use_safe_spots:    { policy: 'useSafeSpots' },
   hold_resume_above: { policy: 'holdResumeAbove' },

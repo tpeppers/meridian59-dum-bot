@@ -539,7 +539,9 @@ const needsOrders = (row, orders) => {
     // Structural compare because it is an object, and `undefined` on the intent side means
     // the station said nothing — which must not redeploy a character for ever.
     (orders.buff_allies !== undefined &&
-      JSON.stringify(p.buffAllies ?? null) !== JSON.stringify(orders.buff_allies ?? null));
+      JSON.stringify(p.buffAllies ?? null) !== JSON.stringify(orders.buff_allies ?? null)) ||
+    (orders.banned_weapons !== undefined &&
+      JSON.stringify(p.bannedWeapons ?? null) !== JSON.stringify(orders.banned_weapons ?? null));
 };
 
 // A HUNT IS A SET, AND COMPARING IT WITH `!==` MEANT REDEPLOYING EVERY PASS.
@@ -596,7 +598,8 @@ export const shiftFleetRules = [{
         // BOTH EMIT SITES OR NEITHER. The diff above and the deploy payload below must
         // compute every field the same way; the one time they did not, a character was
         // found to differ on every pass and redeployed for ever without changing.
-        buff_allies: a.station?.buff_allies ?? undefined };
+        buff_allies: a.station?.buff_allies ?? undefined,
+        banned_weapons: posture(a.station, doctrine.shift, 'banned_weapons') };
       // ORDERS MATCHING IS NOT THE SAME AS BEING THERE, and conflating the two is how a
       // shift quietly stops working. `deploy` sets the assignment and leaves the walk to
       // the keeper, which is correct — movement is a one-second decision and the keeper
@@ -728,6 +731,10 @@ export const shiftFleetRules = [{
         // `undefined` when the station does not ask, which the order diff drops, so every
         // doctrine written before this behaves exactly as it did.
         buff_allies: a.station?.buff_allies ?? undefined,
+        // WEAPONS THIS FLEET WILL NOT DRAW. Read through `posture` so it can be said once
+        // for the whole shift rather than repeated on every station -- "no maces" is a
+        // property of what this fleet is training, not of where it stands.
+        banned_weapons: posture(a.station, doctrine.shift, 'banned_weapons'),
         // `strategy` AND `fight_above_vigor` TRAVEL TOGETHER OR THE FLOOR IS ZEROED.
         //
         // The harness's start handler reads the pair: `if (a.strategy !== undefined) { ... if

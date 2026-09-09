@@ -525,7 +525,21 @@ const needsOrders = (row, orders) => {
     // `undefined` on either side means "nothing asked for" — only a real disagreement is
     // drift, or a doctrine that says nothing about training would redeploy for ever.
     (orders.training_style !== undefined && p.trainingStyle !== orders.training_style) ||
-    (orders.training_weapon !== undefined && p.trainingWeapon !== orders.training_weapon);
+    (orders.training_weapon !== undefined && p.trainingWeapon !== orders.training_weapon) ||
+    // AND THE BUFF POSTING, WHICH IS A FIFTH PLACE AND NOT ONE OF THE FOUR.
+    //
+    // fleet-plan.mjs names four files for a new order field — schema, the rule's intent,
+    // the plan's whitelist, orders.mjs for the diff. This function is a fifth, local to
+    // this rule, and it is a HAND-WRITTEN list rather than a loop over ORDER_FIELDS: a
+    // field missing here makes the shift answer "already hold their station orders" and
+    // send nothing, with the intent correct and the doctrine correct and no error anywhere.
+    // Measured 2026-09-08: the station carried buff_allies, the policy was null, and the
+    // shift reported no drift on every pass.
+    //
+    // Structural compare because it is an object, and `undefined` on the intent side means
+    // the station said nothing — which must not redeploy a character for ever.
+    (orders.buff_allies !== undefined &&
+      JSON.stringify(p.buffAllies ?? null) !== JSON.stringify(orders.buff_allies ?? null));
 };
 
 // A HUNT IS A SET, AND COMPARING IT WITH `!==` MEANT REDEPLOYING EVERY PASS.

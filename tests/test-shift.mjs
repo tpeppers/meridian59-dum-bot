@@ -656,3 +656,48 @@ test('a well-formed buff_allies passes validation', () => {
   const said = JSON.stringify(validate(good));
   assert.ok(!/buff_allies/.test(said), `unexpected complaint: ${said}`);
 });
+
+// THE FIFTH PLACE. fleet-plan.mjs names four files for a new order field; `needsOrders` in
+// this rule is a hand-written comparison list and is a fifth. A field missing from it makes
+// the shift answer "already hold their station orders" and send nothing — intent correct,
+// doctrine correct, no error anywhere. Measured 2026-09-08 with buff_allies.
+test('a station that adds buff_allies is drift, not a match', () => {
+  const d = doctrine();
+  const buff = { enabled: true, spells: ['super strength'] };
+  d.shift = { ...d.shift, on: true, stations: [
+    { room: 39, hunt: ['battered skeleton'], training_style: 'short_sword', buff_allies: buff },
+  ] };
+  // A row that already matches on EVERY other field, standing in the right room.
+  const row = { ...rows(1)[0], room: 39, character: 'Ada',
+    policy: { assignedRoom: 39, hunt: ['battered skeleton'], purpose: 'advance',
+              roam: false, trainingStyle: 'short_sword', buffAllies: null } };
+  const out = fire([row], d);
+  assert.ok(JSON.stringify(out).includes('buff_allies'),
+    'the shift must notice the posting is missing and deploy it');
+});
+
+test('a posting already in force is not redeployed every pass', () => {
+  const d = doctrine();
+  const buff = { enabled: true, spells: ['super strength'] };
+  d.shift = { ...d.shift, on: true, stations: [
+    { room: 39, hunt: ['battered skeleton'], training_style: 'short_sword', buff_allies: buff },
+  ] };
+  const row = { ...rows(1)[0], room: 39, character: 'Ada',
+    policy: { assignedRoom: 39, hunt: ['battered skeleton'], purpose: 'advance',
+              roam: false, trainingStyle: 'short_sword', buffAllies: buff } };
+  const out = fire([row], d);
+  const said = JSON.stringify(out);
+  assert.ok(!said.includes('"tool":"autopilot"') || !said.includes('buff_allies'),
+    `a matching posting must not redeploy: ${said.slice(0, 200)}`);
+});
+
+test('a station saying nothing about buffs never redeploys for it', () => {
+  const d = doctrine();
+  d.shift = { ...d.shift, on: true, stations: [
+    { room: 39, hunt: ['battered skeleton'], training_style: 'short_sword' },
+  ] };
+  const row = { ...rows(1)[0], room: 39, character: 'Ada',
+    policy: { assignedRoom: 39, hunt: ['battered skeleton'], purpose: 'advance',
+              roam: false, trainingStyle: 'short_sword', buffAllies: null } };
+  assert.ok(!JSON.stringify(fire([row], d)).includes('buff_allies'));
+});

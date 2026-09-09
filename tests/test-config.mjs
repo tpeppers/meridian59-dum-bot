@@ -160,3 +160,13 @@ test('the shipped doctrines all load and validate', () => {
     loadDoctrine({ file: f.pathname.replace(/^\/([A-Za-z]:)/, '$1') });
   }
 });
+
+test('not_ours: a blank entry is refused rather than matching nothing', () => {
+  const bad = validate({ ...freshDefaults(), not_ours: ['Ada', '  '] });
+  assert.ok(bad.some(b => b.where === 'not_ours'),
+            'an empty name excludes nobody and reads as if it did');
+  assert.equal(validate({ ...freshDefaults(), not_ours: ['Ada'] })
+                 .filter(b => b.where === 'not_ours').length, 0);
+  assert.ok(validate({ ...freshDefaults(), not_ours: 'Ada' }).some(b => b.where === 'not_ours'),
+            'a bare string is not a list');
+});

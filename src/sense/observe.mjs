@@ -99,9 +99,23 @@ async function senseLeader(broker, rows, { now, leaderFile }) {
 }
 
 export async function observeFleet(broker, { now = Date.now(), leaderFile = LEADER_FILE,
-                                             senseSwarm = false, rooms = [] } = {}) {
+                                             senseSwarm = false, rooms = [],
+                                             notOurs = [] } = {}) {
   const raw = await broker.call('fleet', {});
-  const rows = (raw.fleet ?? []).map(normalizeFleetRow);
+  // WHO IS NOT OURS, DROPPED BEFORE ANYTHING ELSE READS THE ROWS.
+  //
+  // This is the only filter that makes the exclusion total. Downstream there are a dozen
+  // consumers — the claim, the stations, every strategy's selection, coverage, the journal
+  // — and each of them would need its own carve-out if the row survived to be seen. Here
+  // it is one comparison and an excluded character simply does not exist to DUM for the
+  // rest of the tick.
+  //
+  // Matched on the in-world name because that is what a lending arrangement is agreed in;
+  // see `not_ours` in src/config/defaults.mjs for why it cannot be the roster handle.
+  const lent = new Set([].concat(notOurs ?? [])
+    .map(n => String(n ?? '').trim().toLowerCase()).filter(Boolean));
+  const rows = (raw.fleet ?? []).map(normalizeFleetRow)
+    .filter(r => !lent.has(String(r.character ?? '').trim().toLowerCase()));
   // Only when something is actually leading. `look` per character is cheap but not free,
   // and on the ordinary pass — nobody piloting — this must cost one comparison.
   const swarm = senseSwarm && rows.some(r => r.piloted)

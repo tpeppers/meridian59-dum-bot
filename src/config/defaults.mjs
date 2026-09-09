@@ -91,6 +91,35 @@ export const DEFAULTS = {
   //   "yield_to": ["rest_below", "max_carry", "roam"]
   yield_to: [],
 
+  // CHARACTERS THAT ARE IN THE FLEET BUT ARE NOT DUM'S TO DRIVE.
+  //
+  // `yield_to` above says "somebody else owns this FIELD". This says "somebody else owns
+  // this CHARACTER", which is a different problem and had no answer at all. A body lent to
+  // another operator — a guest hero the fleet is escorting, a character seconded to a quest
+  // somebody is running by hand — still appears in the broker's roster, so DUM enumerated
+  // it, claimed its faculties, and sent it a `start` with the doctrine's own hunt list and
+  // station. From the other operator's side that is a second driver on one body, which the
+  // harness's guarantee 1 exists to prevent and which no log on either side reports as
+  // wrong.
+  //
+  // Measured 2026-09-09: DUM issued 941 autopilot calls to a character owned by another
+  // operator over one session, including repeated `action: start` that the keeper rejected
+  // outright. Nothing was broken and nothing was reported, which is exactly the failure
+  // shape `yield_to` was written for one level down.
+  //
+  // Named by IN-WORLD CHARACTER NAME, not by roster handle, and matched case-insensitively.
+  // That is deliberate: the handle is an account password (tools/dum-guard.mjs), so a list
+  // of handles could never be written in a doctrine anyone can read, and a lending
+  // arrangement is agreed between people who know the character by its name.
+  //
+  // The exclusion is applied at OBSERVATION, so it is total: an excluded character is not
+  // in `obs.characters`, therefore not claimed, not stationed, not selected by a strategy,
+  // not counted in coverage, and not journalled as a decision. Reversing it is deleting a
+  // string.
+  //
+  //   "not_ours": ["Some Guest Hero"]
+  not_ours: [],
+
   // ---------------------------------------------------------------- cadence
   cadence: {
     // Per-character decision interval. DUM's decisions are directional and change

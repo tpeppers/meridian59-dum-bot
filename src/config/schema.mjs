@@ -106,6 +106,15 @@ export function validate(c) {
           `would not actually be yielded. Valid: ${[...ORDER_FIELD_NAMES].join(', ')}`);
   }
 
+  // A LENDING LIST THAT DOES NOT MATCH ANYBODY EXCLUDES NOBODY, SILENTLY. The whole value
+  // of `not_ours` is that DUM stops touching a body somebody else is driving, so a blank
+  // or non-string entry has to be refused here rather than quietly matching nothing.
+  if (!Array.isArray(c.not_ours))
+    say('not_ours', 'must be a list of in-world character names DUM must not drive');
+  else if (c.not_ours.some(n => typeof n !== 'string' || !n.trim()))
+    say('not_ours', 'every entry must be a non-empty character name — an empty entry ' +
+        'excludes nobody and reads as if it did');
+
   // ---- cadence
   for (const k of ['character_ms', 'fleet_ms', 'backoff_ms']) {
     if (!num(c.cadence?.[k]) || c.cadence[k] < 1000)

@@ -133,7 +133,10 @@ export async function tickFleet(ctx, { decide: runRules = true, only = null } = 
     // needs the past gets it as data.
     const memory = ctx.memory?.read() ?? null;
     const observed = await observeFleet(broker, { now,
-      rooms: config.graveyard?.shift === true ? (config.graveyard.rooms ?? []) : [] });
+      rooms: config.graveyard?.shift === true ? (config.graveyard.rooms ?? []) : [],
+      // Bodies another operator is driving. Dropped here so that every consumer below --
+      // the claim, the stations, the strategies, coverage -- is unaware they exist.
+      notOurs: config.not_ours ?? [] });
     const strategies = ctx.strategies?.snapshot((observed.characters ?? [])
       .filter(r => r.in_game).map(r => r.agent)) ?? null;
     const agents = (observed.characters ?? []).filter(r => r.in_game).map(r => r.agent);

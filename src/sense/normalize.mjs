@@ -89,7 +89,16 @@ export function normalizeFleetRow(r = {}) {
     // `banked: null` means nobody has seen this character at a counter — which is not
     // a balance of zero and must never be rendered as one.
     purse: num(r.purse),
-    banked: num(r.banked?.value ?? r.banked),
+    // `.balance` IS WHAT THE BROKER SENDS, and this line used to read only `.value`.
+    // The fleet row carries `s.bankKnown()` verbatim — `{balance, account, at, observed}`
+    // — so `r.banked?.value` was always undefined, the fallback handed `num()` an object,
+    // and every character's balance normalised to null. Indistinguishable from "nobody has
+    // seen this character at a counter", which is what null is reserved to mean.
+    //
+    // Measured 2026-09-08, once a shadowed `bankKnown()` stub in the broker was removed and
+    // the field finally arrived: four characters holding 21,625 / 26,664 / 13,027 / 10,306
+    // — a fleet that reads as having no money at all anywhere it is asked.
+    banked: num(r.banked?.balance ?? r.banked?.value ?? r.banked),
     carrying: num(r.carrying),
     has_weapon: bool(r.has_weapon),
     wielding: str(r.wielding),
@@ -98,6 +107,15 @@ export function normalizeFleetRow(r = {}) {
     // PlayerCanLearn or teacher lookup; the harness and compendium already share that
     // calculation, and this strategy consumes their answer as ordinary observation data.
     learning: r.learning ?? null,
+    // PER-SKILL ABILITIES, which `learning` above does NOT carry. It answers "what level is
+    // this character working toward" with one number; choosing a training weapon needs the
+    // individual abilities, because an armed proficiency stops improving at the target's
+    // level (stroke.kod:115) and only the per-skill value says which ones are still alive.
+    //
+    // This row builder is a whitelist: a field the broker sends and this omits is dropped
+    // here silently, which is exactly how the first version of the training selector
+    // returned `undefined` for every character while the broker was sending the data.
+    skills: Array.isArray(r.skills) ? r.skills : null,
     // The keeper's own commitment description: errand | driven | parked | partner.
     // The board calls it `committed`.
     commitment: r.committed ?? r.commitment ?? null,

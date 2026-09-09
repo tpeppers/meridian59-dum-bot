@@ -84,6 +84,28 @@ export const ORDER_FIELDS = {
   roam:              { policy: 'roam' },
   roam_limit:        { policy: 'roamLimit' },
   weapon_priority:   { policy: 'weaponPriority', compare: sameList },
+  // TRAINING STYLE IS A WEAPON DECISION NO PRESET CAN MAKE, because bare hands are not a
+  // weapon and no ranking can name them. The harness has carried it the whole time
+  // (m59-broker.mjs `training_style` -> `policy.trainingStyle`, enum normal | short_sword |
+  // unarmed | alternate) and DUM had no way to say it — the same two-file shape as
+  // `inky_reserve` above, and the same failure if only one half lands.
+  //
+  // WHY IT IS WORTH ADDING. Armed and unarmed improve on DIFFERENT rules. stroke.kod:98-121
+  // gates the armed path on `ability < target_level`, so a level-50 fungus beast stops
+  // teaching short sword proficiency dead at 50; unarmed.kod:57-66 has no level gate at all,
+  // so brawling and punch run to 99 on that same target. `alternate` is the only setting
+  // that trains both halves of the Weaponcraft level-2 pair on prey this small — and that
+  // pair is exactly what gates hammer, axe and sword.
+  training_style:    { policy: 'trainingStyle' },
+  // The WEAPON the armed half holds. Separate from the style because the style is a
+  // schedule ("alternate") and this is the thing being trained — and it is chosen per
+  // character from what each one can still advance, so it cannot live in the doctrine.
+  training_weapon:   { policy: 'trainingWeapon' },
+  // Cast the Kraanan personal enchantments on whoever else is in the room. An OBJECT,
+  // so the diff needs a structural compare rather than ===, or an unchanged setting
+  // reads as different on every pass and redeploys the whole station for ever.
+  buff_allies:       { policy: 'buffAllies',
+                       compare: (a, b) => JSON.stringify(a ?? null) === JSON.stringify(b ?? null) },
   drop_junk:         { policy: 'dropJunk' },
   use_safe_spots:    { policy: 'useSafeSpots' },
   hold_resume_above: { policy: 'holdResumeAbove' },

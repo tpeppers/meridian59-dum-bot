@@ -13,6 +13,7 @@ import { shiftAssignments, shiftFleetRules } from '../src/decide/rules/shift.mjs
 import { HUNT_ROOMS, QUARRY_LEVEL, admits, engagementCeiling, cryptAssignment,
   STRATEGY_IDS } from '../src/strategies/catalog.mjs';
 import { weaponFleetRules } from '../src/decide/rules/weapons.mjs';
+import { castleVictoriaFleetRules } from '../src/decide/rules/castle-victoria.mjs';
 import { presetForQuarry } from '../src/decide/weapons.mjs';
 
 const test = globalThis.__dumTest;
@@ -345,4 +346,313 @@ test('shift: the shipped doctrine leaves the fleet in one room', () => {
     'castle, its overflow, and the floor for the ground-down — nothing that needs a journey');
   assert.equal(d.shift.stations.some(st => st.room === 70), false,
     'the graveyard is off: its corridor costs more than its window returns');
+});
+
+test('shift: the deploy payload and the order diff agree on training style', () => {
+  // TWO PLACES COMPUTE THE SAME ORDER AND THEY MUST NOT DISAGREE. `needsOrders` compares
+  // what the row already holds against a freshly-built `orders` object; the deploy step a
+  // few lines down builds the payload that is actually sent. When the diff used the
+  // DOWNGRADED style and the payload used the station's raw one, a character who qualified
+  // for the downgrade was found to differ on every single pass — compared as `unarmed`,
+  // deployed as `alternate_on_improve`, never converging and never switching.
+  //
+  // Measured on one character, 2026-09-08: mace fighting 56 and short sword fighting 50 against a
+  // level-50 quarry, brawling 5. Nothing armed could advance, so the whole bout should be
+  // unarmed, and the board showed `alternate_on_improve` indefinitely.
+  const d = doctrine();
+  // 544 is the fungus-beast floor: quarry level 50, which is what makes a short sword at
+  // exactly 50 dead there. Station 38's skeletons are level 75 and everything still
+  // qualifies against them, so the station matters as much as the abilities do.
+  for (const s of d.shift.stations) s.share = s.room === 544 ? 1.0 : 0;
+  const st = d.shift.stations.find(s => s.room === 544);
+  st.training_style = 'alternate_on_improve';
+
+  const capped = { ...rows(1)[0], agent: 'capped', room: 999, hunting: 'fungus beast',
+    skills: [{ name: 'mace fighting', ability: 56 },
+             { name: 'short sword fighting', ability: 50 },
+             { name: 'brawling', ability: 5 }] };
+  const open = { ...rows(1)[0], agent: 'open', room: 999, hunting: 'fungus beast',
+    skills: [{ name: 'short sword fighting', ability: 50 },
+             { name: 'hammer wielding', ability: 7 }] };
+
+  const styleOf = row => {
+    const step = (fire([row], d).plan ?? []).find(p => p.do === 'deploy' && p.agent === row.agent);
+    assert.ok(step, `${row.agent} was never deployed`);
+    return step;
+  };
+
+  const g = styleOf(capped);
+  assert.equal(g.training_style, 'unarmed',
+    'nothing armed can advance, so the armed half is dropped rather than run dead');
+  assert.equal(g.training_weapon, undefined, 'and no weapon is named');
+
+  // The downgrade is not a blanket disable: a character who still holds a live armed
+  // proficiency keeps the alternation and is handed that weapon.
+  const c = styleOf(open);
+  assert.equal(c.training_style, 'alternate_on_improve');
+  assert.equal(c.training_weapon, 'hammer', 'the highest-level skill still below the cap');
+});
+
+test('shift: a tier gated on requirements takes everyone who qualifies', () => {
+  // A GRADUATION TIER HAS NO SHARE, AND THAT USED TO MEAN IT TOOK NOBODY.
+  //
+  // `want` is `round(eligible * share)` for any station that is neither the last nor
+  // banded, and a tier written as `requires: [...]` with no share is exactly that — so it
+  // computed zero seats, and being not-last it did not absorb the remainder either. Every
+  // character that qualified fell through to the floor it had just graduated out of, and
+  // nothing looked wrong: the tier was present and its predicate answered true.
+  //
+  // Measured 2026-09-08: three characters held a level-3 Weaponcraft skill and
+  // all three stayed in the valley.
+  const d = doctrine();
+  d.shift.stations = [
+    { room: 39, hunt: ['battered skeleton'],
+      requires: [{ skill: ['hammer wielding', 'axe wielding', 'fencing'] }] },
+    { room: 544, hunt: ['fungus beast'] },
+  ];
+  const holder = ab => [{ name: 'short sword fighting', ability: 50 }, ...ab];
+  const live = [
+    { ...rows(1)[0], agent: 'grad1', skills: holder([{ name: 'axe wielding', ability: 3 }]) },
+    { ...rows(1)[0], agent: 'grad2', skills: holder([{ name: 'fencing', ability: null }]) },
+    { ...rows(1)[0], agent: 'floor1', skills: holder([]) },
+    { ...rows(1)[0], agent: 'floor2', skills: holder([{ name: 'mace fighting', ability: 56 }]) },
+  ];
+  const at = Object.fromEntries(
+    shiftAssignments(live, d, { characters: live, strategies: { agents: {} } })
+      .map(a => [a.row.agent, a.to]));
+
+  assert.equal(at.grad1, 39, 'holding a level-3 skill graduates');
+  assert.equal(at.grad2, 39, 'even with no ability reading yet — presence is the test');
+  assert.equal(at.floor1, 544, 'and everyone else stays on the floor');
+  assert.equal(at.floor2, 544);
+
+  // The ladder is not two rungs — it must compose. A third tier in front of the other two
+  // takes its own qualifiers and leaves the rest to fall through, first match winning.
+  d.shift.stations.unshift({ room: 38, hunt: ['skeleton'],
+    requires: [{ skill: 'scimitar wielding' }] });
+  live[0].skills.push({ name: 'scimitar wielding', ability: 1 });
+  const at3 = Object.fromEntries(
+    shiftAssignments(live, d, { characters: live, strategies: { agents: {} } })
+      .map(a => [a.row.agent, a.to]));
+  assert.equal(at3.grad1, 38, 'the most-graduated tier is written first and wins');
+  assert.equal(at3.grad2, 39, 'the tier below still takes its own');
+  assert.equal(at3.floor1, 544);
+});
+
+test('shift: the weapon priority leads with the weapon the training order names', () => {
+  // TWO FIELDS IN ONE ORDER MUST NOT NAME DIFFERENT WEAPONS. `training_weapon` is chosen
+  // per character; `weapon_priority` came from TRAINING_PRESET, which maps every armed
+  // style to `shortSwording` unconditionally. So an order could say "train with a long
+  // sword" and, in the same payload, rank short sword first — and the keeper drew a short
+  // sword for every fight that was not a training bout.
+  const d = doctrine();
+  for (const s of d.shift.stations) s.share = s.room === 544 ? 1.0 : 0;
+  d.shift.stations.find(s => s.room === 544).training_style = 'alternate_on_improve';
+
+  const priorityOf = skills => {
+    const row = { ...rows(1)[0], agent: 'x', room: 999, skills };
+    const step = (fire([row], d).plan ?? []).find(p => p.do === 'deploy');
+    return step?.weapon_priority ?? [];
+  };
+
+  const hammer = priorityOf([{ name: 'short sword fighting', ability: 50 },
+                             { name: 'hammer wielding', ability: 7 }]);
+  assert.equal(hammer[0], 'hammer', 'the chosen weapon ranks first');
+  assert.equal(hammer.filter(n => n === 'hammer').length, 1, 'and is not left in twice');
+  assert.ok(hammer.includes('short sword'), 'the preset still supplies the rest of the ranking');
+
+  // Nothing chosen -> the station's preset, untouched. Every doctrine written before the
+  // per-character selector must behave exactly as it did.
+  const plain = priorityOf([{ name: 'short sword fighting', ability: 3 }]);
+  assert.equal(plain[0], 'short sword');
+});
+
+test('shift: stations and the Castle Victoria shift are never both in charge', () => {
+  // BOTH RULES SEND `autopilot start` WITH A ROOM. With both enabled they overwrite each
+  // other every pass and the winner is decided by table position, which is not a policy.
+  //
+  // Measured 2026-09-08: the weaponcraft doctrine inherited `castle_victoria.shift: true`
+  // and was saved only by `feast-hall-larder` starving it from above. When that stopped,
+  // one pass assigned all 21 characters to room 39 at `upstairs_share: 1` — eighteen of
+  // them off the fungus beasts their station had put them on.
+  const rule = castleVictoriaFleetRules.find(r => r.id === 'castle-victoria-undead-shift');
+  assert.equal(rule.enabled({ castle_victoria: { shift: true }, shift: { on: true } }), false,
+    'written stations own room assignment');
+  assert.equal(rule.enabled({ castle_victoria: { shift: true }, shift: { on: false } }), true);
+  assert.equal(rule.enabled({ castle_victoria: { shift: true } }), true,
+    'a doctrine that never mentions the shift is unaffected');
+  assert.equal(rule.enabled({ castle_victoria: { shift: false }, shift: { on: true } }), false);
+
+  // And the shipped training doctrine is one of the doctrines that would have collided.
+  const d = loadDoctrine({ file: 'doctrines/local/prod-weaponcraft-training.jsonc' }).config;
+  assert.equal(d.shift.on, true);
+  assert.equal(rule.enabled(d), false);
+});
+
+test('shift: a weapon the character does not carry is never the training weapon', () => {
+  // THE PROFICIENCY AND THE STEEL ARE TWO QUESTIONS. `prepareTrainingStyle` cancels a bout
+  // whose weapon it cannot produce rather than substituting one, so naming an absent weapon
+  // does not make the training worse — it makes it not happen, silently, while every board
+  // still shows the character fighting.
+  //
+  // Measured 2026-09-08: told to train `short sword`, THREE of twenty-one were carrying one.
+  const d = doctrine();
+  for (const s of d.shift.stations) s.share = s.room === 544 ? 1.0 : 0;
+  d.shift.stations.find(s => s.room === 544).training_style = 'short_sword';
+
+  const skills = [{ name: 'short sword fighting', ability: 20 },
+                  { name: 'mace fighting', ability: 44 }];
+  const step = extra => {
+    const row = { ...rows(1)[0], agent: 'x', room: 999, skills, ...extra };
+    return (fire([row], d).plan ?? []).find(p => p.do === 'deploy');
+  };
+
+  const armed = step({ pack_items: ['short sword', 'bread'] });
+  assert.equal(armed.training_weapon, 'short sword');
+  assert.equal(armed.training_style, 'short_sword');
+
+  // A mace is Weaponcraft LEVEL 1 and counts toward nothing the level-3 unlock reads, so a
+  // character carrying only a mace is better off with bare hands: brawling is level 2 and
+  // has no cap.
+  const maceOnly = step({ pack_items: ['mace'] });
+  assert.equal(maceOnly.training_style, 'unarmed');
+  assert.equal(maceOnly.training_weapon, undefined);
+
+  const empty = step({ pack_items: [] });
+  assert.equal(empty.training_style, 'unarmed', 'an empty pack cannot run an armed bout');
+
+  // AN UNREADABLE PACK IS NOT AN EMPTY ONE. `pack_items: null` means nobody looked, and
+  // disarming the fleet on a field that failed to load is the failure this codebase keeps
+  // recording. Behave exactly as before the filter existed.
+  const unknown = step({ pack_items: null });
+  assert.equal(unknown.training_weapon, 'short sword');
+  assert.equal(unknown.training_style, 'short_sword');
+
+  // What is in HAND counts even when the pack list has not caught up with it.
+  const inHand = step({ pack_items: [], wielding: 'short sword' });
+  assert.equal(inHand.training_weapon, 'short sword');
+});
+
+// NAMING CHARACTERS ON A STATION. The role that does not fit a tier: a buff caster
+// qualifies for the graduated room on skills and is wanted with the characters it buffs,
+// because a personal enchantment only reaches somebody in the same room.
+test('a station with `only` takes that character and nobody else', () => {
+  const st = [
+    { room: 544, only: ['Ada'], hunt: ['fungus beast'], training_style: 'short_sword' },
+    { room: 39, hunt: ['battered skeleton'], training_style: 'short_sword' },
+  ];
+  const d = doctrine();
+  d.shift = { ...d.shift, on: true, stations: st };
+  const rs = rows(4).map((r, i) => ({ ...r, character: ['Ada', 'Bea', 'Cyd', 'Dee'][i] }));
+  const got = shiftAssignments(rs, d);
+  const byName = Object.fromEntries(got.filter(Boolean).map(a => [a.row.character, a.to]));
+  assert.equal(byName.Ada, 544, 'the named character takes the named station');
+  for (const n of ['Bea', 'Cyd', 'Dee'])
+    assert.equal(byName[n], 39, `${n} is not admitted to a station that names somebody else`);
+});
+
+// The failure this guards is the one already written up above `takesAll`: a gate with no
+// `share` computes want = round(n * 0) = 0, seats nobody, and -- not being the last
+// station -- does not absorb the remainder either. The tier bug, in a new coat.
+test('a station named for one character is not handed zero seats', () => {
+  const d = doctrine();
+  d.shift = { ...d.shift, on: true, stations: [
+    { room: 544, only: ['Ada'], hunt: ['fungus beast'], training_style: 'short_sword' },
+    { room: 39, hunt: ['battered skeleton'], training_style: 'short_sword' },
+  ] };
+  const rs = rows(3).map((r, i) => ({ ...r, character: ['Ada', 'Bea', 'Cyd'][i] }));
+  const a = shiftAssignments(rs, d).find(x => x?.row?.character === 'Ada');
+  assert.equal(a.to, 544, 'the named station seated its one character');
+});
+
+test('`except` keeps a qualified character out of a station it would otherwise take', () => {
+  const d = doctrine();
+  d.shift = { ...d.shift, on: true, stations: [
+    { room: 39, except: ['Ada'], hunt: ['battered skeleton'], training_style: 'short_sword' },
+    { room: 544, hunt: ['fungus beast'], training_style: 'unarmed' },
+  ] };
+  const rs = rows(2).map((r, i) => ({ ...r, character: ['Ada', 'Bea'][i] }));
+  const byName = Object.fromEntries(shiftAssignments(rs, d).filter(Boolean)
+    .map(a => [a.row.character, a.to]));
+  assert.equal(byName.Ada, 544, 'excluded from 39, so it falls to the floor');
+  assert.equal(byName.Bea, 39, 'everybody else is unaffected');
+});
+
+test('a station gate matches the agent id as well as the character name', () => {
+  const d = doctrine();
+  d.shift = { ...d.shift, on: true, stations: [
+    { room: 544, only: ['unit-a'], hunt: ['fungus beast'], training_style: 'short_sword' },
+    { room: 39, hunt: ['battered skeleton'], training_style: 'short_sword' },
+  ] };
+  // Agent ids rather than character names, and deliberately not the live fleet's: the ids
+  // this fleet uses are also its account passwords, so the guard treats a literal one in a
+  // tracked file as a leaked secret. It is right to.
+  const rs = rows(2).map((r, i) => ({ ...r, agent: ['unit-a', 'unit-b'][i],
+                                      character: ['Ada', 'Bea'][i] }));
+  const byId = Object.fromEntries(shiftAssignments(rs, d).filter(Boolean)
+    .map(a => [a.row.agent, a.to]));
+  assert.equal(byId['unit-a'], 544, 'matched on the agent id');
+  assert.equal(byId['unit-b'], 39);
+});
+
+test('a station with neither gate is unchanged', () => {
+  const d = doctrine();
+  d.shift = { ...d.shift, on: true, stations: [
+    { room: 39, hunt: ['battered skeleton'], training_style: 'short_sword' },
+  ] };
+  const rs = rows(3).map((r, i) => ({ ...r, character: ['Ada', 'Bea', 'Cyd'][i] }));
+  for (const a of shiftAssignments(rs, d)) assert.equal(a.to, 39);
+});
+
+// AN ORDER FIELD IS A FOUR-FILE CHANGE AND SILENCE IS ITS FAILURE MODE.
+//
+// fleet-plan.mjs says it in its own comment: a field the rule sets and that whitelist omits
+// is dropped with no error raised anywhere — the doctrine reads correct, the journal shows
+// the rule firing, and the keeper never hears it. These tests walk the whole chain for
+// `buff_allies` so a future edit that drops one of the four halves fails here instead.
+test('buff_allies survives the station -> intent -> plan chain', () => {
+  const d = doctrine();
+  const buff = { enabled: true, spells: ['super strength', 'bless'] };
+  d.shift = { ...d.shift, on: true, stations: [
+    { room: 39, hunt: ['battered skeleton'], training_style: 'short_sword', buff_allies: buff },
+  ] };
+  const rs = rows(2, { room: 999 });                 // out of position, so it deploys
+  const out = fire(rs, d);
+  const steps = JSON.stringify(out?.steps ?? out?.intents ?? out);
+  assert.ok(steps.includes('buff_allies'),
+    'the rule must put buff_allies on the intent, or the plan has nothing to carry');
+  assert.ok(steps.includes('super strength'), 'and the spell list must survive with it');
+});
+
+test('a station that does not ask for it emits nothing', () => {
+  const d = doctrine();
+  d.shift = { ...d.shift, on: true, stations: [
+    { room: 39, hunt: ['battered skeleton'], training_style: 'short_sword' },
+  ] };
+  const out = fire(rows(2, { room: 999 }), d);
+  const steps = JSON.stringify(out?.steps ?? out?.intents ?? out);
+  assert.ok(!steps.includes('buff_allies'),
+    'undefined is dropped by the diff, so every doctrine written before this is unchanged');
+});
+
+test('the schema refuses a bare true, which the broker would reject at the door', () => {
+  // The trap: the harness reports an unrecognised value rather than applying it, and the
+  // order diff throws at the END of its loop — so one bad field discards the room, the hunt
+  // and the training style in the same intent, and the station silently stops deploying.
+  const bad = { shift: { on: true, stations: [{ room: 39, buff_allies: true }] } };
+  const said = JSON.stringify(validate(bad));
+  assert.match(said, /buff_allies/, 'the schema has to catch it before the broker does');
+});
+
+test('the schema refuses an object that does not say enabled', () => {
+  const bad = { shift: { on: true, stations: [{ room: 39, buff_allies: { spells: ['bless'] } }] } };
+  assert.match(JSON.stringify(validate(bad)), /buff_allies\.enabled/);
+});
+
+test('a well-formed buff_allies passes validation', () => {
+  const good = { shift: { on: true, stations: [
+    { room: 39, hunt: ['battered skeleton'], buff_allies: { enabled: true, spells: ['bless'] } },
+  ] } };
+  const said = JSON.stringify(validate(good));
+  assert.ok(!/buff_allies/.test(said), `unexpected complaint: ${said}`);
 });

@@ -115,6 +115,15 @@ export function callsForFleetPlan(plan = [], why = null) {
         roam: step.roam,
         use_safe_spots: step.use_safe_spots,
         weapon_priority: step.weapon_priority,
+        // THIS OBJECT IS A WHITELIST AND SILENCE IS ITS FAILURE MODE. A field the rule sets
+        // and this list omits is dropped here with no error raised anywhere: the doctrine
+        // reads correct, the journal shows the rule firing, and the keeper never hears it.
+        // Adding an order field is a FOUR-file change — schema.mjs to validate it,
+        // shift.mjs to put it on the intent, this object to carry it, and orders.mjs so the
+        // diff can tell whether it already matches.
+        training_style: step.training_style,
+        training_weapon: step.training_weapon,
+        buff_allies: step.buff_allies,
         strategy: step.strategy,
         rest_below: step.rest_below,
         fight_above_vigor: step.fight_above_vigor,

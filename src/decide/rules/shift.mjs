@@ -16,7 +16,9 @@
 // ceiling cannot admit the level-75 skeleton falls through to the level-40 spectral mummy
 // in 2600 instead of being sent to a room where it will refuse everything that appears.
 
-import { STRATEGY_IDS, strategyEnabled, HUNT_ROOMS, admits, engagementCeiling }
+import { keeperWeaponPriority, presetForTraining } from '../weapons.mjs';
+import { trainingWeaponFor, stationTargetLevel } from '../training.mjs';
+import { STRATEGY_IDS, strategyEnabled, HUNT_ROOMS, admits, engagementCeiling, QUARRY_LEVEL }
   from '../../strategies/catalog.mjs';
 import { activeFactionWork } from './factions.mjs';
 import { takeable } from '../engine.mjs';
@@ -101,8 +103,101 @@ const admitsStation = (st, maxHealth) => {
  * schema's coverage check, the handover that notices a character has changed band, and the
  * `plan` output an operator reads.
  */
-export function stationIndexFor(stations = [], maxHealth) {
-  return stations.findIndex(st => bandAdmits(st, maxHealth) && admitsStation(st, maxHealth));
+// A STATION MAY ALSO REQUIRE SKILLS, AND THAT IS WHAT MAKES TIERS GENERAL.
+//
+// `max_health` bands answer "how big is this character". They cannot answer "has it
+// graduated" — which is the question every tier after the first actually asks. A character
+// that has bought hammer wielding belongs somewhere its hammer can advance; one that has
+// not belongs where its short sword can. Both are the same shape:
+//
+//   "requires": { "skill": "hammer wielding", "at_least": 1 }
+//   "requires": [ { "skill": "hammer wielding" }, { "skill": "short sword fighting", "at_least": 50 } ]
+//
+// `at_least` defaults to 1, which reads as "holds it at all" — the common case, because a
+// bought skill starts above zero and a skill at zero cannot be trained by use anyway
+// (skill.kod:342-345). A list means every clause must hold.
+//
+// UNKNOWN IS REFUSED, exactly as it is for a max-health band. A row whose skills were not
+// reported is a question, not a permission; admitting it would graduate a character on the
+// strength of a missing field, and the whole point of a tier is that it is checkable.
+// NAMING CHARACTERS ON A STATION, because a fleet is not always uniform.
+//
+//   "only":   ["Ada"]   this station takes NOBODY else
+//   "except": ["Ada"]   this station takes anybody but these
+//
+// Both accept the agent id or the in-world character name, matched
+// case-insensitively, so a doctrine can be written in whichever the operator thinks in.
+//
+// This exists for the role that does not fit a tier. A character can qualify for the
+// graduated station on skills and still be wanted somewhere else -- a buff caster belongs
+// with the characters it buffs, not with the other graduates, because a personal
+// enchantment only reaches somebody standing in the same room (persench.kod:76-100) and
+// bless is gone again inside two minutes. `requires` cannot say that: it gates on what a
+// character HOLDS, and this is a question about what it is FOR.
+//
+// Deliberately not a `characters:` doctrine section. Those are only merged when DUM runs
+// with `--agent <one>` (config/load.mjs:87-96), and the fleet runs unscoped, so a
+// per-character section would be silently ignored -- with a warning nobody reads on a
+// twenty-one character pass.
+export const hasAgentGate = (st = {}) =>
+  [].concat(st?.only ?? []).length > 0 || [].concat(st?.except ?? []).length > 0;
+
+export const admitsAgent = (st = {}, row = {}) => {
+  const norm = v => String(v ?? '').trim().toLowerCase();
+  const names = new Set([norm(row?.agent), norm(row?.character)].filter(Boolean));
+  const listed = key => [].concat(st?.[key] ?? []).map(norm).filter(Boolean);
+  const only = listed('only');
+  if (only.length && !only.some(n => names.has(n))) return false;
+  const except = listed('except');
+  if (except.length && except.some(n => names.has(n))) return false;
+  return true;
+};
+
+/** Does this station gate on qualifications at all? A tier does; the floor does not. */
+export const hasRequirements = (st = {}) =>
+  st?.requires != null && [].concat(st.requires).length > 0;
+
+export function requirementsMet(st = {}, row = {}) {
+  const reqs = st.requires == null ? [] : [].concat(st.requires);
+  if (!reqs.length) return true;
+  const list = row?.skills ?? row?.progress?.skills;
+  if (!Array.isArray(list)) return false;
+  const norm = v => String(v ?? '').trim().toLowerCase();
+  return reqs.every(req => {
+    // A CLAUSE MAY NAME SEVERAL SKILLS, AND THEN IT MEANS *ANY* OF THEM. Graduating on
+    // "hammer, axe or fencing" is one decision, not three, and writing it as three clauses
+    // would mean all three — which nobody has on the day they graduate.
+    const wants = [].concat(req?.skill ?? []).map(norm).filter(Boolean);
+    if (!wants.length) return true;
+    const hit = list.find(x => wants.includes(norm(x.name)));
+    if (!hit) return false;
+
+    // HOLDING IT IS THE TEST, UNLESS A NUMBER WAS ASKED FOR.
+    //
+    // A skill bought a minute ago has NO ability value yet — the server pushes one when it
+    // first moves, so the list reports null until then. Measured 2026-09-08: a character bought
+    // axe wielding and read `axe wielding: None`, so an `at_least: 1` graduation refused
+    // the character it had just been created for. Presence is the graduation; a threshold
+    // is only applied when the doctrine actually states one.
+    const ability = Number(hit.ability ?? hit.percent ?? hit.value);
+    const wantsFloor = Number.isFinite(Number(req.at_least));
+    const wantsCeiling = Number.isFinite(Number(req.below));
+    if (!wantsFloor && !wantsCeiling) return true;
+    if (!Number.isFinite(ability)) return false;   // a threshold needs a number to check
+    return ability >= (wantsFloor ? Number(req.at_least) : -Infinity) &&
+           ability < (wantsCeiling ? Number(req.below) : Infinity);
+  });
+}
+
+/**
+ * Which station this character belongs to, by index, or -1 for none.
+ *
+ * FIRST MATCH WINS, so stations are written most-graduated FIRST: a character that meets a
+ * later tier's requirements should never be caught by an earlier one it also fits.
+ */
+export function stationIndexFor(stations = [], maxHealth, row = null) {
+  return stations.findIndex(st => bandAdmits(st, maxHealth) && admitsStation(st, maxHealth) &&
+    (row == null || requirementsMet(st, row)));
 }
 
 /** A stable name for a station, for the memory and for the journal. */
@@ -247,7 +342,8 @@ export function shiftAssignments(rows = [], doctrine = {}, fleetObs = { characte
   // the first of the three would hand an under-50 character to the castle by the back door
   // and call it an overflow.
   const eligible = stations.map(st => new Set(opted
-    .filter(row => bandAdmits(st, row.level) && admitsStation(st, row.level))
+    .filter(row => bandAdmits(st, row.level) && admitsStation(st, row.level) &&
+                   requirementsMet(st, row) && admitsAgent(st, row))
     .map(row => row.agent)));
 
   const taken = new Set();
@@ -281,8 +377,27 @@ export function shiftAssignments(rows = [], doctrine = {}, fleetObs = { characte
     //
     // A share still wins where one is written, because "put a third of the eligible over
     // there" is a different instruction from "this room is for these characters".
-    const bandTakesAll = stationBand(st) != null && !Number.isFinite(share);
-    const want = Math.min(cap, (bandTakesAll || i === stations.length - 1) ? pool.length
+    //
+    // A REQUIREMENT GATE IS THE SAME KIND OF INSTRUCTION AS A BAND, and this line did not
+    // say so. A tier written as `requires: [{skill: [...]}]` with no share computed
+    // `want = round(n * 0)` = 0 and took nobody -- and because it is not the LAST station
+    // it did not absorb the remainder either, so every character that qualified for it
+    // fell straight through to the floor. Nothing reported a fault: the tier existed, its
+    // predicate answered true for the right three characters, and the allocator handed it
+    // zero seats.
+    //
+    // Measured 2026-09-08: three characters all held a level-3 Weaponcraft skill
+    // and all stayed in the valley they had graduated out of.
+    //
+    // "This room is for the characters who qualify" is what BOTH gates mean, so both take
+    // their whole eligible pool unless a share overrides with a proportion. This is what
+    // makes an arbitrary tier ladder work: write the tiers most-graduated first, give each
+    // one its `requires`, and every character lands in the highest tier it qualifies for.
+    // A NAMED STATION IS THE SAME KIND OF INSTRUCTION, and for the same reason: "this room
+    // is for that one character" with no share computes want = round(n * 0) = 0 and seats nobody.
+    const takesAll = (stationBand(st) != null || hasRequirements(st) || hasAgentGate(st)) &&
+      !Number.isFinite(share);
+    const want = Math.min(cap, (takesAll || i === stations.length - 1) ? pool.length
       : Math.round(opted.filter(row => eligible[i].has(row.agent)).length *
           (Number.isFinite(share) ? share : 0)));
     for (const row of pool.slice(0, Math.max(0, want))) {
@@ -329,10 +444,88 @@ export function shiftAssignments(rows = [], doctrine = {}, fleetObs = { characte
 // processes, which meant cohort membership was a hand-maintained list of names.
 const posture = (st, shift, key) => st?.[key] ?? shift?.[key];
 
+// THE WEAPON A STATION'S TRAINING STYLE IMPLIES, or undefined when it implies none.
+//
+// Undefined rather than null or an empty list, and the distinction is load-bearing: the
+// order diff DROPS undefined and leaves the keeper whatever it had, while an empty list
+// means "go back to ranking by proficiency" on the harness side. A station that says
+// nothing about training must not quietly reset a unit's weapon order.
+// THE WEAPON THIS CHARACTER CAN STILL LEARN FROM, against the hardest thing its station
+// hunts. Returns undefined rather than a guess when the skill book was not read: choosing a
+// weapon from a missing field is how a character trains something it finished weeks ago.
+const trainedWeapon = (a, doctrine) => {
+  const style = posture(a.station, doctrine.shift, 'training_style');
+  if (!style || style === 'normal' || style === 'unarmed') return undefined;
+  const cap = stationTargetLevel(a.hunt ?? huntList(a.station), QUARRY_LEVEL);
+  return cap == null ? undefined : (trainingWeaponFor(a.row, cap) ?? undefined);
+};
+
+// THE STYLE A ROW ACTUALLY DESERVES, which is not always the one the station names.
+//
+// A training regimen should only ever train something VALID, and the first version of this
+// did not: when no armed proficiency could still advance against the quarry, the selector
+// returned nothing, the order omitted `training_weapon`, and the keeper fell back to its
+// default of short sword — a weapon that, for the character in question, had already
+// reached the target's level and taught nothing at all.
+//
+// Measured on prod 2026-09-08. One character's short sword hit exactly 50 against a level-50 fungus
+// beast; he holds no level-3 skill, so nothing armed qualified. He kept the alternation,
+// kept swinging, and the armed half of every bout was dead. Fleet-wide the same shape cost
+// 173 of 355 kills in one thirty-minute window.
+//
+// The unarmed half has NO level gate at all (unarmed.kod:57-66 improves brawling and punch
+// with no comparison against the target), so it is always valid and is the right answer
+// whenever the armed half is not. `normal` and `unarmed` are left exactly as written: a
+// station that has already opted out of armed training is not asking this question.
+const trainingStyleFor = (a, doctrine) => {
+  const style = posture(a.station, doctrine.shift, 'training_style');
+  if (!style || style === 'normal' || style === 'unarmed') return style;
+  return trainedWeapon(a, doctrine) ? style : 'unarmed';
+};
+
+// AND THE PRIORITY LIST HAS TO NAME THE SAME WEAPON THE TRAINING ORDER DOES.
+//
+// TRAINING_PRESET maps every armed style to `shortSwording`, which was true while short
+// sword was the only proficiency anyone trained. It stopped being true the moment the
+// selector started choosing per character: the order said `training_weapon: "long sword"`
+// and the priority beside it said short sword first, so the keeper drew a short sword for
+// every fight that was not a training bout and the operator saw exactly what they reported
+// — "I keep seeing them use other weapons".
+//
+// The chosen weapon goes to the front and the preset supplies the rest of the ranking, so
+// a character with no choice made behaves exactly as before.
+const trainingPriority = (a, doctrine) => {
+  const preset = presetForTraining(posture(a.station, doctrine.shift, 'training_style'));
+  if (!preset) return undefined;
+  const list = keeperWeaponPriority(preset, doctrine.weapons?.presets);
+  const trained = trainedWeapon(a, doctrine)?.weapon;
+  if (!trained) return list;
+  const same = n => String(n).trim().toLowerCase() === String(trained).trim().toLowerCase();
+  return [trained, ...list.filter(n => !same(n))];
+};
+
+// WHAT COUNTS AS DRIFT, AND TWO THINGS THIS GOT WRONG.
+//
+// `p.roam !== false` was HARDCODED, so a station that asked for roaming was permanently in
+// drift: roam is true, true !== false, redeploy — every pass, for ever. Measured on prod
+// 2026-09-08 with `roam: true` on the training station: the shift fired on nearly every
+// fleet tick, deploying 17-21 units each time, and because fleet rules are first-match-wins
+// it starved `maintain-qualifying-weapons` — the only rule that pushes a weapon priority —
+// out of its turn entirely. A hardcoded expectation and a doctrine that disagrees with it
+// is an infinite loop wearing the clothes of a working fleet.
+//
+// And the TRAINING fields were not compared at all, so a doctrine could change which weapon
+// a character trains with and no character would ever be told: the intent was correct, the
+// diff said "no drift", and nothing was sent. Same shape as the roam bug, opposite sign.
 const needsOrders = (row, orders) => {
   const p = row.policy ?? {};
   return row.mode !== 'farm' || p.assignedRoom !== orders.to ||
-    !sameHunt(p.hunt, orders.hunt) || p.roam !== false || p.purpose !== 'advance';
+    !sameHunt(p.hunt, orders.hunt) || p.purpose !== 'advance' ||
+    (p.roam === true) !== (orders.roam === true) ||
+    // `undefined` on either side means "nothing asked for" — only a real disagreement is
+    // drift, or a doctrine that says nothing about training would redeploy for ever.
+    (orders.training_style !== undefined && p.trainingStyle !== orders.training_style) ||
+    (orders.training_weapon !== undefined && p.trainingWeapon !== orders.training_weapon);
 };
 
 // A HUNT IS A SET, AND COMPARING IT WITH `!==` MEANT REDEPLOYING EVERY PASS.
@@ -353,6 +546,13 @@ export const shiftFleetRules = [{
   id: 'hunt-shift',
   faculty: 'work',
   scope: 'fleet',
+  // NO `needs: ['progress']` HERE, AND THAT IS THE POINT.
+  //
+  // The first version declared it, because the selector wants per-skill abilities. But
+  // `progress` is a PER-AGENT read of four server requests, and a fleet rule declaring it
+  // turns one observation into eighty-four calls — the plan simply stopped producing
+  // output. The abilities now ride on the fleet row itself (m59-broker.mjs sets `skills`
+  // from cachedLearningRows, cache-only), so the same decision costs nothing.
   enabled: doctrine => doctrine.shift?.on === true,
   offWhy: 'shift.on is off',
   why: 'units running Short swording belong in a crypt room that generates their quarry, with roaming off',
@@ -375,7 +575,14 @@ export const shiftFleetRules = [{
       // character across the world, and the loser is whichever one is interrupted.
       if (!takeable(a.row) || a.row.parked || a.row.piloted ||
           activeFactionWork(observation, a.row)) { busy += 1; return []; }
-      const orders = { to: a.to, hunt: a.hunt };
+      const orders = { to: a.to, hunt: a.hunt,
+        roam: posture(a.station, doctrine.shift, 'roam') === true,
+        training_style: trainingStyleFor(a, doctrine),
+        training_weapon: trainedWeapon(a, doctrine)?.weapon,
+        // BOTH EMIT SITES OR NEITHER. The diff above and the deploy payload below must
+        // compute every field the same way; the one time they did not, a character was
+        // found to differ on every pass and redeployed for ever without changing.
+        buff_allies: a.station?.buff_allies ?? undefined };
       // ORDERS MATCHING IS NOT THE SAME AS BEING THERE, and conflating the two is how a
       // shift quietly stops working. `deploy` sets the assignment and leaves the walk to
       // the keeper, which is correct — movement is a one-second decision and the keeper
@@ -417,16 +624,46 @@ export const shiftFleetRules = [{
       }
       return [{
         do: 'deploy', agent: a.row.agent, to: a.to, hunt: a.hunt,
-        roam: false, purpose: 'advance',
+        // ROAM DEFAULTS OFF AND THE STATION MAY SAY OTHERWISE. This was a hardcoded `false`,
+        // which meant a station writing `roam: true` was accepted by the schema, printed in
+        // the doctrine, and silently ignored — the shape this file already warns about twice.
+        // The default stays false so every existing doctrine behaves exactly as before; only
+        // a station that asks for roaming gets it. It matters where the quarry has to be
+        // walked up to rather than waited for: a character that stands still lands no hits,
+        // and improvement rolls fire from AssessHit.
+        roam: posture(a.station, doctrine.shift, 'roam') === true, purpose: 'advance',
         // `purpose` without `goals` is not a working audit — `yieldCheck` answers
         // "purpose is `advance` but no goals are set, so nothing can be checked" and the
         // row renders as not paying whatever the quarry is.
         goals: [{ kind: 'hp' }],
-        // NO WEAPON ORDER HERE. `maintain-qualifying-weapons` owns which order a unit
-        // draws in, from its strategies and the doctrine's preset. This used to hardcode
-        // `shortSwording` — a second home for that decision, and one that went stale the
-        // moment the fleet changed weapon doctrine, quietly reimposing short swords on a
-        // shift that had gone back to blunt.
+        // NO WEAPON ORDER HERE — EXCEPT THE ONE THE STATION ITSELF DICTATES.
+        //
+        // `maintain-qualifying-weapons` still owns the ordinary case: which order a unit
+        // draws in from its strategies and the doctrine's preset. This block used to
+        // hardcode `shortSwording`, which was a second home for that decision and went
+        // stale the moment the fleet changed weapon doctrine, quietly reimposing short
+        // swords on a shift that had gone back to blunt. That rule stands.
+        //
+        // A TRAINING STYLE IS NOT THAT DECISION. It is part of the station — written
+        // beside the room, chosen against the prey — and the weapon it implies is not a
+        // preference the economy rule should be arbitrating. Sending it here is not a
+        // second home; `presetForTraining` in decide/weapons.mjs is the single home, and
+        // both this and the weapon rule read it.
+        //
+        // WHY IT HAD TO MOVE, measured on prod 2026-09-08. The training station said
+        // `training_style: "alternate_on_improve"` and the fleet was holding axes, maces,
+        // hammers and long swords. Two faults stacked: QUARRY_PRESET maps `fungus beast`
+        // to `vsSkeletons` (hammer-first) and outranked the doctrine's `shortSwording`;
+        // and `maintain-qualifying-weapons` — the only thing that pushes weaponPriority —
+        // is a PROVISIONING rule that answered "6/20 selected unit(s) meet the inclusive
+        // axe threshold" and declined to act, because everyone already held *a* weapon.
+        // It hands a weapon to a unit holding none; it was never going to take a hammer
+        // off one and give it a sword. So nothing pushed a priority at all, and the
+        // station's stated intent reached the keeper as silence.
+        //
+        // `undefined` when no training style is set, and the order diff drops undefined —
+        // so a station that says nothing about training changes nothing here.
+        weapon_priority: trainingPriority(a, doctrine),
         max_threat_over: a.max_threat_over,
         flee_below: posture(a.station, doctrine.shift, 'flee_below'),
         rest_below: posture(a.station, doctrine.shift, 'rest_below'),
@@ -442,6 +679,41 @@ export const shiftFleetRules = [{
         // is written beside the room it applies to and not somewhere central.
         max_bots_per_safe_spot: posture(a.station, doctrine.shift, 'max_bots_per_safe_spot'),
         hold_resume_above: posture(a.station, doctrine.shift, 'hold_resume_above'),
+        // TRAINING STYLE IS A PROPERTY OF THE PREY, so it is written beside the room whose
+        // monsters it was chosen against rather than centrally. `alternate` earns its place
+        // only where the quarry's level is BELOW the ability being trained: the armed improve
+        // path is gated on `ability < target_level` (stroke.kod:115) and the unarmed one is
+        // not gated at all (unarmed.kod:57-66), so on a level-50 fungus beast short sword
+        // stalls dead at 50 while bare hands keep paying all the way to 99. On level-75 prey
+        // that asymmetry disappears and `normal` is the better answer. Undefined is dropped
+        // by the order diff, which leaves the keeper whatever it already had.
+        // Downgraded to `unarmed` when this character has no armed proficiency left that
+        // can still advance against the quarry -- see trainingStyleFor. THE DEPLOY PAYLOAD
+        // AND THE ORDER DIFF MUST COMPUTE THIS THE SAME WAY. They did not: the diff above
+        // used the downgraded value and this line used the raw posture, so a character who
+        // qualified for the downgrade was compared as `unarmed`, found to differ, and then
+        // deployed with `alternate_on_improve` -- redeployed every pass, and never actually
+        // switched. Measured on one character, 2026-09-08.
+        training_style: trainingStyleFor(a, doctrine),
+        // AND WHICH WEAPON THE ARMED HALF HOLDS, CHOSEN PER CHARACTER.
+        //
+        // An armed proficiency stops improving at the target's level (stroke.kod:115), so
+        // one weapon named in the doctrine goes stale for whoever outgrows it first while
+        // every board still reads healthy. One character hit exactly that on 2026-09-08: short
+        // sword at 50 against a level-50 fungus beast, hammer at 7 and axe at 3 untouched.
+        //
+        // `undefined` when nothing qualifies or the skills were not read — the order diff
+        // drops it and the keeper keeps its default of short sword, which is what every
+        // doctrine written before this expects.
+        training_weapon: trainedWeapon(a, doctrine)?.weapon,
+        // WHO CASTS FOR THE GROUP, straight off the station. A personal enchantment only
+        // reaches a &User the caster can target, i.e. somebody in the same room
+        // (persench.kod:76-100), so this is a property of the POSTING and not of the
+        // character -- the same caster is worth nothing to the room it is not standing in.
+        //
+        // `undefined` when the station does not ask, which the order diff drops, so every
+        // doctrine written before this behaves exactly as it did.
+        buff_allies: a.station?.buff_allies ?? undefined,
         // `strategy` AND `fight_above_vigor` TRAVEL TOGETHER OR THE FLOOR IS ZEROED.
         //
         // The harness's start handler reads the pair: `if (a.strategy !== undefined) { ... if
@@ -457,7 +729,8 @@ export const shiftFleetRules = [{
         // station and every board still reading healthy, which is exactly how a confinement
         // leaks. `fieldrest` is the one that never walks back to town.
         strategy: posture(a.station, doctrine.shift, 'strategy'),
-        why: `${[].concat(a.hunt).join(' or ')} in ${a.room_name} (${a.to}), roaming off` +
+        why: `${[].concat(a.hunt).join(' or ')} in ${a.room_name} (${a.to}), roaming ` +
+             `${posture(a.station, doctrine.shift, 'roam') === true ? 'on' : 'off'}` +
              `${stationBand(a.station) ? ` — ${bandWhy(a.station)} and this unit is ${a.row.level}` : ''}`,
       }];
     });

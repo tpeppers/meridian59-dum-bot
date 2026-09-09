@@ -381,6 +381,69 @@ export function validate(c) {
           `${room.generates.join(' or ')}. A quarry a room cannot produce is a character ` +
           'hunting nothing, and the keeper will not say so because its own room check reads ' +
           'the spawn table, which lists placed-once residents for ever');
+      // A MISSPELT TRAINING STYLE MUST FAIL HERE OR IT COSTS THE WHOLE ORDER. The harness
+      // reports an unrecognised value rather than applying it, so the keeper would keep its
+      // old style while every board showed the new doctrine — and DUM's own order diff
+      // throws at the END of its loop, so one bad field discards every other field in the
+      // same intent. That is the 2026-08-16 failure in orders.mjs, and it presents as a rule
+      // firing every tick with nothing ever reaching the fleet.
+      const styles = ['normal', 'short_sword', 'unarmed', 'alternate', 'alternate_on_improve'];
+      if (st?.training_style !== undefined && !styles.includes(String(st.training_style)))
+        say(`${where}.training_style`, `must be one of ${styles.join(', ')} — got ` +
+          `"${st.training_style}". \`alternate_on_improve\` is the one to want: it flips ` +
+          'between an exact short sword and bare hands only when an ability actually rises. ' +
+          'Bare `alternate` flips per quarry, and the server needs 75 swings on ONE proficiency ' +
+          'before any improvement can fire (SWINGS_PER_IMPROVE_CHECK, player.kod:100), so on ' +
+          'prey that dies faster than that it trains nothing at all and says nothing about it');
+      // BUFF_ALLIES IS AN OBJECT AND THE BROKER REFUSES A BARE `true`. Same trap as
+      // training_style above: the harness reports an unrecognised value rather than applying
+      // it, and DUM's order diff throws at the END of its loop, so one bad field discards
+      // every other field in the same intent. A station that said `"buff_allies": true`
+      // would silently stop deploying the room, the hunt and the training style with it.
+      if (st?.buff_allies !== undefined && st.buff_allies !== null) {
+        const b = st.buff_allies;
+        if (typeof b !== 'object' || Array.isArray(b))
+          say(`${where}.buff_allies`, 'must be null or an object like ' +
+            '{ "enabled": true, "spells": ["super strength", "bless"] } — the broker takes ' +
+            'a settings object, never a bare true');
+        else {
+          if (b.enabled !== true)
+            say(`${where}.buff_allies.enabled`, 'must be true — the broker refuses an object ' +
+              'that does not say so, because casting on an ally spends mana and two reagents ' +
+              'a throw and being installed has to be a decision somebody made');
+          if (b.spells !== undefined &&
+              (!Array.isArray(b.spells) || b.spells.some(x => typeof x !== 'string')))
+            say(`${where}.buff_allies.spells`, 'must be an array of spell names, ' +
+              'e.g. ["super strength", "bless"]');
+          if (b.gap_ms !== undefined && !(Number(b.gap_ms) > 0))
+            say(`${where}.buff_allies.gap_ms`, 'must be a positive number of milliseconds');
+        }
+      }
+      // A REQUIREMENT NOBODY CAN READ IS A STATION NOBODY ENTERS. `requires` is checked
+      // against the skill list on the fleet row, so a malformed clause silently admits no
+      // one — the same failure shape as a band with a hole in it, and just as quiet.
+      for (const req of (st?.requires == null ? [] : [].concat(st.requires))) {
+        if (!req || typeof req !== 'object' || Array.isArray(req)) {
+          say(`${where}.requires`, 'each clause must be an object like ' +
+            '{skill: "hammer wielding", at_least: 1}');
+          continue;
+        }
+        // A string, or a LIST meaning "any of these". Graduating on hammer-or-axe-or-fencing
+        // is one decision; writing it as three clauses would mean all three, which nobody
+        // holds on the day they graduate.
+        const names = req.skill == null ? [] : [].concat(req.skill);
+        if (!names.length || names.some(n => typeof n !== 'string' || !n.trim()))
+          say(`${where}.requires`, 'every clause needs a `skill` name, or a list of names ' +
+            'meaning any one of them');
+        for (const k of Object.keys(req))
+          if (!['skill', 'at_least', 'below', 'why'].includes(k))
+            say(`${where}.requires.${k}`, 'unknown key. A clause is {skill, at_least?, ' +
+              'below?, why?} — `at_least` defaults to 1, which reads as "holds it at all"');
+        for (const k of ['at_least', 'below'])
+          if (req[k] !== undefined && !num(req[k]))
+            say(`${where}.requires.${k}`, 'must be a number');
+      }
+
       // A BAND THAT ADMITS NOBODY IS AN EMPTY ROOM WITH ORDERS IN IT.
       const b = st?.max_health;
       if (b !== undefined) {
@@ -429,7 +492,20 @@ export function validate(c) {
     // Only checked when SOME station declares a band. A doctrine with no bands has the old
     // behaviour, where an unbanded station admits whoever its ceiling allows, and there is
     // no range to cover.
-    const banded = stations.filter(st => stationBand(st) != null);
+    // A TIER IS NOT A BAND. A station gated on `requires` is excluded from the coverage
+    // check below: bands must tile the whole max-health range because a character in no
+    // band stands still for ever, but a tier is a graduation only some characters have
+    // reached, and demanding it cover a range would make every tiered doctrine unloadable.
+    //
+    // What still has to be true is that SOMEBODY takes the ungraduated. One station with no
+    // `requires` is the floor, and a doctrine without one is refused here rather than
+    // discovered later as a character standing in a field.
+    const tiered = stations.filter(st => st.requires != null);
+    if (tiered.length && !stations.some(st => st.requires == null))
+      say('shift.stations', 'every station is gated on `requires`, so a character that has ' +
+        'graduated nothing is admitted by none of them and stands where it is for ever with ' +
+        'roaming off. Leave one station ungated as the floor.');
+    const banded = stations.filter(st => stationBand(st) != null && st.requires == null);
     if (banded.length && banded.length === stations.length) {
       // Walk the boundaries in order and look for a value nothing claims. The bands are
       // half-open [at_least, below), so the only places a hole can start are 0 and each

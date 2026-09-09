@@ -124,6 +124,7 @@ export function callsForFleetPlan(plan = [], why = null) {
         training_style: step.training_style,
         training_weapon: step.training_weapon,
         buff_allies: step.buff_allies,
+        banned_weapons: step.banned_weapons,
         strategy: step.strategy,
         rest_below: step.rest_below,
         fight_above_vigor: step.fight_above_vigor,

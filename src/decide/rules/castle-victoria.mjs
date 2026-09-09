@@ -157,8 +157,27 @@ export const castleVictoriaFleetRules = [{
   faculty: 'work',
   scope: 'fleet',
   why: 'maintain Castle Victoria undead quarry and combat orders; room and wall spreading are an independent strategy',
-  enabled: doctrine => doctrine.castle_victoria?.shift === true,
-  offWhy: 'castle_victoria.shift is off',
+  // TWO RULES MUST NOT BOTH ASSIGN ROOMS, AND THE STATIONS WIN.
+  //
+  // `shift.stations` and this rule are both station authorities: each decides which room a
+  // character works and sends `autopilot start` to say so. With both on they overwrite each
+  // other every pass, and which one the fleet actually obeys is decided by nothing more
+  // principled than their positions in a first-match-wins table.
+  //
+  // That is not theoretical. The weaponcraft doctrine inherits `castle_victoria.shift: true`
+  // from castle-victoria.jsonc and never turned it off; it stayed quiet only because
+  // `feast-hall-larder` sat above it and had something to say on nearly every pass. The
+  // moment the feast stopped starving it — 2026-09-08, when learning was moved above the
+  // feast and this rule travelled with it — it fired once and assigned ALL TWENTY-ONE
+  // characters to room 39 with `upstairs_share: 1`, including the eighteen whose stations
+  // put them on fungus beasts in the valley.
+  //
+  // A rule kept correct by the accident of another rule's traffic is not correct. So this
+  // one stands down whenever the shift is on: a doctrine that has written stations has
+  // stated where its characters go, and `shift.stations` expresses everything this rule
+  // does — including "everybody upstairs" — with tiers and requirements on top.
+  enabled: doctrine => doctrine.castle_victoria?.shift === true && doctrine.shift?.on !== true,
+  offWhy: 'castle_victoria.shift is off, or shift.stations is on and owns room assignment',
 
   decide(fleetObs, doctrine) {
     let live = (fleetObs.characters ?? []).filter(r => r.in_game && !r.parked &&

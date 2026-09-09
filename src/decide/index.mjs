@@ -142,6 +142,40 @@ export const fleetRules = new RuleSet('fleet', [
   // left in `outbound` for two and a half hours because even the sweep that gives up on a
   // stale journey lives inside the rule that was never reached.
   //
+  // THE PATROL BASELINE TRAVELS WITH LEARNING AND ALWAYS STAYS ABOVE IT.
+  //
+  // Establish the hands-off patrol policy before its maintenance strategies try to spend
+  // mana or hand over equipment. This is also the baseline a finite learning errand
+  // returns to. It returns `pass` as soon as the policy agrees, so putting it immediately
+  // above learning costs the queue one tick after a doctrine change and prevents a long
+  // queue from starving a safety-critical room reassignment for ever.
+  //
+  // It moved up here with learning rather than staying put, because that ordering is the
+  // invariant and its position relative to the FEAST never was: this is a station-
+  // maintenance rule, and the fleet's other one — `hunt-shift` — has always sat above the
+  // feast. A room reassignment that keeps characters out of a quarry they cannot survive
+  // is not something to do after lunch.
+  ...castleVictoriaFleetRules,
+  // AND LEARNING GOES ABOVE THE FEAST, for the same reason the feast went above the sell
+  // circuit — read the paragraph above, it is the same failure with different rules.
+  //
+  // The feast has something to say on nearly every pass: 491 sends in one day, and it is
+  // reached again the moment a pack has room. Learning sat four rules below it and was
+  // therefore never reached at all. Measured 2026-09-08: one character had been the last
+  // character in the fleet without punch for hours, another was carrying 3773 with a 2000
+  // skill waiting, and the rule's own verdict was recorded 99 times that day — every one
+  // of them from a pass where the feast happened to have nothing to say.
+  //
+  // WHAT MAKES THIS SAFE IS THE FUNDING GATE, and it would not be safe without it. This
+  // rule may only run above a rule that fires constantly if it is genuinely finite: it
+  // selects a character only while that character is ready, uncommitted AND able to pay,
+  // and dispatching gives it a commitment — so each candidate is consumed. Before the
+  // funding gate a character who could never afford the price stayed a candidate for ever,
+  // which above the feast would have starved the fleet of food rather than of skills.
+  //
+  // A purchase is also RARE and the feast is not: missing one feast pass costs a lap to
+  // the tables, missing a purchase costs the whole regimen the fleet is being run for.
+  ...learningFleetRules,
   // Vigor above the resting cap of 80 comes only from EATING, so an unfed fleet is a fleet
   // that fights at a fraction of its strength however much loot it is carrying. Selling is
   // how the fleet gets richer; eating is how it gets to keep playing. Food first.
@@ -151,15 +185,6 @@ export const fleetRules = new RuleSet('fleet', [
   // window. The circuit ends AT the Duke's tables now, so a character the feast rule did not
   // reach this pass still arrives there by the long way round.
   ...sellrunFleetRules,
-  // Establish the hands-off patrol policy before its maintenance strategies try to
-  // spend mana or hand over equipment. This is also the baseline a finite learning
-  // errand returns to. It returns `pass` as soon as the policy agrees, so putting it
-  // immediately above learning costs the queue one tick after a doctrine change and
-  // prevents a long queue from starving a safety-critical room reassignment forever.
-  ...castleVictoriaFleetRules,
-  // Learning is finite and explicitly queued. Keep it above food/weapon maintenance,
-  // which can remain true indefinitely, but below the patrol baseline it must restore.
-  ...learningFleetRules,
   // A queued faction/soldier request has no closing window until it is spoken. Once the
   // patrol baseline is sound it can interrupt at the next natural break and restore a
   // real farming policy afterwards.

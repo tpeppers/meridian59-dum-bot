@@ -1,4 +1,5 @@
-import { keeperWeaponPriority, planWeaponProvisioning, presetForQuarry } from '../weapons.mjs';
+import { keeperWeaponPriority, planWeaponProvisioning, presetForQuarry,
+         presetForTraining } from '../weapons.mjs';
 import { STRATEGY_IDS, strategyEnabled } from '../../strategies/catalog.mjs';
 
 const sameList = (a, b) => Array.isArray(a) && Array.isArray(b) &&
@@ -26,8 +27,32 @@ const selectedFor = (fleetObs, doctrine, id) => (fleetObs.characters ?? [])
 //
 // An unrecognised quarry falls through to the strategy rather than to a guess: a creature
 // whose resistances nobody has looked up must not silently get the zombie treatment.
+//
+// BUT A TRAINING STYLE BEATS THE QUARRY, and it has to, because the two are answering
+// different questions. Everything below ranks weapons by DAMAGE against what is about to be
+// hit. A training style is not about damage at all: it names the weapon whose PROFICIENCY is
+// being trained, and the keeper alternates it against bare hands on its own clock.
+//
+// Measured on prod 2026-09-08. The training doctrine hunts fungus beast and groundworm
+// larva; QUARRY_PRESET maps both to `vsSkeletons`, which is hammer-first; and because the
+// quarry wins here, every character equipped a HAMMER while the station said
+// `training_style: "alternate_on_improve"`. The operator saw it immediately — "I keep
+// seeing them use other weapons" — and nothing in the logs disagreed, because as far as
+// this function was concerned it had done its job.
+//
+// It is the same argument the comment above already makes for short swording over
+// vsSkeletons — "a unit told to train the skill should not have a hammer put in its hand by
+// a second opinion" — one level further out. The quarry is the more specific fact about the
+// FIGHT; the training style is the more specific instruction about the CHARACTER, and this
+// function is choosing what the character holds.
+//
+// `normal` is not a training style in that sense — it means "no opinion", so it falls
+// through to the quarry ranking exactly as before.
+// The map lives in ../weapons.mjs beside QUARRY_PRESET, because the shift writes the same
+// decision onto the order and two copies would drift.
 const presetFor = (fleetObs, doctrine, agent, cfg, row = null) =>
-  presetForQuarry(row?.hunting ?? row?.policy?.hunt)
+  presetForTraining(row?.policy?.trainingStyle ?? row?.training_style)
+    ?? presetForQuarry(row?.hunting ?? row?.policy?.hunt)
     ?? (strategyEnabled(fleetObs, doctrine, agent, STRATEGY_IDS.SHORT_SWORDING) ? 'shortSwording'
       : strategyEnabled(fleetObs, doctrine, agent, STRATEGY_IDS.VS_SKELETONS) ? 'vsSkeletons'
       : cfg.preset);

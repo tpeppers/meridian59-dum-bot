@@ -114,6 +114,27 @@ export const QUARRY_PRESET = Object.freeze({
 export const presetForQuarry = quarry =>
   QUARRY_PRESET[String(quarry ?? '').trim().toLowerCase()] ?? null;
 
+// WHICH ORDER A TRAINING STYLE IMPLIES, and it lives here rather than beside either of the
+// two rules that read it. The shift needs it to write the order and the weapon rule needs
+// it to choose the preset; the two disagreeing is exactly the failure this module's header
+// exists to prevent — "a unit provisioned against one order and equipped by another".
+//
+// `normal` is deliberately absent: it means "no opinion about the weapon", so it falls
+// through to the quarry ranking as before. `unarmed` is absent for a different reason —
+// the keeper disarms in the farm room itself, so the only weapon an unarmed style wants is
+// one for travel and survival, and naming a priority would fight the disarm.
+export const TRAINING_PRESET = Object.freeze({
+  short_sword: 'shortSwording',
+  // The ARMED half of an alternation is "an exact short sword" — m59-broker.mjs's own words
+  // for `alternate` — so the ordering that puts it first is the one to send.
+  alternate: 'shortSwording',
+  alternate_on_improve: 'shortSwording',
+});
+
+/** The preset a training style dictates, or null when it has no opinion. */
+export const presetForTraining = style =>
+  TRAINING_PRESET[String(style ?? '').trim().toLowerCase()] ?? null;
+
 const aliases = new Map([
   ['strongesttoweakest', 'strongestToWeakest'],
   ['strongest->weakest', 'strongestToWeakest'],

@@ -148,3 +148,61 @@ test('fleet: scheduled rooms are sensed once each through an occupant', async ()
   assert.equal(calls.filter(x => x.tool === 'look').length, 2);
   assert.deepEqual(obs.room_views.map(x => x.room), [70, 71]);
 });
+
+// ---------------------------------------------------------------- lent bodies
+//
+// `not_ours` is the answer to a failure that reports itself as success on both sides: a
+// character lent to another operator is still in the broker's roster, so DUM enumerated
+// it, claimed its faculties and sent it the doctrine's own station and hunt list. Two
+// drivers on one body is what the harness's guarantee 1 exists to prevent, and neither
+// log calls it wrong. Measured 2026-09-09: 941 autopilot calls to somebody else's
+// character in one session, including `start` calls the keeper rejected outright.
+//
+// The filter is at OBSERVATION on purpose. Every test below is really one assertion --
+// that an excluded character does not reach `obs.characters` -- because everything
+// downstream reads only that.
+
+const lentBroker = () => ({ call: async (tool) => {
+  if (tool !== 'fleet') return {};
+  return { fleet: [
+    { ...boardRow(), agent: 'a', character: 'Ada' },
+    { ...boardRow(), agent: 'b', character: 'Bea' },
+    { ...boardRow(), agent: 'role-guest', character: 'Guest Hero' },
+  ] };
+} });
+
+test('not_ours: a lent character is not in the observation at all', async () => {
+  const obs = await observeFleet(lentBroker(), { notOurs: ['Guest Hero'] });
+  assert.deepEqual(obs.characters.map(r => r.character), ['Ada', 'Bea']);
+  // The counts are derived from the same rows, so an excluded body must not be counted
+  // in-game either -- coverage that includes a character DUM cannot move is a coverage
+  // number that never reaches its target.
+  assert.equal(obs.in_game, 2);
+});
+
+test('not_ours: an empty list excludes nobody', async () => {
+  for (const notOurs of [[], null, undefined]) {
+    const obs = await observeFleet(lentBroker(), { notOurs });
+    assert.equal(obs.characters.length, 3, `notOurs=${JSON.stringify(notOurs)}`);
+  }
+});
+
+test('not_ours: matching is case- and space-insensitive on the in-world name', async () => {
+  // The name is typed by a human into a doctrine, and the game shows it capitalised in
+  // some places and not others. A list that fails to match because of a capital letter
+  // excludes nobody and looks exactly like a list that worked.
+  const obs = await observeFleet(lentBroker(), { notOurs: ['  guest HERO '] });
+  assert.deepEqual(obs.characters.map(r => r.character), ['Ada', 'Bea']);
+});
+
+test('not_ours: a name nobody has is inert rather than an error', async () => {
+  const obs = await observeFleet(lentBroker(), { notOurs: ['Nobody At All'] });
+  assert.equal(obs.characters.length, 3);
+});
+
+test('not_ours: the exclusion is by character, never by roster handle', async () => {
+  // Handles are account passwords (tools/dum-guard.mjs), so they can never appear in a
+  // doctrine. Pinning this stops a well-meaning "match either" from being added later.
+  const obs = await observeFleet(lentBroker(), { notOurs: ['role-guest'] });
+  assert.equal(obs.characters.length, 3);
+});

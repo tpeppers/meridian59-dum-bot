@@ -116,6 +116,12 @@ export function validate(c) {
         'excludes nobody and reads as if it did');
 
   // ---- cadence
+  // A cap below one would stop the fleet table deciding anything at all, which is a very
+  // quiet way to switch DUM off.
+  if (c.cadence?.fleet_intents_per_pass != null &&
+      (!Number.isInteger(c.cadence.fleet_intents_per_pass) || c.cadence.fleet_intents_per_pass < 1))
+    say('cadence.fleet_intents_per_pass', 'must be a whole number of 1 or more — 1 is one ' +
+        'fleet decision per pass, the original behaviour');
   for (const k of ['character_ms', 'fleet_ms', 'backoff_ms']) {
     if (!num(c.cadence?.[k]) || c.cadence[k] < 1000)
       say(`cadence.${k}`, 'must be at least 1000ms');

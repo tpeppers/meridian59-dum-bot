@@ -122,6 +122,24 @@ export const DEFAULTS = {
 
   // ---------------------------------------------------------------- cadence
   cadence: {
+    // HOW MANY FLEET DECISIONS ONE PASS MAY HAND OUT.
+    //
+    // The engine allows at most one directional decision per CHARACTER. Stopping the whole
+    // fleet table after the first rule was always stricter than that, and it starves
+    // everything below a rule that fires constantly: measured 2026-09-09, `hunt-shift`
+    // fired on 78 of 78 passes -- there is always somebody to station -- and the entire
+    // fuel model sat below it, switched on and never once evaluated, while eighteen of
+    // twenty characters ran out of food.
+    //
+    // Raising this does NOT relax correctness: `decide` skips any rule wanting a character
+    // an earlier rule already took this pass, and treats an intent whose reach it cannot
+    // read as exclusive. The number is TRAFFIC CONTROL. Operator, 2026-09-09: "we don't
+    // want the bots crowding in thin travel needles and creating traffic jams, but running
+    // everyone on the same tracks offset by maybe 30s each or so shouldn't be a problem" --
+    // and a fleet tick is 30s, so a small cap IS that offset.
+    //
+    // 1 is the old behaviour exactly, and stays the default.
+    fleet_intents_per_pass: 1,
     // Per-character decision interval. DUM's decisions are directional and change
     // slowly; the keeper is the thing running at one second. Ticking faster than the
     // decisions change just produces churn on the board.

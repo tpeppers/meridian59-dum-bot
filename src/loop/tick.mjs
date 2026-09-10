@@ -311,15 +311,56 @@ export async function tickFleet(ctx, { decide: runRules = true, only = null } = 
     // aborting the batch: these rules were reached precisely because the one above them had
     // nothing to say about their characters, and dropping them would restore the starvation
     // this exists to end.
+    // AND A SECOND DECISION MUST NEVER BE ABLE TO WEDGE THE FIRST.
+    //
+    // Measured 2026-09-09, the first time this ran committed on prod: at a cap of 3 the
+    // pass stopped completing. 320 broker calls in eleven minutes and NOT ONE tick or
+    // fleet-tick line, and no `pass-failed` either -- so nothing threw; an await simply
+    // never resolved. Because the extras are applied before `write()`, the whole pass was
+    // swallowed: no journal line, no character ticks below it, and the fleet ran on its
+    // keepers alone until the process was restarted. The dry `plan` path completed fine at
+    // the same cap, which is why 451 offline tests and a clean plan said nothing.
+    //
+    // The lesson is not "find that await". It is that the FIRST decision of a pass is the
+    // one the doctrine ranked highest, it has already been applied by the time we get here,
+    // and nothing optional below it may be allowed to cost the fleet its tick. So each
+    // extra is bounded and failure-open: a slow one is abandoned, recorded by name, and the
+    // pass finishes. A rule that times out repeatedly is then visible in the journal
+    // instead of invisible in a wedged loop.
     for (const extra of rest) {
       (line.applied_extra ??= []);
+      const started = Date.now();
       try {
-        await ensureFleetIntentClaim(ctx, extra);
-        const out = await apply(broker, extra, obs,
-          { commit, yieldTo: config.yield_to ?? [], holder: ctx.holder });
-        line.applied_extra.push({ rule: extra.rule, agent: extra.agent, applied: out });
+        const out = await withDeadline(EXTRA_INTENT_MS, async () => {
+          await ensureFleetIntentClaim(ctx, extra);
+          // A BACKGROUND ERRAND IS STARTED, NOT AWAITED -- AND THAT BRANCH EXISTED ONLY
+          // FOR THE FIRST INTENT.
+          //
+          // This is the actual hang, not merely a slow call. `sellrun-circuit` and
+          // `feast-grab` are circuits: minutes of walking, selling and banking, handed to
+          // `circuits.start` so the tick returns immediately. The primary intent has taken
+          // that branch since it was written. A SECONDARY intent fell past it into
+          // `apply()`, which runs the errand inline -- so the pass sat waiting for a
+          // Barloque round trip, wrote no journal line, and took every character tick
+          // below it down with it.
+          //
+          // Journalled proof, 2026-09-09 23:27: `barloque-sell-circuit` as an extra,
+          // "abandoned after 20000ms". The deadline above is the safety net; this is the
+          // fix. Both stay: one keeps a future long call from wedging the loop, the other
+          // stops this one being long in the first place.
+          if (commit && ctx.circuits && extra.kind === 'errand'
+              && ['sellrun-circuit', 'feast-grab'].includes(extra.orders?.errand)) {
+            const started2 = await ctx.circuits.start(extra);
+            return { acted: started2, kind: 'background-errand', agent: extra.orders.agent };
+          }
+          return apply(broker, extra, obs,
+            { commit, yieldTo: config.yield_to ?? [], holder: ctx.holder });
+        });
+        line.applied_extra.push({ rule: extra.rule, agent: extra.agent, applied: out,
+                                  ms: Date.now() - started });
       } catch (e) {
-        line.applied_extra.push({ rule: extra.rule, agent: extra.agent, error: e.message });
+        line.applied_extra.push({ rule: extra.rule, agent: extra.agent,
+                                  error: e.message, ms: Date.now() - started });
       }
     }
 
@@ -402,6 +443,28 @@ export function fleetIntentAgents(intent = {}) {
   return intent.kind === 'errand'
     ? [intent.agent].filter(Boolean)
     : fleetPlanAgents(intent.plan ?? []);
+}
+
+/**
+ * How long a SECONDARY fleet decision may take before the pass abandons it.
+ *
+ * Generous enough for a claim plus a batch of autopilot writes, short enough that a wedged
+ * one costs a fraction of a tick rather than the tick. The primary decision is deliberately
+ * NOT bounded by this: it is what the doctrine ranked highest, and cutting it short would
+ * trade a visible hang for a silent half-applied order.
+ */
+export const EXTRA_INTENT_MS = 20_000;
+
+/** Run `fn`, but give up after `ms` rather than letting one await stop the loop. */
+export async function withDeadline(ms, fn) {
+  let timer = null;
+  try {
+    return await Promise.race([
+      fn(),
+      new Promise((_, rej) => { timer = setTimeout(
+        () => rej(new Error(`abandoned after ${ms}ms — the pass must not wait on a secondary decision`)), ms); }),
+    ]);
+  } finally { if (timer) clearTimeout(timer); }
 }
 
 export async function ensureFleetIntentClaim(ctx, intent) {

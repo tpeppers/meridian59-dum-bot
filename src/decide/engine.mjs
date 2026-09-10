@@ -71,9 +71,43 @@ export class RuleSet {
  *
  * @returns {{intent: Intent|null, considered: {rule: string, verdict: string, why: string|null}[]}}
  */
-export function decide(ruleSet, obs, doctrine) {
+/**
+ * ONE DECISION PER CHARACTER, WHICH IS NOT THE SAME AS ONE DECISION PER PASS.
+ *
+ * The header above states the invariant: "at most one directional decision PER CHARACTER,
+ * because a bot that emits three orders at once has no way to attribute what happened next
+ * to any of them." For CHARACTER rules those are the same sentence -- the table runs once
+ * per character, so first-match-wins delivers it exactly.
+ *
+ * FOR FLEET RULES THEY ARE DIFFERENT, and the difference cost this fleet a night. A fleet
+ * rule names its own characters, so two of them acting on DISJOINT characters satisfy the
+ * invariant completely -- and the table stopped anyway. Measured 2026-09-09: `hunt-shift`
+ * fired on 78 of 78 fleet passes because there is always somebody to station, and every
+ * rule below it went unevaluated for the whole day. Among them the entire fuel model:
+ * `feast-hall-larder` and the sell circuit, both switched on in the doctrine, neither ever
+ * reached. Eighteen of twenty characters ran out of food while the rules that exist to feed
+ * them were structurally unreachable.
+ *
+ * This file already fixed one instance of that failure -- a rule whose every field was
+ * yielded "still won the match, and still stopped the table" -- by teaching it to `pass`.
+ * That fix was per-rule. This is the general form.
+ *
+ * `max` IS A TRAFFIC CONTROL, NOT A CORRECTNESS BOUND. Correctness is the disjointness test:
+ * a rule is skipped when it wants a character an earlier rule this pass already took. The
+ * cap exists because the world has thin corridors, and twenty characters dispatched down the
+ * same needle in one tick is a jam. Operator, 2026-09-09: "we don't want the bots crowding
+ * in thin travel needles and creating traffic jams, but running everyone on the same tracks
+ * offset by maybe 30s each or so shouldn't be a problem." DUM ticks at thirty seconds, so a
+ * small cap IS that stagger -- successive passes hand out the next few slots.
+ *
+ * `max: 1` reproduces the old behaviour exactly, and is the default, so nothing changes for
+ * a doctrine that does not ask.
+ */
+export function decide(ruleSet, obs, doctrine, { max = 1, agentsOf = intentAgents } = {}) {
   const considered = [];
   const yieldSet = new Set(doctrine.yield_to ?? []);
+  const fired = [];
+  const taken = new Set();
   for (const rule of ruleSet.rules) {
     // A rule may only exercise a faculty the doctrine actually claimed. This is the
     // enforcement point for the whole split: a doctrine that leaves `survival` with
@@ -176,10 +210,59 @@ export function decide(ruleSet, obs, doctrine) {
         continue;
       }
     }
+    // THE DISJOINTNESS TEST -- the thing that actually preserves the invariant.
+    //
+    // A second intent this pass is safe only if it touches nobody an earlier one took.
+    // An intent whose reach cannot be read names nobody, and "nobody" would make it
+    // compatible with everything -- the dangerous direction, since a fleet-wide policy
+    // write would then run beside a rule steering the same bodies. So it is treated as
+    // EXCLUSIVE: skipped for this pass, and taken on a pass where it fires first. Later
+    // rules whose reach IS readable still get their turn, because punishing them for an
+    // unrelated rule's opacity would be the starvation this change exists to end.
+    const wants = agentsOf(intent);
+    if (fired.length) {
+      const clash = [...wants].filter(a => taken.has(a));
+      if (!wants.size || clash.length) {
+        considered.push({ rule: rule.id, verdict: 'no',
+          why: clash.length
+            ? `would also steer ${clash.join(', ')}, already decided this pass by ` +
+              `"${fired[fired.length - 1].rule}" — one decision per character, so this waits ` +
+              `for the next tick`
+            : 'names no character this side can read, so it is treated as exclusive — it ' +
+              'waits for a pass where it fires first rather than running beside another ' +
+              'decision whose characters might overlap it' });
+        continue;
+      }
+    }
     considered.push({ rule: rule.id, verdict: 'fired', why: intent.why });
-    return { intent, considered };
+    fired.push(intent);
+    for (const a of agentsOf(intent)) taken.add(a);
+    if (fired.length >= max) break;
   }
-  return { intent: null, considered };
+  return { intent: fired[0] ?? null, intents: fired, considered };
+}
+
+/**
+ * Which characters an intent would touch, for the disjointness test above.
+ *
+ * Deliberately generous: an intent whose reach cannot be read returns the empty set and is
+ * therefore treated as touching NOBODY, which would let it run beside anything. That is the
+ * wrong default here, so `decide` counts an unreadable intent as exclusive instead -- see
+ * the `max` guard. Kept in this file rather than imported from loop/ because engine.mjs is
+ * pure and must stay importable by the tests without dragging the tick in.
+ */
+export function intentAgents(intent) {
+  const out = new Set();
+  if (!intent) return out;
+  if (intent.agent) out.add(intent.agent);
+  if (intent.orders?.agent) out.add(intent.orders.agent);
+  for (const step of (intent.plan ?? [])) {
+    if (step?.agent) out.add(step.agent);
+    if (step?.args?.agent) out.add(step.args.agent);
+    if (step?.from) out.add(step.from);
+    if (step?.to) out.add(step.to);
+  }
+  return out;
 }
 
 /**

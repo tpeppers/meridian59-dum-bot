@@ -269,10 +269,23 @@ export async function tickFleet(ctx, { decide: runRules = true, only = null } = 
     if (ctx.circuits) decideObs.characters = decideObs.characters.filter(r => !ctx.circuits.has(r.agent));
     // Jobs can finish during enrichment; use their completed cooldowns now.
     decideObs.memory = ctx.memory?.read() ?? memory;
-    const { intent, considered } = decide(fleetRules, decideObs, config);
+    // SEVERAL DECISIONS PER FLEET PASS, ON DISJOINT CHARACTERS.
+    //
+    // The engine's invariant is one directional decision per CHARACTER; stopping the whole
+    // table after one rule was always stricter than that, and on this fleet it meant
+    // `hunt-shift` -- which fires every pass, because there is always somebody to station --
+    // sat on the entire fuel model for a day. The disjointness test in `decide` is what
+    // keeps this correct; `cadence.fleet_intents_per_pass` is only traffic control, so a
+    // crowd is not dispatched down one thin corridor at once. DUM's own 30s tick is the
+    // stagger between successive batches.
+    const perPass = Math.max(1, Number(config.cadence?.fleet_intents_per_pass ?? 1));
+    const { intents = [], considered } = decide(fleetRules, decideObs, config, { max: perPass });
     line.considered = considered;
-    line.intent = intent;
-    if (!intent) return write();
+    line.intent = intents[0] ?? null;
+    if (intents.length > 1)
+      line.intents = intents.map(i => ({ rule: i.rule, agent: i.agent }));
+    if (!intents.length) return write();
+    const [intent, ...rest] = intents;
 
     // An errand has one named actor and no fleet `plan`; a batch act has a plan and may
     // name both sides of a transfer. Claim the shape that was actually emitted. Reading
@@ -292,6 +305,23 @@ export async function tickFleet(ctx, { decide: runRules = true, only = null } = 
 
     const applied = await apply(broker, intent, obs, { commit, yieldTo: config.yield_to ?? [], holder: ctx.holder });
     line.applied = applied;
+
+    // THE REST OF THIS PASS'S DECISIONS. Disjoint from the first by construction, so each
+    // gets its own claim and its own apply. A failure is recorded per intent rather than
+    // aborting the batch: these rules were reached precisely because the one above them had
+    // nothing to say about their characters, and dropping them would restore the starvation
+    // this exists to end.
+    for (const extra of rest) {
+      (line.applied_extra ??= []);
+      try {
+        await ensureFleetIntentClaim(ctx, extra);
+        const out = await apply(broker, extra, obs,
+          { commit, yieldTo: config.yield_to ?? [], holder: ctx.holder });
+        line.applied_extra.push({ rule: extra.rule, agent: extra.agent, applied: out });
+      } catch (e) {
+        line.applied_extra.push({ rule: extra.rule, agent: extra.agent, error: e.message });
+      }
+    }
 
     // A DECISION THAT CANNOT BE RE-DERIVED FROM THE NEXT BOARD HAS TO SAY SO WHEN IT IS MADE.
     //

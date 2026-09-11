@@ -212,6 +212,33 @@ export const economyRules = [
     },
   },
   {
+    // ONE SWITCH FOR BOTH HALVES, and that is not a shortcut.
+    //
+    // The keeper gates deposit AND withdraw on the same `guildWants` flag, because a
+    // character that takes from a stockpile it does not contribute to is a character
+    // emptying it. Splitting them would make "take but never give" expressible, and on a
+    // shared pool that is the only configuration that cannot work.
+    id: 'live-reagent-stockpile',
+    faculty: 'economy',
+    why: 'the Live Reagent Stockpile strategy shares reagents through the guild chests ' +
+         'instead of selling them to a merchant and buying them back at the spread',
+    enabled: doctrine => doctrine.strategies?.enabled === true,
+    offWhy: 'DUM strategies are disabled',
+    decide(obs, doctrine) {
+      const on = strategyEnabled(obs, doctrine, obs.agent, STRATEGY_IDS.LIVE_REAGENT_STOCKPILE);
+      const wanted = on ? { enabled: true } : null;
+      const live = obs.keeper?.policy?.guildWants ?? obs.policy?.guildWants ?? null;
+      if (sameObject(live, wanted)) return null;
+      if (!on && live == null) return null;
+      return { kind: 'orders', orders: { action: 'start', guild_wants: wanted },
+        why: on
+          ? 'keep what the fleet uses, deposit it in the guild chests, and take from them ' +
+            'before buying at the apothecary'
+          : 'the stockpile is off, so reagents go back to the ordinary sell-and-buy path',
+        evidence: { want: wanted, keeper_has: live } };
+    },
+  },
+  {
     id: 'economy-thresholds',
     faculty: 'economy',
     why: 'the Sell Loot and Bank Surplus strategy owns this keeper\'s pack and purse thresholds, ' +

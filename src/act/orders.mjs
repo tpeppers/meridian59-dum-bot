@@ -135,6 +135,10 @@ export const ORDER_FIELDS = {
   farm_cleanup:       { policy: 'farmCleanup', compare: sameObject },
   farm_delivery:      { policy: 'farmDelivery', compare: sameObject },
   guild_tithe:        { policy: 'guildTithe', compare: sameObject },
+  // The live reagent stockpile. ONE flag for both halves on purpose: the keeper gates the
+  // deposit and the withdraw on it together, because taking from a shared pool you do not
+  // contribute to is the only configuration that cannot work.
+  guild_wants:        { policy: 'guildWants', compare: sameObject },
 };
 
 function sameList(a, b) {

@@ -17,6 +17,7 @@ export const STRATEGY_IDS = Object.freeze({
   SUPPLY_LIMITED_FARMING: 'supply-limited-farming',
   INKY_RESERVE: 'inky-reserve',
   GUILD_TITHE: 'guild-tithe',
+  LIVE_REAGENT_STOCKPILE: 'live-reagent-stockpile',
   MAX_WEAPONS: 'max-weapons',
   BUY_FOOD: 'buy-food',
   BUY_WEAPONS: 'buy-weapons',
@@ -243,6 +244,19 @@ export const STRATEGY_CATALOG = Object.freeze([
       Object.freeze({ id: 'daily_amount', title: 'Daily tithe', type: 'integer', min: 0,
         default: 2000,
         description: 'Maximum shillings each character contributes per local calendar day from town-sale proceeds.' }),
+    ]),
+  }),
+  Object.freeze({
+    id: STRATEGY_IDS.LIVE_REAGENT_STOCKPILE,
+    title: 'Live Reagent Stockpile',
+    group: 'Economy',
+    purpose: 'Share reagents through the guild chests instead of the market',
+    requirements: ['A guild hall with chests', 'Rank SIR or above — apprentices are refused at the door',
+      'A reagent the fleet actually uses'],
+    description: 'Reagents anybody in the fleet uses are kept from merchants and deposited in the guild chests on town trips; a character that needs them takes them from the chest instead of buying. The saving is the SPREAD — the buy price avoided plus the sell price forgone — and it is recorded so the hall can be judged against what it costs.',
+    settings: Object.freeze([
+      Object.freeze({ id: 'enabled', title: 'Use the stockpile', type: 'boolean', default: true,
+        description: 'Deposit and withdraw are ONE switch on purpose: a character that takes from a stockpile it does not contribute to is a character emptying it.' }),
     ]),
   }),
   Object.freeze({

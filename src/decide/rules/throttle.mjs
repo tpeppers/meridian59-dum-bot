@@ -166,6 +166,33 @@ export function fedEnough(row, food = {}, minMeals = 1, target = null, vigorNow 
   return cook;
 }
 
+/**
+ * WHO THIS THROTTLE DOES NOT APPLY TO.
+ *
+ * The throttle is the one policy rule with no way to say "not that one". It reads a single
+ * pair of floors off the doctrine and re-asserts them on EVERY character every pass, which is
+ * right for a fleet that is all doing the same job and wrong the moment one of them is not.
+ *
+ * 2026-09-12: a character was moved onto an unarmed brawling grind, where the point is to land
+ * as many blows as possible on prey that cannot hurt him, and the operator asked for his floor
+ * at 80 so he fights off the rest cap instead of parking to eat up to 160. Set keeper-side it
+ * held for ninety seconds and the throttle put it back — correctly, by its own rule. There was
+ * no way to express the exception except turning the throttle off for all twenty-three.
+ *
+ * Named characters, matched the way stations already match them (`only`/`except` in
+ * shift.mjs), so one spelling of "this one is different" serves the whole doctrine. An exempt
+ * character keeps whatever floor its station or an operator gave it; the throttle simply stops
+ * having an opinion about it.
+ */
+export function throttleExempts(throttle, row) {
+  const list = [].concat(throttle?.except ?? []).map(v => String(v).trim().toLowerCase())
+                 .filter(Boolean);
+  if (!list.length) return false;
+  const names = [row?.agent, row?.character].map(v => String(v ?? '').trim().toLowerCase())
+                                            .filter(Boolean);
+  return list.some(n => names.includes(n));
+}
+
 export const throttleRules = [
   {
     id: 'throttle-vigor',
@@ -176,6 +203,11 @@ export const throttleRules = [
     enabled: doctrine => doctrine.throttle != null,
     offWhy: 'no throttle set — the doctrine leaves fight_above_vigor to the ladder/keeper',
     decide(obs, doctrine) {
+      // BEFORE ANYTHING IS COMPUTED, because an exempt character is not a character this rule
+      // has a cheaper answer for — it is one the rule has NO answer for, and saying so costs
+      // nothing and reads clearly in the journal.
+      if (throttleExempts(doctrine.throttle, obs))
+        return { kind: 'pass', why: `${obs.character ?? obs.agent} is exempt from the throttle` };
       const floors = throttleFloors(doctrine.throttle);
       const row = obs.keeper ? { ...obs, ...obs.keeper } : obs;
       const vigorNow = vigorValue(row);

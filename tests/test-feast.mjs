@@ -18,7 +18,7 @@
 
 const test = globalThis.__dumTest;
 
-import { feastFleetRules, feastWindow, mealsAboard, canCook, grabsFor,
+import { feastFleetRules, feastWindow, mealsAboard, canCook, grabsFor, grabPlan,
          recordFeastOutbound, recordFeastGrab, recordFeastAbandon } from '../src/decide/rules/feast.mjs';
 import { FEAST_HALL, FEAST_DISPENSER_NAMES } from '../src/decide/feast-hall.mjs';
 import { decide } from '../src/decide/engine.mjs';
@@ -83,11 +83,57 @@ test('feast: a casting is 2 elderberry and 2 herbs, and either short means no co
   ok(!canCook({ reagents: null }), 'no reagents read means no cooking');
 });
 
-test('feast: the grab count is the doctrine cap, bounded by known pack room', () => {
-  eq(grabsFor({}, { max_grabs: 60 }), 60, 'no carry read, the cap');
-  eq(grabsFor({ carry: { room_for: { weight: 200, bulk: 900 } } }, { max_grabs: 60 }), 22,
-     '200 weight over 9 a slice is 22');
+test('feast: the grab count is a FRACTION of the room left, and the pack block is where the room is', () => {
+  // THE ROOM-AWARE BRANCH NEVER FIRED ON PROD. It read `carry.room_for`, which the fleet
+  // board does not send — 0 of 23 rows had it on 2026-09-12 — so every trip took the bare
+  // cap until the hall refused, and the fleet carried 2,700 slices of pork with eight
+  // characters between 220 and 294 each and every pack at 100%.
+  eq(grabsFor({ pack: { max: 2000, weight: 1948, bulk: 1736 } }, { max_grabs: 60 }), 3,
+     '52 weight left, 65% of it is 33, three slices at 9 each');
+  eq(grabsFor({ pack: { max: 2000, weight: 0, bulk: 0 } }, { max_grabs: 60 }), 60,
+     'an empty pack is still bounded by the doctrine cap');
+  // BULK AND WEIGHT ARE SEPARATE CEILINGS AND THE TIGHTER ONE BINDS. A pack can be light
+  // and out of bulk — EchoTwo was at bulk 2000/2000 with 37 weight still free.
+  eq(grabsFor({ pack: { max: 2000, weight: 100, bulk: 1990 } }, { max_grabs: 60 }), 1,
+     '10 bulk left binds over 1900 weight');
+
+  // The older shape still answers, because another board may yet send it.
+  eq(grabsFor({ carry: { room_for: { weight: 200, bulk: 900 } } }, { max_grabs: 60 }), 14,
+     '65% of 200 weight over 9 a slice is 14');
   eq(grabsFor({ carry: { room_for: { weight: 4, bulk: 4 } } }, { max_grabs: 60 }), 1, 'never zero');
+  // A character that walked eleven hops to stand at the table takes SOMETHING. A pack with
+  // no room at all is the hall's refusal to report, not this function's.
+  eq(grabsFor({ pack: { max: 2000, weight: 2000, bulk: 2000 } }, { max_grabs: 60 }), 1,
+     'a full pack still asks once rather than zero');
+
+  // THE FRACTION IS A KNOB, because it is a judgement about how much headroom the rest of
+  // the fleet's work needs rather than a fact about the game.
+  eq(grabsFor({ pack: { max: 2000, weight: 1000, bulk: 1000 } }, { max_grabs: 600 }), 72,
+     '65% of 1000 over 9');
+  eq(grabsFor({ pack: { max: 2000, weight: 1000, bulk: 1000 } },
+              { max_grabs: 600, grab_room_fraction: 1 }), 111, 'a fraction of 1 is the old behaviour');
+  eq(grabsFor({ pack: { max: 2000, weight: 1000, bulk: 1000 } },
+              { max_grabs: 600, grab_room_fraction: 0 }), 1,
+     'a fraction of zero still takes one, not none');
+  eq(grabsFor({ pack: { max: 2000, weight: 1000, bulk: 1000 } },
+              { max_grabs: 600, grab_room_fraction: 9 }), 111, 'out of range is clamped, not obeyed');
+
+  eq(grabsFor({}, { max_grabs: 60 }), 60, 'no reading at all, the cap');
+});
+
+test('feast: grabPlan says WHICH branch answered, because a blind cap is the bug', () => {
+  const d = { item: 'slice of pork', weight: 9 };
+  const measured = grabPlan({ pack: { max: 2000, weight: 1948, bulk: 1736 } }, { max_grabs: 60 }, d);
+  eq(measured.grabs, 3, 'same answer as grabsFor');
+  eq(measured.source, 'pack', 'and it names where the room came from');
+  ok(/65% of the room left/.test(measured.reason), 'the reason states the ceiling');
+
+  // A PACK WHOSE ROOM CANNOT BE READ IS NOT AN EMPTY ONE, and this is the path that produced
+  // the 294-slice packs. It still returns the cap — the hall's refusal is the backstop — but
+  // it must not read the same as a measured decision.
+  const blind = grabPlan({}, { max_grabs: 60 }, d);
+  eq(blind.source, null, 'no source to name');
+  ok(/NO pack reading was available/.test(blind.reason), 'and it says so rather than implying a measurement');
 });
 
 // ---------------------------------------------------------------- the window

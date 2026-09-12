@@ -334,16 +334,86 @@ export function chosenDispenser(cfg = {}) {
   return FEAST_DISPENSERS[0];
 }
 
-/** How many activations this trip asks for: the doctrine's cap, bounded by known pack room. */
+/**
+ * How many activations this trip asks for: the doctrine's cap, bounded by a FRACTION of the
+ * pack room actually left.
+ *
+ * THE ROOM-AWARE BRANCH HAS NEVER ONCE FIRED ON THIS FLEET. It read `row.carry.room_for`,
+ * and the fleet board does not emit that field — measured 2026-09-12: 0 of 23 rows had it.
+ * So every trip returned the bare cap and took until the hall said "can't hold anything
+ * more", which is why prod was carrying 2,700 slices of pork with every pack at 100% and
+ * eight characters between 220 and 294 slices each.
+ *
+ * The facts were on the row the whole time, under `pack`:
+ *
+ *     {percent, weight_pct, bulk_pct, weight, bulk, max, binding, exact}
+ *
+ * so the room left is `max - weight` and `max - bulk`, whichever binds. `carry.room_for`
+ * stays as a fallback because another board shape may still send it.
+ *
+ * AND THE CAP IS A FRACTION OF THAT ROOM, NOT ALL OF IT. Operator's call, 2026-09-12: take
+ * at most 65% of what is left. A full pack is not a well-supplied character — it is one that
+ * cannot receive a reagent, cannot hold a created weapon, and sheds what it is carrying to
+ * make space (see makeRoom's no-buyer branch in the harness, which drops the reagents once
+ * the protected food has crowded everything else out). The 35% it leaves is the room the rest
+ * of the fleet's work needs.
+ *
+ * A PACK WHOSE ROOM CANNOT BE READ IS NOT AN EMPTY ONE. With no usable reading this returns
+ * the doctrine's cap as it always did, and `stop_when: FEAST_PACK_FULL` is still the backstop
+ * — but that is the path that produced the 294-slice packs, so it reports itself: `reason`
+ * says which branch answered, and a caller that wants the cap honoured can tell the
+ * difference between "65% of a measured pack" and "nobody could say".
+ */
 export function grabsFor(row, cfg = {}, dispenser = FEAST_DISPENSERS[0]) {
   const cap = Math.max(1, Math.floor(cfg.max_grabs ?? 60));
-  const carry = row?.carry;
-  const room = carry?.room_for;
-  if (room && Number.isFinite(room.weight) && Number.isFinite(room.bulk)) {
-    const fit = Math.floor(Math.min(room.weight, room.bulk) / dispenser.weight);
-    return Math.max(1, Math.min(cap, fit));
-  }
-  return cap;
+  const w = Math.max(1, Number(dispenser?.weight) || 1);
+  const frac = Number.isFinite(cfg.grab_room_fraction) ? cfg.grab_room_fraction : 0.65;
+  const fraction = Math.min(1, Math.max(0, frac));
+
+  // The board's own pack block first, then the older shape.
+  const p = row?.pack;
+  const roomFromPack = (p && Number.isFinite(p.max) && (Number.isFinite(p.weight) || Number.isFinite(p.bulk)))
+    ? Math.min(...[p.weight, p.bulk].filter(Number.isFinite).map(used => p.max - used))
+    : null;
+  const rf = row?.carry?.room_for;
+  const roomFromCarry = (rf && (Number.isFinite(rf.weight) || Number.isFinite(rf.bulk)))
+    ? Math.min(...[rf.weight, rf.bulk].filter(Number.isFinite))
+    : null;
+  const room = roomFromPack ?? roomFromCarry;
+
+  // A bare number, because every caller and every existing test uses it as one. `grabPlan`
+  // below is the same decision with its reasoning attached, for anything that wants to say
+  // WHY — an earlier draft of this line tried to hang fields off the number itself, which
+  // makes a Number WRAPPER and quietly breaks `===` for every test comparing it.
+  if (!Number.isFinite(room)) return cap;
+
+  // Never below one: a character standing at the table having walked eleven hops takes
+  // something. A pack with no room at all is the hall's own refusal to report, not ours.
+  return Math.max(1, Math.min(cap, Math.floor((room * fraction) / w)));
+}
+
+/**
+ * The same decision with its reasoning attached, for anything that wants to log or test WHY.
+ * `grabsFor` stays a bare number because every existing caller and test uses it as one.
+ */
+export function grabPlan(row, cfg = {}, dispenser = FEAST_DISPENSERS[0]) {
+  const cap = Math.max(1, Math.floor(cfg.max_grabs ?? 60));
+  const frac = Number.isFinite(cfg.grab_room_fraction) ? cfg.grab_room_fraction : 0.65;
+  const fraction = Math.min(1, Math.max(0, frac));
+  const p = row?.pack;
+  const rf = row?.carry?.room_for;
+  const source = (p && Number.isFinite(p.max) && (Number.isFinite(p.weight) || Number.isFinite(p.bulk)))
+    ? 'pack' : ((rf && (Number.isFinite(rf.weight) || Number.isFinite(rf.bulk))) ? 'carry.room_for' : null);
+  const n = grabsFor(row, cfg, dispenser);
+  return {
+    grabs: n, fraction, cap, source,
+    reason: source
+      ? `${n} activation(s): ${Math.round(fraction * 100)}% of the room left in the pack, ` +
+        `read from row.${source}, at ${dispenser?.weight ?? '?'} per ${dispenser?.item ?? 'item'}`
+      : `${n} activation(s): the doctrine's cap, because NO pack reading was available — the ` +
+        `${Math.round(fraction * 100)}% ceiling could not be applied and only the hall's ` +
+        `"can't hold anything more" will stop the taking`,
+  };
 }
 
 /** The dispatch errand: one non-blocking travel, and a memory that says where home is. */

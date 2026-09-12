@@ -311,6 +311,19 @@ export const DEFAULTS = {
     // slices of pork is 540 weight — about a quarter of a pack — and 540 vigor, or
     // nine climbs from the rest cap to a 140 floor.
     max_grabs: 60,
+    // AND NOT ALL OF THE ROOM THAT IS LEFT. Operator's call, 2026-09-12: take at most 65% of
+    // the pack room remaining, so a visit cannot fill the pack.
+    //
+    // A full pack is not a well-supplied character. It cannot receive a reagent (`supply`
+    // answers `receiver_full`), cannot hold a created weapon (`ReqNewHold refuses on bulk`),
+    // and — worst — sheds what it is already carrying to make space: the harness's makeRoom
+    // drops the REAGENTS once protected food has crowded everything else out, which cost this
+    // fleet 37 sapphires and 15 orc teeth off one character in 75 minutes. The 35% this
+    // leaves is the room the rest of the fleet's work needs.
+    //
+    // Measured before the change: 2,700 slices across the fleet, every pack at 100%, eight
+    // characters carrying between 220 and 294 slices each.
+    grab_room_fraction: 0.65,
     // A journey that has not been seen in the hall this long after setting off is given
     // up (its walk cancelled, its memory cleared). Twice the worst walk here.
     max_trip_ms: 30 * 60_000,

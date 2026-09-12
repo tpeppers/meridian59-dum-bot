@@ -529,6 +529,48 @@ export const HUNT_ROOMS = Object.freeze({
   // castle rooms between them can say.
   544: Object.freeze({ room: 544, name: 'Valley of Ileria', threat: 50,
     generates: Object.freeze(['fungus beast', 'groundworm larva']) }),
+
+  // THE BRAWLING SCHOOL. A nursery for characters whose proficiency is too low to land on
+  // the valley quarry next door -- see the 554 stations in prod-weaponcraft-training.jsonc.
+  // Sweetums sat in 544 for twelve hours with brawling at 6 and took ZERO kills: he clears
+  // the engagement ceiling comfortably (60 against a threat of 50) and still cannot hit a
+  // level-50 fungus beast often enough to matter. The ceiling answers "may I fight this",
+  // never "can I win", and this room is where that difference gets fixed.
+  //
+  // Its whole generator table is two creatures and nothing else -- baby spider 65% level 25,
+  // centipede 35% level 30, cap 10 -- so `threat` is the centipede at 30. Both are named in
+  // `generates` deliberately: a station that hunts only half the table leaves the other half
+  // to ratchet to the cap (monsroom.kod:242), which is the same jam the larvae make in 544.
+  //
+  // One hop and 25s p90 from 544, which is the point -- the four characters this serves have
+  // lost 34 max health between them to the ROAD (Ukgoth, the Cragged Mountains) and none at
+  // all to the valley itself.
+  554: Object.freeze({ room: 554, name: 'East Merchant Way through Ilerian Woods', threat: 30,
+    generates: Object.freeze(['baby spider', 'centipede']) }),
+
+  // THE ORC SCHOOL, AND THE ONLY PLACE THE FLEET CAN MINE ITS OWN REAGENT.
+  //
+  // Orc teeth are what both identification spells burn — 1 a cast for identify, 3 for reveal
+  // (identify.kod:51, reveal.kod:55) — and the fleet fights nothing that drops them, so it
+  // holds zero and buys them at 325 each from Paddock. An orc is a 40%/roll drop
+  // (orctres.kod:32). This room is the supply.
+  //
+  // AND IT IS THE RIGHT ROOM FOR THE LEVEL-3 LADDER AT THE SAME TIME. An armed stroke
+  // improves only while the ability is BELOW the quarry level (stroke.kod:98-121), so a
+  // school for hammer, axe and fencing has to be fought on something big enough to keep
+  // paying. Orc 45 and spider 50 carry all three to 50, which is where the fleet needs them.
+  //
+  // Two creatures, nothing else, and the harder of them is the SAFER fight: spider is level
+  // 50 at difficulty 4 and attack rating 390, the orc 45 at difficulty 6 and 495. Both are
+  // hunted, because a table half of which nobody kills ratchets to the cap (monsroom.kod:242)
+  // — the same jam the larvae make in 544. `threat` is the spider at 50, so the engagement
+  // ceiling admits this room from max health 34 up.
+  //
+  // Orcs are karma -40, so clearing them RAISES karma, which the Shalille side needs and
+  // which no other station on this roster provides. They also drop leather, and every
+  // character on this fleet is bare.
+  27: Object.freeze({ room: 27, name: 'A Deep, Dark, Spooky, Icky Cave', threat: 50,
+    generates: Object.freeze(['orc', 'spider']) }),
 });
 
 // Kept for the crypt-only callers and tests that name it.
@@ -537,7 +579,7 @@ export const CRYPT_ROOMS = HUNT_ROOMS;
 // Level of each quarry, for the engagement-ceiling test. Kept beside the rooms because
 // both are read together and a level with two homes ends up with two answers.
 export const QUARRY_LEVEL = Object.freeze({
-  frogman: 70, centipede: 30, zombie: 55,
+  frogman: 70, centipede: 30, zombie: 55, 'baby spider': 25, orc: 45, spider: 50,
   'fungus beast': 50, 'groundworm larva': 35,
   skeleton: 75, 'battered skeleton': 60, 'spectral mummy': 40,
 });

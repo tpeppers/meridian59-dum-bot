@@ -59,7 +59,28 @@
           "blue dragon scale",
           "arrows",
           "nerudite arrows",
-          "magic wand",
+          // WAS "magic wand", WHICH IS NOT AN ITEM, AND IT BROKE EVERY ORDER THIS FILE SENT.
+          //
+          // The broker resolves vault names when the order LANDS, and one name the deployed
+          // item table does not carry fails the WHOLE `autopilot start` rather than the one
+          // entry -- station, hunt list, weapon bans, `assigned_room`, all of it, silently,
+          // every tick, for every character in every doctrine that extends this one.
+          //
+          // Measured 2026-09-13 against substrate/m59-items.json (249 items): "magic wand" is
+          // absent; "wand" is present and keeps the intent, which was to protect wands. The
+          // table carries 21 wands -- "generic wand", "wand of fire", "wand of healing" and so
+          // on -- and the bare "wand" among them.
+          //
+          // It cost a whole fleet twice before it was fixed here. prod-weaponcraft-training
+          // found it first, where it had been rejecting sixteen of twenty-one all night and
+          // left Foxtrot in room 41 for half an hour with `assigned_room: 39`; it worked around
+          // it with a local override rather than fixing the root, so prod-valley-ileria hit
+          // the identical wall on 2026-09-13 with all 22 characters stationed at the wrong
+          // room and ZERO travels issued. Both overrides can now be dropped.
+          //
+          // The warning immediately below, about the rose, describes this exact mechanic and
+          // was written while the bug sat five lines above it.
+          "wand",
           // Operator request, 2026-09-03. Applied live through the strategy-control
           // endpoint (the per-unit store is re-read every tick); listed here so a fresh
           // unit, or a restart on this file, protects it too.

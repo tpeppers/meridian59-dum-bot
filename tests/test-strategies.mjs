@@ -695,6 +695,21 @@ test('strategies: overfarming sifts a chosen share of the pack and states what t
   assert.deepEqual(intent.orders.overfarm.prefer, ['orc tooth']);
   assert.match(intent.why, /sift 200%/);
 
+  // THE DRIFT CASE, AND IT IS THE ONE THIS RULE WOULD HAVE DIED OF. The harness normalises
+  // what it is sent and fills in its own defaults for anything absent — `merchant` among
+  // them, which has no slider and no business in a catalogue. So the keeper holds a key this
+  // rule never sets, and a whole-object compare says "different" for ever: measured before
+  // the fix, every pass re-sent an unchanged policy. The rules are first-match-wins, so that
+  // starves every rule below this one, exactly as one field once starved `ladder` and
+  // `placement` for two days.
+  const asStored = { ...intent.orders.overfarm, merchant: 'normal' };
+  assert.equal(rule.decide({ ...obs, keeper: { policy: { overfarm: asStored } } }, doctrine), null,
+    'a keeper holding the same settings plus a harness-side default is CONVERGED');
+  // And a real difference in a key this rule does set is still seen.
+  assert.ok(rule.decide({ ...obs,
+    keeper: { policy: { overfarm: { ...asStored, overfarm_percent: 175 } } } }, doctrine),
+    'but a changed setting still produces an intent');
+
   // Converged: the keeper already holds exactly this, so there is nothing to send.
   assert.equal(rule.decide({ ...obs, keeper: { policy: { overfarm: intent.orders.overfarm } } },
     doctrine), null);

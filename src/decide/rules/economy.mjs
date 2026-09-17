@@ -171,7 +171,24 @@ export const economyRules = [
         ? { enabled: true, ...strategySettings(obs, doctrine, obs.agent, STRATEGY_IDS.OVERFARM) }
         : null;
       const live = obs.keeper?.policy?.overfarm ?? obs.policy?.overfarm ?? null;
-      if (sameObject(live, wanted)) return null;
+      // COMPARE ONLY THE KEYS THIS RULE SETS, or the convergence test never converges.
+      //
+      // The harness normalises what it is sent and fills in its OWN defaults for anything
+      // absent — `merchant` among them, which is an estimate detail with no slider and no
+      // business in a catalogue. So the keeper holds nine keys and this rule wants eight,
+      // `sameObject` says different, and the policy is rewritten on every pass for ever.
+      //
+      // That is not a cosmetic waste. This file's own header records the last instance:
+      // one field the keeper held at a different value produced 6,126 intents in a day and
+      // zero calls, and because the rules are first-match-wins, `ladder` and `placement`
+      // starved for two days behind it. Every rule below this one would go the same way.
+      //
+      // The subset is the honest comparison anyway: a field this rule does not set is not a
+      // field it has an opinion about.
+      const comparable = live && wanted
+        ? Object.fromEntries(Object.keys(wanted).map(k => [k, live[k]]))
+        : live;
+      if (sameObject(comparable, wanted)) return null;
       // THE SAME NULL RULE AS ITS NEIGHBOURS, and it is load-bearing in both directions.
       // Writing null to a keeper that predates the feature pins a field that would otherwise
       // move when the harness's default moved; but once a unit has been given the policy,

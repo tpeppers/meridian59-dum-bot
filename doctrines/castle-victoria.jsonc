@@ -73,7 +73,7 @@
           //
           // It cost a whole fleet twice before it was fixed here. prod-weaponcraft-training
           // found it first, where it had been rejecting sixteen of twenty-one all night and
-          // left Foxtrot in room 41 for half an hour with `assigned_room: 39`; it worked around
+          // left a unit in room 41 for half an hour with `assigned_room: 39`; it worked around
           // it with a local override rather than fixing the root, so prod-valley-ileria hit
           // the identical wall on 2026-09-13 with all 22 characters stationed at the wrong
           // room and ZERO travels issued. Both overrides can now be dropped.

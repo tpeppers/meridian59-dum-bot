@@ -688,7 +688,7 @@ test('strategies: overfarming sifts a chosen share of the pack and states what t
   assert.ok(rule, 'the overfarm policy rule exists');
   const doctrine = { strategies: { enabled: true, defaults: [STRATEGY_IDS.OVERFARM],
     settings: { [STRATEGY_IDS.OVERFARM]: { overfarm_percent: 200, prefer: ['orc tooth'] } } } };
-  const obs = { agent: 'acct01', keeper: { policy: { overfarm: null } } };
+  const obs = { agent: 'alpha', keeper: { policy: { overfarm: null } } };
   const intent = rule.decide(obs, doctrine);
   assert.equal(intent.orders.overfarm.enabled, true);
   assert.equal(intent.orders.overfarm.overfarm_percent, 200);
@@ -702,7 +702,7 @@ test('strategies: overfarming sifts a chosen share of the pack and states what t
   // Un-ticking it CLEARS a keeper that has it, and leaves one that never did alone — the
   // second half is what keeps DUM from writing a null to every keeper on every pass.
   const off = { strategies: { enabled: true, defaults: [] } };
-  assert.equal(rule.decide({ agent: 'acct01', keeper: { policy: { overfarm: null } } }, off), null);
-  assert.equal(rule.decide({ agent: 'acct01', keeper: { policy: { overfarm: { enabled: true } } } }, off)
+  assert.equal(rule.decide({ agent: 'alpha', keeper: { policy: { overfarm: null } } }, off), null);
+  assert.equal(rule.decide({ agent: 'alpha', keeper: { policy: { overfarm: { enabled: true } } } }, off)
     .orders.overfarm, null);
 });

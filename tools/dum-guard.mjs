@@ -46,10 +46,24 @@ const rel = p => path.relative(ROOT, p).replace(/\\/g, '/');
 
 // Where a roster might live, relative to this map. Both are gitignored in their own
 // repositories and neither is required — but at least one must be found.
+//
+// AND A WORKTREE IS NOT BESIDE ANYTHING. The three paths below assume a checkout sitting
+// next to its sibling maps, which a `git worktree` never is: it has no `var/` of its own
+// because no bot has run in it, and its `..` is a directory of other worktrees. So this
+// guard refused every push from one — correctly, since it genuinely had nothing to check
+// against, but with no way to give it one. `M59_GUARD_SOURCES` is that way: a
+// path-separator-delimited list of roster or snapshot directories to ADD.
+//
+// It is deliberately not a way to switch the guard OFF. Pointing it at a real roster makes
+// it check more; there is no flag that makes it check nothing and call that a pass, because
+// "no hits" from a guard with no names loaded is the exact reading you least want to trust.
 const SOURCES = [
   { kind: 'harness roster', dir: path.resolve(ROOT, '../m59-harness/substrate/fleets') },
   { kind: 'bard snapshot', dir: path.resolve(ROOT, '../m59-bard/snapshots') },
   { kind: 'dum journal', dir: path.resolve(ROOT, 'var/journal') },
+  ...String(process.env.M59_GUARD_SOURCES ?? '').split(path.delimiter)
+    .map(d => d.trim()).filter(Boolean)
+    .map(dir => ({ kind: 'M59_GUARD_SOURCES', dir: path.resolve(dir) })),
 ];
 
 // Five classes, because they are matched differently and reported differently.
@@ -110,9 +124,15 @@ const readJson = p => { try { return JSON.parse(fs.readFileSync(p, 'utf8')); } c
 const LOOPBACK = /^(127\.\d+\.\d+\.\d+|::1|0\.0\.0\.0|localhost)$/i;
 
 // ---- the harness's rosters: the only record of the account passwords.
-{
-  const dir = SOURCES[0].dir;
-  if (fs.existsSync(dir)) {
+//
+// EVERY roster source, not `SOURCES[0]`. This block read the first entry only, so the
+// directories added by `M59_GUARD_SOURCES` were listed in the "looked in" report and then
+// never opened — a guard that says where it looked and did not look there is worse than one
+// that says nothing.
+for (const dir of SOURCES.filter(s => s.kind === 'harness roster' || s.kind === 'M59_GUARD_SOURCES')
+                         .map(s => s.dir)) {
+  {
+    if (fs.existsSync(dir)) {
     for (const f of fs.readdirSync(dir).filter(f => /\.json$/.test(f))) {
       const roster = readJson(path.join(dir, f));
       if (!roster || typeof roster !== 'object') continue;
@@ -137,6 +157,7 @@ const LOOPBACK = /^(127\.\d+\.\d+\.\d+|::1|0\.0\.0\.0|localhost)$/i;
         if (c.host && !LOOPBACK.test(String(c.host))) found.host.add(c.host);
       }
       readFrom.push(`${rel(path.join(dir, f))} (${entries.length} account(s))`);
+      }
     }
   }
 }

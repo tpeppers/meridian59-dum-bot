@@ -578,7 +578,7 @@ export const HUNT_ROOMS = Object.freeze({
 
   // THE BRAWLING SCHOOL. A nursery for characters whose proficiency is too low to land on
   // the valley quarry next door -- see the 554 stations in prod-weaponcraft-training.jsonc.
-  // AlfaTwo sat in 544 for twelve hours with brawling at 6 and took ZERO kills: he clears
+  // One unit sat in 544 for twelve hours with brawling at 6 and took ZERO kills: it clears
   // the engagement ceiling comfortably (60 against a threat of 50) and still cannot hit a
   // level-50 fungus beast often enough to matter. The ceiling answers "may I fight this",
   // never "can I win", and this room is where that difference gets fixed.

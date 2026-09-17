@@ -93,7 +93,7 @@ test('feast: the grab count is a FRACTION of the room left, and the pack block i
   eq(grabsFor({ pack: { max: 2000, weight: 0, bulk: 0 } }, { max_grabs: 60 }), 60,
      'an empty pack is still bounded by the doctrine cap');
   // BULK AND WEIGHT ARE SEPARATE CEILINGS AND THE TIGHTER ONE BINDS. A pack can be light
-  // and out of bulk — EchoTwo was at bulk 2000/2000 with 37 weight still free.
+  // and out of bulk — one unit was at bulk 2000/2000 with 37 weight still free.
   eq(grabsFor({ pack: { max: 2000, weight: 100, bulk: 1990 } }, { max_grabs: 60 }), 1,
      '10 bulk left binds over 1900 weight');
 

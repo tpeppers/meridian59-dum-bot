@@ -7,6 +7,7 @@
 // that a share is a share of the units a station can actually take.
 
 import assert from 'node:assert/strict';
+import { existsSync } from 'node:fs';
 import { loadDoctrine } from '../src/config/load.mjs';
 import { validate } from '../src/config/schema.mjs';
 import { shiftAssignments, shiftFleetRules } from '../src/decide/rules/shift.mjs';
@@ -483,10 +484,26 @@ test('shift: stations and the Castle Victoria shift are never both in charge', (
     'a doctrine that never mentions the shift is unaffected');
   assert.equal(rule.enabled({ castle_victoria: { shift: false }, shift: { on: true } }), false);
 
-  // And the shipped training doctrine is one of the doctrines that would have collided.
-  const d = loadDoctrine({ file: 'doctrines/local/prod-weaponcraft-training.jsonc' }).config;
-  assert.equal(d.shift.on, true);
-  assert.equal(rule.enabled(d), false);
+  // AND A REAL DOCTRINE ON THIS MACHINE IS ONE THAT WOULD HAVE COLLIDED — when there is one.
+  //
+  // `/doctrines/local/` is GITIGNORED: it is orders, and orders belong to the machine that
+  // owns the roster. This line said "the shipped training doctrine" and read a file that has
+  // never been shipped, so the test could only pass in one checkout — and it failed the whole
+  // suite in every other, which the pre-push hook runs, so a fresh worktree could not push at
+  // all. The four assertions above pin the rule; this one corroborates it against a doctrine
+  // somebody actually wrote, and is worth keeping for exactly that reason.
+  //
+  // SKIPPED OUT LOUD, never silently. A check with nothing to check against reports success
+  // and that reading is indistinguishable from a real one.
+  const local = 'doctrines/local/prod-weaponcraft-training.jsonc';
+  if (existsSync(local)) {
+    const d = loadDoctrine({ file: local }).config;
+    assert.equal(d.shift.on, true);
+    assert.equal(rule.enabled(d), false);
+  } else {
+    console.error(`      note: ${local} is not in this checkout (it is gitignored), so the ` +
+      `corroborating half of this test did not run`);
+  }
 });
 
 test('shift: a weapon the character does not carry is never the training weapon', () => {

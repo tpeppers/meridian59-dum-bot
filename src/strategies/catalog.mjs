@@ -25,6 +25,7 @@ export const STRATEGY_IDS = Object.freeze({
   ACCUMULATE_IN_VAULT: 'accumulate-in-vault',
   FARM_CLEANUP: 'farm-cleanup',
   FARM_DELIVERY: 'farm-delivery',
+  OVERFARM: 'overfarm',
   DETAILED_STATS: 'detailed-strategy-stats',
   PLAY_FACTION_GAMES: 'play-faction-games',
   AUTO_LEVEL_PLANNED: 'auto-level-planned-school',
@@ -349,6 +350,51 @@ export const STRATEGY_CATALOG = Object.freeze([
     ]),
   }),
   Object.freeze({
+    id: STRATEGY_IDS.OVERFARM,
+    title: 'Overfarm for a desired loot mixture',
+    group: 'Economy',
+    purpose: 'Sift more than the pack holds and carry the best of it',
+    requirements: ['A farming assignment', 'A pack ceiling the keeper can read exactly',
+      'Somewhere to deliver, because a lap is measured from one delivery to the next'],
+    description:
+      'Fill the pack normally, then take only what outranks what is already carried, then — once ' +
+      'full — keep killing and trade the worst thing in the pack for a better one on the floor, ' +
+      'until the chosen share of pack capacity has passed through its hands. Ranking is ' +
+      'estimated shillings per unit of carrying cost, multiplied by the preferences below. An item ' +
+      'with no known price is never dropped.',
+    settings: Object.freeze([
+      Object.freeze({ id: 'selective_at', title: 'Start choosing at (% full)',
+        type: 'integer', min: 0, max: 100, default: 85,
+        description: 'Below this the unit takes everything, as it always has. Above it, a drop has to ' +
+          'outrank the worst thing already carried to be worth the last of the pack.' }),
+      Object.freeze({ id: 'overfarm_percent', title: 'Overfarm to (% of pack capacity sifted)',
+        type: 'integer', min: 100, max: 400, default: 150,
+        description: 'How much the unit handles before going home, counting what it later threw away. ' +
+          '100 means no overfarming at all. THE NUMBER PREDICTS THE MIXTURE: against a stream that is ' +
+          'half preferred and half not, 150% comes home about 75/25, because sifting 1.5 packs of a ' +
+          '50/50 stream yields 0.75 of a pack of each and only the best 1.0 fits. 200% would be 100/0 ' +
+          'if the preferred half alone could fill the pack.' }),
+      Object.freeze({ id: 'prefer', title: 'Carry these by preference', type: 'item-list',
+        default: Object.freeze([]), max_items: 24,
+        description: 'Complete compendium item names, ranked up by the multiplier below. Singular and ' +
+          'plural are the same entry.' }),
+      Object.freeze({ id: 'avoid', title: 'Give these up first', type: 'item-list',
+        default: Object.freeze([]), max_items: 24,
+        description: 'Ranked down, so they are the first out of the pack when something better appears. ' +
+          'They are still picked up while there is room: this is a ranking, not a prohibition.' }),
+      Object.freeze({ id: 'prefer_multiplier', title: 'Preference strength',
+        type: 'number', min: 1, max: 20, default: 4,
+        description: 'How far a preferred item is moved up the ranking. 1 makes the preference list inert.' }),
+      Object.freeze({ id: 'avoid_multiplier', title: 'Avoidance strength',
+        type: 'number', min: 0.01, max: 1, default: 0.25,
+        description: 'How far an avoided item is moved down. 1 makes the avoid list inert.' }),
+      Object.freeze({ id: 'swap_margin', title: 'Minimum improvement to trade (x)',
+        type: 'number', min: 1, max: 10, default: 1.25,
+        description: 'A swap costs a drop, a get, and the seconds they take in a room full of monsters. ' +
+          'The floor item has to beat the worst carried one by at least this factor before it is worth it.' }),
+    ]),
+  }),
+  Object.freeze({
     id: STRATEGY_IDS.DETAILED_STATS,
     title: 'Detailed strategy stats',
     group: 'Observability',
@@ -363,7 +409,7 @@ export const STRATEGY_CATALOG = Object.freeze([
         type: 'number', min: 0.25, max: 168, default: 2,
         description: 'Initial look-back used by the DUM bot and Harness tabs.' }),
       ...['crate_check', 'travel', 'fighting', 'trading', 'vault_accumulation', 'create_food',
-          'farm_cleanup', 'farm_delivery']
+          'farm_cleanup', 'farm_delivery', 'overfarm']
         .map(id => Object.freeze({ id, title: id.split('_').map(w => w[0].toUpperCase() + w.slice(1)).join(' '),
           type: 'boolean', default: true,
           description: `Collect drillable ${id.replaceAll('_', ' ')} records while this strategy is enabled.` })),

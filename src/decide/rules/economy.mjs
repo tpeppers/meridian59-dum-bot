@@ -160,6 +160,38 @@ export const economyRules = [
     },
   },
   {
+    id: 'overfarm-policy',
+    faculty: 'economy',
+    why: 'the Overfarm strategy decides which hundred percent of a full pack comes home',
+    enabled: doctrine => doctrine.strategies?.enabled === true,
+    offWhy: 'DUM strategies are disabled',
+    decide(obs, doctrine) {
+      const enabled = strategyEnabled(obs, doctrine, obs.agent, STRATEGY_IDS.OVERFARM);
+      const wanted = enabled
+        ? { enabled: true, ...strategySettings(obs, doctrine, obs.agent, STRATEGY_IDS.OVERFARM) }
+        : null;
+      const live = obs.keeper?.policy?.overfarm ?? obs.policy?.overfarm ?? null;
+      if (sameObject(live, wanted)) return null;
+      // THE SAME NULL RULE AS ITS NEIGHBOURS, and it is load-bearing in both directions.
+      // Writing null to a keeper that predates the feature pins a field that would otherwise
+      // move when the harness's default moved; but once a unit has been given the policy,
+      // un-ticking the strategy has to CLEAR it, or the keeper goes on selecting loot
+      // against a strategy the operator switched off and nothing on any board says so.
+      if (!enabled && live == null) return null;
+      return {
+        kind: 'orders',
+        orders: { action: 'start', overfarm: wanted },
+        why: enabled
+          ? `choose loot from ${wanted.selective_at}% full and sift ${wanted.overfarm_percent}% ` +
+            `of the pack before delivering` +
+            (wanted.prefer?.length ? `, favouring ${wanted.prefer.join(', ')}` : '') +
+            (wanted.avoid?.length ? `, shedding ${wanted.avoid.join(', ')} first` : '')
+          : 'the overfarm strategy is off, so loot everything in reach as before',
+        evidence: { want: wanted, keeper_has: live },
+      };
+    },
+  },
+  {
     id: 'vault-accumulation-policy',
     faculty: 'economy',
     why: 'the Accumulate items in vault strategy protects selected drops and stores them during Barloque town loops',

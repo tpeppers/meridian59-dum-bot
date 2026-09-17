@@ -5,7 +5,7 @@ import { join } from 'node:path';
 import { StrategyStore } from '../src/record/strategies.mjs';
 import { Journal } from '../src/record/journal.mjs';
 import { DetailStats, inventoryGain } from '../src/record/detail-stats.mjs';
-import { STRATEGY_CATALOG, STRATEGY_IDS } from '../src/strategies/catalog.mjs';
+import { STRATEGY_CATALOG, STRATEGY_IDS, validateStrategySettings } from '../src/strategies/catalog.mjs';
 import { foodFleetRules } from '../src/decide/rules/food.mjs';
 import { castleAssignments, castleDeploymentDiffers, castleVictoriaFleetRules } from '../src/decide/rules/castle-victoria.mjs';
 import { spreadAssignments } from '../src/decide/rules/placement.mjs';
@@ -31,6 +31,7 @@ test('strategies: catalogue contains the independently selectable behaviours', (
     STRATEGY_IDS.BUY_FOOD, STRATEGY_IDS.BUY_WEAPONS, STRATEGY_IDS.BUY_REAGENTS,
     STRATEGY_IDS.ACCUMULATE_IN_VAULT,
     STRATEGY_IDS.FARM_CLEANUP, STRATEGY_IDS.FARM_DELIVERY,
+    STRATEGY_IDS.OVERFARM,
     STRATEGY_IDS.DETAILED_STATS,
   ]);
   assert.equal(STRATEGY_CATALOG.filter(s => s.group === 'Kraanan upkeep').length, 2);
@@ -42,7 +43,7 @@ test('strategies: detailed stats are opt-in, independently filtered, and expire 
   assert.equal(defaults.retention_hours, 24);
   assert.equal(defaults.default_window_hours, 2);
   assert.ok(['crate_check', 'travel', 'fighting', 'trading', 'vault_accumulation', 'create_food',
-    'farm_cleanup', 'farm_delivery']
+    'farm_cleanup', 'farm_delivery', 'overfarm']
     .every(key => defaults[key] === true));
   assert.deepEqual(inventoryGain([{ name: 'mace', amount: 1 }],
     [{ name: 'mace', amount: 1 }, { name: 'rose', amount: 2 }]),
@@ -663,4 +664,45 @@ test('strategies: Castle policy diff includes live maintenance fields', () => {
   row.commitment = null;
   row.policy.weaponPriority = ['sword'];
   assert.equal(castleDeploymentDiffers(row, orders), true);
+});
+
+test('strategies: overfarming sifts a chosen share of the pack and states what that buys', () => {
+  const definition = STRATEGY_CATALOG.find(s => s.id === STRATEGY_IDS.OVERFARM);
+  const defaults = Object.fromEntries(definition.settings.map(s => [s.id, s.default]));
+  // THESE NUMBERS ARE A CONTRACT WITH THE HARNESS, which declares the same defaults in
+  // `tools/m59-overfarm.mjs` and applies them to a real pack. Two copies because neither
+  // repository may depend on the other; if they drift, a slider at its default silently
+  // means something different from what the label says.
+  assert.equal(defaults.selective_at, 85);
+  assert.equal(defaults.overfarm_percent, 150);
+  assert.equal(defaults.swap_margin, 1.25);
+  assert.equal(defaults.prefer_multiplier, 4);
+  assert.equal(defaults.avoid_multiplier, 0.25);
+  assert.deepEqual(defaults.prefer, []);
+  assert.deepEqual(defaults.avoid, []);
+  // 100 is "no overfarming"; below it the lap would end before the pack filled.
+  assert.throws(() => validateStrategySettings(STRATEGY_IDS.OVERFARM, { overfarm_percent: 50 }),
+    /at least 100/);
+
+  const rule = economyRules.find(r => r.id === 'overfarm-policy');
+  assert.ok(rule, 'the overfarm policy rule exists');
+  const doctrine = { strategies: { enabled: true, defaults: [STRATEGY_IDS.OVERFARM],
+    settings: { [STRATEGY_IDS.OVERFARM]: { overfarm_percent: 200, prefer: ['orc tooth'] } } } };
+  const obs = { agent: 'acct01', keeper: { policy: { overfarm: null } } };
+  const intent = rule.decide(obs, doctrine);
+  assert.equal(intent.orders.overfarm.enabled, true);
+  assert.equal(intent.orders.overfarm.overfarm_percent, 200);
+  assert.deepEqual(intent.orders.overfarm.prefer, ['orc tooth']);
+  assert.match(intent.why, /sift 200%/);
+
+  // Converged: the keeper already holds exactly this, so there is nothing to send.
+  assert.equal(rule.decide({ ...obs, keeper: { policy: { overfarm: intent.orders.overfarm } } },
+    doctrine), null);
+
+  // Un-ticking it CLEARS a keeper that has it, and leaves one that never did alone — the
+  // second half is what keeps DUM from writing a null to every keeper on every pass.
+  const off = { strategies: { enabled: true, defaults: [] } };
+  assert.equal(rule.decide({ agent: 'acct01', keeper: { policy: { overfarm: null } } }, off), null);
+  assert.equal(rule.decide({ agent: 'acct01', keeper: { policy: { overfarm: { enabled: true } } } }, off)
+    .orders.overfarm, null);
 });

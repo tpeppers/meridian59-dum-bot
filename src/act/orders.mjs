@@ -132,6 +132,10 @@ export const ORDER_FIELDS = {
   vault_items:        { policy: 'vaultItems', compare: sameList },
   protect_items:      { policy: 'protectedItems', compare: sameList },
   strategy_stats:     { policy: 'strategyStats', compare: sameObject },
+  // SIFT MORE THAN THE PACK HOLDS AND CARRY THE BEST OF IT. An OBJECT, so it needs the
+  // structural compare: with `===` an unchanged setting reads as different on every pass
+  // and the whole policy is rewritten for ever.
+  overfarm:           { policy: 'overfarm', compare: sameObject },
   farm_cleanup:       { policy: 'farmCleanup', compare: sameObject },
   farm_delivery:      { policy: 'farmDelivery', compare: sameObject },
   guild_tithe:        { policy: 'guildTithe', compare: sameObject },

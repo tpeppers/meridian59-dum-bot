@@ -107,6 +107,18 @@ export class StrategyControlServer {
           if (req.method !== 'POST') return json(res, 405, { error: 'POST required' });
           return json(res, 200, await this.tacticalHandoff.request(await bodyOf(req)));
         }
+        // RE-READ THE DOCTRINE WITHOUT A RESTART. POST because it changes what the bot does
+        // on its next pass; a GET that mutated the running orders would fire on any browser
+        // refresh, link preview or monitoring probe, which is the one thing a control plane
+        // must not do. See src/link/reload.mjs for which keys this can apply and which it
+        // refuses, and why refusing is the honest half.
+        if (u.pathname === '/reload') {
+          if (req.method !== 'POST') return json(res, 405, { error: 'POST required' });
+          if (!this.controls) return json(res, 503, { error: 'human controls are unavailable' });
+          const report = this.controls.reload();
+          this.journal?.write?.({ kind: 'doctrine-reload', ...report });
+          return json(res, 200, report);
+        }
         if (u.pathname === '/observability' && req.method === 'GET') {
           const hours = Number(u.searchParams.get('hours') ?? 2);
           return json(res, 200, { fleet: this.store.fleet,

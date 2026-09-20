@@ -34,6 +34,10 @@ export const ORDER_FIELDS = {
   strategy:          { policy: 'strategy' },
   purpose:           { policy: 'purpose' },
   assigned_room:     { policy: 'assignedRoom' },
+  confine_rooms:     { policy: 'confineRooms', compare: sameList },
+  poor_farming:     { policy: 'poorFarming' },
+  no_food_vigor_floor: { policy: 'noFoodVigorFloor' },
+  poor_supply_retry_ms: { policy: 'poorSupplyRetryMs' },
   max_bots_per_safe_spot: { policy: 'maxBotsPerSafeSpot' },
   // ROOMS THIS CHARACTER MUST NOT SET OUT FOR. A destination ban, not an avoidance: a
   // journey that merely passes through one is not rerouted.
@@ -244,7 +248,9 @@ export async function apply(broker, intent, obs, { commit = false, yieldTo = [],
   // than this file's diff — see the note at the top of src/act/errands.mjs, because that
   // substitution is the one thing about errands that can go quietly wrong.
   if (intent.kind === 'errand') return runErrand(broker, intent, { commit, holder });
-  if (intent.kind === 'act') return applyFleetPlan(broker, intent, { commit });
+  // `yieldTo` reaches the deploy path too — a field the doctrine yields is one DUM does not
+  // write, whether it leaves as a policy diff or as a station deploy. See fleet-plan.mjs.
+  if (intent.kind === 'act') return applyFleetPlan(broker, intent, { commit, yieldTo });
 
   // A BATCH IS INDIVISIBLE IN INTENT AND NOT IN EXECUTION, and saying so is better than
   // pretending. Pairing writes both sides; if the second write fails the fleet is left

@@ -36,6 +36,7 @@ import { weaponFleetRules } from './rules/weapons.mjs';
 import { foodFleetRules } from './rules/food.mjs';
 import { castleVictoriaFleetRules } from './rules/castle-victoria.mjs';
 import { stationRules } from './rules/station.mjs';
+import { serviceDeskFleetRules } from './rules/servicedesk.mjs';
 import { factionCharacterRules, factionActiveFleetRules, factionRequestFleetRules,
   loyaltyFleetRules } from './rules/factions.mjs';
 import { factionGameFleetRules } from './rules/faction-games.mjs';
@@ -115,10 +116,7 @@ export const fleetRules = new RuleSet('fleet', [
   // Explicit token-game PvP has a perishable target and therefore outranks standing
   // faction errands. The broker re-verifies the player before every engagement.
   ...factionGameFleetRules,
-  // THE HUNTING SHIFT SITS WHERE THE CASTLE SHIFT DOES, and above the maintenance rules for
-  // the same reason: it establishes the hands-off patrol policy that everything below then
-  // maintains. It is `pass` on its first line when `crypt.shift` is off.
-  ...shiftFleetRules,
+  // (`shiftFleetRules` MOVED DOWN, 2026-09-10 — see the note above `mootFleetRules`.)
   // A human-led swarm still wins. Once free, an ASSIGNED one-hour faction quest outranks
   // standing maintenance windows. Merely asking for a new assignment is below the farm
   // baseline: a stopped/rejoined character should resume useful work before it records
@@ -201,6 +199,52 @@ export const fleetRules = new RuleSet('fleet', [
   // does: its window CLOSES, and the rules below it are standing conditions that will be
   // just as true in five minutes.
   ...graveyardFleetRules,
+  // THE SERVICE DESK, BELOW EVERY CLOSING WINDOW AND ABOVE THE DEFAULT WORK.
+  //
+  // Both of its rules are quiet: `desk-reveal-own-pack` fires only when the desk has both
+  // unidentified items and the teeth to pay for them, and `desk-uncurse-a-visitor` only when
+  // somebody is actually WEARING a curse. So the argument that pushed hunt-shift down — a rule
+  // with something to say on every pass should not sit above the errands that fire only when
+  // something is wrong — puts these here rather than lower: they are exceptions, and hunt-shift
+  // is the thing they are exceptions to.
+  //
+  // Below the graveyard and the crate because those have windows that CLOSE. A curse has been
+  // on its wearer for days and will still be there in five minutes; a reveal is not going
+  // anywhere either. Neither is worth displacing something perishable.
+  ...serviceDeskFleetRules,
+  // THE HUNTING SHIFT IS THE DEFAULT, SO IT GOES LAST OF THE REAL WORK. Operator,
+  // 2026-09-10: "hunt-shift should probably be considered lower priority than all other
+  // tasks — it's like the default thing everyone's supposed to do, go back to their tasks..
+  // might as well do any shopping/banking/etc beforehand!"
+  //
+  // It used to sit near the top, on the argument that it "establishes the hands-off patrol
+  // policy that everything below then maintains". The trouble with that argument is the one
+  // this whole table keeps rediscovering: hunt-shift HAS SOMETHING TO SAY ON EVERY PASS —
+  // there is always somebody to station — so a rule that fires unconditionally was placed
+  // above the errands that only fire when something is wrong. Measured 2026-09-09 with the
+  // cap at 1, 78 of 78 passes stopped at hunt-shift and the fuel model beneath it was never
+  // reached while eighteen of twenty characters ran out of food. Measured again 2026-09-10
+  // with the cap at 3: the sell circuit fired ONCE against 71 declines, and the declines name
+  // whoever took the character first.
+  //
+  // Stationing a character and THEN sending it shopping wastes the walk in both directions.
+  // Doing the errand first and stationing it on the way back is the same two moves in the
+  // order that costs one journey instead of two.
+  //
+  // THIS ONLY WORKS ALONGSIDE AN UNCAPPED `fleet_intents_per_pass`, and the two changes
+  // landed together. Demoting a rule under a tight cap does not reorder it, it DELETES it:
+  // the errand rules above would spend the budget and hunt-shift would never be reached,
+  // which is the same starvation in a new direction. Uncapped, every fleet rule is offered
+  // every pass and the disjointness test in `decide` is what keeps it correct — errands take
+  // the characters that need them, and hunt-shift stations everyone they did not claim, in
+  // the same pass.
+  //
+  // WHAT TO WATCH, because this is the half that could bite. hunt-shift carries the combat
+  // POSTURE as well as the room — flee_below, rest_below, the threat ceiling, the banned
+  // weapons. A character already deployed keeps that posture in its roster, so demotion only
+  // delays a character that is out of position or newly rebuilt. If a rebuilt character is
+  // seen fighting on default thresholds, this ordering is the first suspect.
+  ...shiftFleetRules,
   // BELOW THE SHIFT ON PURPOSE. A round trip to a counter is most of a 35-minute
   // window, so the shift decides first and this only fires for characters it has not
   // claimed — or for one so heavy it cannot pick up what it kills.

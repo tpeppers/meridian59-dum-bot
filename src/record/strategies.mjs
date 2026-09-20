@@ -20,6 +20,8 @@ export class StrategyStore {
     this.enabled = enabled;
     this.path = join(this.dir, `${sanitise(this.fleet)}.json`);
     this.warned = false;
+    // The running process is authoritative. External edits are restart candidates.
+    this.current = this.read();
   }
 
   read() {
@@ -28,10 +30,12 @@ export class StrategyStore {
       const raw = JSON.parse(readFileSync(this.path, 'utf8'));
       const agents = {};
       for (const [agent, ids] of Object.entries(raw?.agents ?? {}))
-        agents[String(agent)] = validateStrategyIds(ids);
+        agents[String(agent)] = validateStrategyIds(ids.filter(id => STRATEGY_CATALOG.some(s => s.id === id)));
       const settings = {};
       for (const [agent, byStrategy] of Object.entries(raw?.settings ?? {}))
-        settings[String(agent)] = validateStrategySettingsMap(byStrategy);
+        settings[String(agent)] = validateStrategySettingsMap(Object.fromEntries(Object.entries(byStrategy)
+          .filter(([id]) => STRATEGY_CATALOG.some(s => s.id === id)).map(([id, values]) => [id,
+            Object.fromEntries(Object.entries(values).filter(([key]) => STRATEGY_CATALOG.find(s => s.id === id).settings?.some(f => f.id === key)))])));
       return { version: 2, agents, settings, updated_at: raw?.updated_at ?? null };
     } catch (e) {
       if (!this.warned) {
@@ -53,8 +57,7 @@ export class StrategyStore {
     });
   }
 
-  snapshot(agents = []) {
-    const state = this.read();
+  snapshot(agents = [], state = this.current) {
     return {
       version: 2,
       agents: Object.fromEntries(agents.filter(Boolean).map(agent =>
@@ -100,7 +103,7 @@ export class StrategyStore {
     const cleanSettings = Object.fromEntries(settingIds.map(id =>
       [id, validateStrategySettings(id, settings[id], { partial: true })]));
 
-    const state = this.read();
+    const state = structuredClone(this.current);
     for (const agent of who) {
       const next = new Set(this.effective(agent, state));
       for (const id of ids) changes[id] ? next.add(id) : next.delete(id);
@@ -115,6 +118,7 @@ export class StrategyStore {
     const tmp = `${this.path}.tmp`;
     writeFileSync(tmp, JSON.stringify(state, null, 2) + '\n');
     renameSync(tmp, this.path);
+    this.current = state;
     return this.states(who);
   }
 }

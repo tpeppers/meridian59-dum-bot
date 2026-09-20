@@ -32,6 +32,47 @@ test('fuel: depleted packs depart, full food packs keep farming, and hurt units 
   assert.equal(sellCircuitWants(row('a', { health: { pct: 0.3 } }), c), false);
   assert.equal(sellCircuitWants(row('a', { items: null }), c), false);
 });
+test('fuel: a pack too full to hold a weapon goes to town even with meals aboard', () => {
+  const c = cfg().sellrun;
+  // The exact shape prod produced: fed, light on SLOTS, and refused a weapon for want of
+  // BULK. Before this, every one of these read as "keep farming" and the character stood
+  // still until its larder emptied -- which for CharlieTwo was 2191 idle passes.
+  const stuck = (extra = {}) => row('a', {
+    carrying: 9,
+    items: [{ name: 'slice of pork', amount: 40 }, { name: 'mushroom', amount: 325 }],
+    refusals: [{ code: 'UNARMED_NO_DONOR', faculty: 'work', blocking: true,
+                 why: 'unarmed - no room to hold one: 2 bulk free, needs 70' }],
+    ...extra });
+
+  assert.equal(sellCircuitWants(stuck(), c), true,
+    'a stuck pack is a sell trip even when the larder is full');
+  // The control: same full larder, same slot count, no refusal -- still farming.
+  assert.equal(sellCircuitWants(row('a', { carrying: 9,
+    items: [{ name: 'slice of pork', amount: 40 }, { name: 'mushroom', amount: 325 }] }), c),
+    false, 'a fed character with room in its pack finishes its lap');
+
+  // THE HEALTH FLOOR STILL APPLIES. A full pack is not an emergency and marching a hurt
+  // character across town is how this fleet collects road deaths.
+  assert.equal(sellCircuitWants(stuck({ health: { pct: 0.3 } }), c), false,
+    'a hurt character is not sent to town by a full pack');
+
+  // A refusal explicitly marked non-blocking is a note, not a stoppage.
+  assert.equal(sellCircuitWants(row('a', { carrying: 9,
+    items: [{ name: 'slice of pork', amount: 40 }],
+    refusals: [{ code: 'UNARMED_NO_DONOR', blocking: false }] }), c), false,
+    'a non-blocking refusal does not trigger a trip');
+
+  // An unrelated refusal must not become a sell trigger by accident.
+  assert.equal(sellCircuitWants(row('a', { carrying: 9,
+    items: [{ name: 'slice of pork', amount: 40 }],
+    refusals: [{ code: 'STALL_NO_LEVER', blocking: true }] }), c), false,
+    'only pack-room codes count');
+
+  // And it works with the fuel model OFF too -- the point is that it is independent of it.
+  const noFuel = { ...c, trigger: { ...c.trigger, food_empty: false, carry_at: 99 } };
+  assert.equal(sellCircuitWants(stuck(), noFuel), true,
+    'a stuck pack beats a carry_at threshold it cannot reach');
+});
 test('fuel: a repeated station recall cannot starve the full town circuit', () => {
   const c = cfg();
   const obs = { at: now, characters: [row('a', { room: 38,

@@ -34,6 +34,7 @@
 // room wants the station restored; a fleet whose station just killed someone might not.
 // So this is a doctrine switch rather than a default, and it names the rooms it will
 // return people to rather than trusting whatever `assignedRoom` happens to say.
+import { holdsTheBody } from './body.mjs';
 import { activeFactionWork } from './factions.mjs';
 // Pure data — room numbers read off the kod. See the note in isStranded: a room this
 // doctrine's own errands send people to is not a room they are stranded in.
@@ -58,8 +59,12 @@ const DEFAULT_MAX_TRIP_MS = 30 * 60_000;
 // errand mid-flight, a two-sided trade, or anything that did not mark itself takeable
 // keeps the body; a bare claim does not. A piloted character is off limits regardless —
 // that is a person playing it.
-export const holdsTheBody = row => Boolean(row.parked) || Boolean(row.piloted) ||
-  (Boolean(row.commitment) && row.commitment?.takeable !== true);
+// MOVED TO ./body.mjs AND RE-EXPORTED, so every existing caller is untouched. It had to leave
+// this file because `servicedesk.mjs` needs it and `src/act/errands.mjs` imports servicedesk —
+// so importing station from servicedesk closed a cycle through act/orders.mjs and
+// config/schema.mjs, and the whole suite died on `Cannot access 'ORDER_FIELDS' before
+// initialization`, naming neither file involved. body.mjs imports nothing.
+export { holdsTheBody } from './body.mjs';
 
 /** Where this character is supposed to be, or null if this doctrine does not say. */
 export function stationFor(row = {}, doctrine = {}) {
@@ -121,6 +126,21 @@ export function isDoctrineDestination(room, doctrine = {}) {
   // Standing in the hall is the only part that needs the exemption, because that is where
   // the character deliberately stops for up to six minutes to work the tables.
   if (doctrine.feast?.on) out.add(FEAST_HALL.room);
+  // THE SERVICE DESK STANDS STILL, WHICH IS EXACTLY WHAT THIS RULE EXISTS TO UNDO.
+  //
+  // Same argument as the feast hall one line up, and a sharper consequence. The desk is a
+  // 20-max-health character carrying the fleet's magic-item collection whose entire job is to
+  // be in one room; a recall would walk it to a hunting station, and the stations in the live
+  // doctrine include the Valley of Ileria, which is level-50 fungus beasts. Without this the
+  // ONLY thing keeping it alive would be an operator remembering to write the room into
+  // `station.also_allowed` by hand — and a safety that depends on being remembered is the
+  // thing this repository keeps paying for.
+  //
+  // Gated on `service_desk.on` for the reason the feast hall is gated on `feast.on`: with the
+  // desk switched off, 106 is an ordinary inn again and a character idling there SHOULD be
+  // walked home.
+  if (doctrine.service_desk?.on && Number.isInteger(Number(doctrine.service_desk?.room)))
+    out.add(Number(doctrine.service_desk.room));
   for (const r of doctrine.station?.also_allowed ?? []) out.add(Number(r));
   return out.has(Number(room));
 }

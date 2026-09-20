@@ -27,6 +27,8 @@
 
 import { pass } from './tick.mjs';
 import { CircuitJobs } from './circuits.mjs';
+import { TacticalHandoff } from '../link/tactical-handoff.mjs';
+import { Broker } from '../link/broker.mjs';
 
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 
@@ -84,6 +86,7 @@ export async function run(ctx, { onPass = () => {} } = {}) {
   process.once('SIGTERM', stop);
 
   await ctx.strategyServer?.start();
+  await ctx.controls?.register().catch(e => journal.write({ kind: 'controls-registration', why: e.message }));
   journal.write({ kind: 'startup', doctrine: config.name, fleet: config.fleet,
                   claim: config.claim, commit: ctx.commit,
                   why: 'a run begins. Everything below this line is attributable to this doctrine' });
@@ -109,11 +112,27 @@ export async function run(ctx, { onPass = () => {} } = {}) {
   const holder = ctx.holder ?? `dum/${config.name}@pid-${process.pid}`;
   const leaseMs = config.claim?.lease_ms ?? 120_000;
   const mine = new Map();
+  // Only the handoff's own release bypasses the DUM dispatch gate. It cannot issue
+  // gameplay writes, and the actual yield is still paced by a separate link.
+  let yieldLink = null;
+  const handoff = new TacticalHandoff({ fleet: config.fleet, pid: process.pid,
+    health: () => ctx.broker.health(), forgetAgent: agent => mine.delete(agent),
+    yieldAgent: async agent => {
+      if (!ctx.commit) throw new Error('DUM is not in commit mode');
+      yieldLink ??= new Broker({ controlUrl: ctx.broker.url, dryRun: false,
+        callsPerSecond: 2, onCall: ctx.broker.onCall });
+      const result = await yieldLink.call('autopilot', { agent, action: 'yield', by: holder,
+        faculties: ['work', 'movement', 'economy', 'social'] });
+      if (result?.error) throw new Error(result.error);
+    } });
+  ctx.broker.tacticalHandoff = handoff;
+  if (ctx.strategyServer) ctx.strategyServer.tacticalHandoff = handoff;
 
   async function claimFor(agents) {
     if (!ctx.commit || !wanted.length) return;
     const failed = [];
     for (const agent of agents) {
+      if (handoff.reserved(agent)) throw new Error('selected agent is temporarily controlled by the viewer');
       if (mine.has(agent)) continue;
       const r = await ctx.broker.call('autopilot', {
         agent, action: 'claim', faculties: wanted, by: holder,
@@ -145,13 +164,15 @@ export async function run(ctx, { onPass = () => {} } = {}) {
 
   async function heartbeat() {
     if (!ctx.commit) return;
-    await heartbeatClaims(ctx.broker, mine, { holder, leaseMs, journal });
+    await ctx.controls?.register().catch(e => journal.write({ kind: 'controls-registration', why: e.message }));
+    await heartbeatClaims(ctx.broker,
+      new Map([...mine].filter(([agent]) => !handoff.reserved(agent))), { holder, leaseMs, journal });
   }
 
   async function releaseAll() {
     if (!ctx.commit) return;
     for (const agent of mine.keys())
-      await ctx.broker.call('autopilot', { agent, action: 'yield', by: holder })
+      await ctx.broker.call('autopilot', { agent, action: 'yield', by: holder, faculties: mine.get(agent) })
         .catch(() => {});   // the lease expires on its own; a failed release is not fatal
   }
 
@@ -205,6 +226,7 @@ export async function run(ctx, { onPass = () => {} } = {}) {
   if (heartbeatTimer) clearInterval(heartbeatTimer);
   if (heartbeating) await heartbeating;
   await releaseAll();
+  handoff.close();
   await ctx.strategyServer?.stop();
   journal.write({ kind: 'shutdown', held: [...mine.keys()],
                   why: 'asked to stop; the claim was released and the keeper has its ' +

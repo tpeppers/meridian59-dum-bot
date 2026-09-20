@@ -120,6 +120,33 @@ export const DEFAULTS = {
   //   "not_ours": ["Some Guest Hero"]
   not_ours: [],
 
+  // ---------------------------------------------------------------- the service desk
+  //
+  // ONE STANDING CASTER, TWO SERVICES, AND BOTH COST SOMETHING IRREVERSIBLE. `reveal` is three
+  // orc teeth a cast and there is no way to get a tooth back; `remove curse` needs the WEARER,
+  // so it walks a character across the world. Off by default for both reasons — an operator
+  // arms this, nobody discovers it.
+  //
+  // `on` also has a second effect, in station.mjs: it makes `room` a doctrine destination, so
+  // the recall stops reading a caster standing in its own inn as stranded. Without that the
+  // desk gets walked to a hunting station, and in the live doctrine those include level-50
+  // fungus beasts — with a 20-max-health body carrying the fleet's magic-item collection.
+  service_desk: {
+    on: false,
+    // The desk keeper. An agent handle, because the room and the character are both facts
+    // about one slot and a name would have to be resolved twice.
+    agent: 'acct08',
+    // Where it stands. NOT a hunt room, which is why it cannot be a `shift.station` — that
+    // table is validated against HUNT_ROOMS, correctly, since it answers where to HUNT.
+    room: 106,
+    reveal: true,
+    uncurse: true,
+    // A CEILING PER ERRAND. Each reveal is a thirty-second trance and a read-back, so an
+    // unbounded pass would hold the desk for minutes and journal as one decision.
+    max_per_errand: 3,
+    travel_timeout_ms: 600_000,
+  },
+
   // ---------------------------------------------------------------- cadence
   cadence: {
     // HOW MANY FLEET DECISIONS ONE PASS MAY HAND OUT.

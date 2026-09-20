@@ -191,6 +191,11 @@ export function sellrunWindow(mem = {}, agent, now, cooldownMs, failBackoffMs = 
  * @param {object} cfg      the `sellrun` doctrine block
  * @returns {boolean}
  */
+// The refusal codes that mean "this character cannot do its job for want of pack room".
+// A set rather than a literal so a second code can be added without touching the gate, and
+// so every place that asks the question agrees on the answer.
+export const PACK_FULL_CODES = new Set(['UNARMED_NO_DONOR']);
+
 export function sellCircuitWants(row, cfg = {}, memory = null) {
   if (!row || cfg?.on === false) return false;
   const t = cfg.trigger ?? {};
@@ -200,8 +205,26 @@ export function sellCircuitWants(row, cfg = {}, memory = null) {
   // Carry thresholds include food itself. A freshly filled pack must finish its
   // farming lap instead of being immediately sold and filled again.
   const heavy = !fuelDriven && (row.carrying ?? 0) >= (t.carry_at ?? 24);
+  // A PACK TOO FULL TO HOLD A WEAPON IS OUT OF FUEL IN THE ONLY SENSE THAT MATTERS.
+  //
+  // `heavy` is switched off entirely under the fuel model, and the reason is good: a
+  // freshly filled pack should finish its farming lap rather than be sold and refilled.
+  // But it means the ONLY way out of a full pack is running the larder to zero, and a pack
+  // fills to useless long before the food does. Measured on prod 2026-09-10: six characters
+  // holding `UNARMED_NO_DONOR` — "unarmed — no room to hold one: 2 bulk free, needs 70" —
+  // standing still with meals in the bag, CharlieTwo for 2191 idle passes. They could not sell
+  // because they were not hungry and could not fight because they could not hold a weapon.
+  //
+  // `carry_at` would not have caught them either, and that is the second half of it: it
+  // counts pack SLOTS and the blocker is BULK. DeltaTwo was stuck on nine slots, one of which
+  // was 325 mushrooms. No count threshold sees that.
+  //
+  // So the trigger is the keeper's own structured refusal rather than a threshold of ours.
+  // Matched on `code`, never on the sentence — escalate.mjs makes the case for that at
+  // length and it applies here identically: the prose is the harness's to reword.
+  const packStuck = (row.refusals ?? []).some(r => PACK_FULL_CODES.has(r?.code) && r?.blocking !== false);
   const broke = (t.broke_under ?? 0) > 0 && (row.purse ?? 0) < t.broke_under;
-  if (!heavy && !broke && !empty && !(fuelDriven && (memory?.sellrun?.[row.agent]?.pending || memory?.sellrun?.[row.agent]?.ok === false)) && !handoverOwed(row.agent, memory)) return false;
+  if (!heavy && !packStuck && !broke && !empty && !(fuelDriven && (memory?.sellrun?.[row.agent]?.pending || memory?.sellrun?.[row.agent]?.ok === false)) && !handoverOwed(row.agent, memory)) return false;
   // Do not march a hurt character across town. Selling is not survival; if it is below the
   // floor the keeper's ladder is the thing that should be acting, not this.
   //
@@ -465,6 +488,21 @@ function circuitSteps(agent, cfg, back) {
       step.expect = 'cleared'; step.args.max = 10; step.timeout_ms = 90000;
     }
   }
+  if (cfg.reagent_coop) {
+    // A chance BEFORE each remaining Barloque business task, never before
+    // banking/return alone. A successful visit consumes the later chances.
+    let opportunity = 0;
+    for (let i = 0; i < steps.length; i++) {
+      const step = steps[i], next = steps[i + 1];
+      if (step.tool !== 'travel' || !['vault', 'sell_all'].includes(next?.tool)) continue;
+      const first = opportunity === 0;
+      steps.splice(i++, 0, { tool: 'reagent_coop', optional: true, coop_opportunity: true,
+        args: { agent, action: 'town', keep: cfg.bank?.keep ?? 500,
+          next_room: step.args.to, first, request_id: cfg.coop_request_id + ':town:' + opportunity++ },
+        expect: 'coop', timeout_ms: travelTimeout, estimate_ms: first ? 700_000 : 180_000,
+        why: 'secret guild tithe before the next town task; defer outsiders, skip after the last task' });
+    }
+  }
   return steps;
 }
 
@@ -538,6 +576,8 @@ export const sellrunFleetRules = [
         const back = row.policy?.assignedRoom ?? row.assigned_room ?? row.room;
         const vaultItems = [...new Set([...(cfg.vault?.items ?? cfg.keep), ...(row.policy?.vaultItems ?? [])])];
         const steps = circuitSteps(row.agent, { ...cfg,
+          reagent_coop: row.policy?.reagentCoop?.enabled === true,
+          coop_request_id: `dum-sellrun:${row.agent}:${now}`,
           vault_fee_shortfall: Math.max(0, (mem[row.agent]?.vault_fee ?? 0) - (row.purse ?? 0)),
           keep: [...new Set([...cfg.keep, ...vaultItems])],
           vault: cfg.vault ? { ...cfg.vault, items: vaultItems } : cfg.vault,

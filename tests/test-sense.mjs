@@ -206,3 +206,27 @@ test('not_ours: the exclusion is by character, never by roster handle', async ()
   const obs = await observeFleet(lentBroker(), { notOurs: ['role-guest'] });
   assert.equal(obs.characters.length, 3);
 });
+
+// WHERE IN THE ROOM IS NOT THE SAME QUESTION AS WHICH ROOM, and this whitelist used to drop it.
+//
+// `normalizeFleetRow` is a whitelist — its own comment says a field the broker sends and the
+// builder omits is dropped here silently — and `position` was one of the omissions. Nothing
+// noticed until the service desk tried to walk a visitor ACROSS a room to the caster: the step
+// is guarded on the desk having a position, so it was never emitted, silently, and the casts
+// went out at whatever distance the traveller happened to stop at.
+//
+// It matters because `SuccessChance` (spell.kod:1174-1240) applies a distance penalty without
+// line of sight and past a range simply HALVES the chance. Measured on prod 2026-09-18: twelve
+// rows and ten columns apart gave 0 successes in 5 casts; adjacent gave one on the second.
+test('sense: a row keeps its position through the whitelist', () => {
+  const r = normalizeFleetRow({ agent: 'acct08', character: 'Alfa',
+                                position: { row: 5, col: 6 } });
+  assert.deepEqual(r.position, { row: 5, col: 6 });
+});
+
+test('sense: a row with no usable position says null rather than half a square', () => {
+  // A walk to an undefined column is not a walk, and `{row: 5}` would be one.
+  for (const bad of [undefined, null, {}, { row: 5 }, { col: 6 }, { row: 'a', col: 'b' }])
+    assert.equal(normalizeFleetRow({ agent: 'acct08', position: bad }).position, null,
+                 `position ${JSON.stringify(bad)} should normalise to null`);
+});

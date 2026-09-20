@@ -17,7 +17,36 @@ const resumeKeeper = (agent, why) => ({
   why,
 });
 
-export function callsForFleetPlan(plan = [], why = null) {
+// A FIELD THE OPERATOR OWNS IS NOT WRITTEN BY A DEPLOY EITHER. Added 2026-09-10.
+//
+// `yield_to` is documented as "fields something else writes", and until now it was honoured
+// in exactly one place: `planOrders`, the policy-DIFF path. A fleet `deploy` does not go
+// through that path — it builds the flat argument object below and sends it — so every
+// yielded field was written anyway, on every deploy, silently. From the operator: "Why should
+// hunt-shift override the settings we want, we want it to keep fighting with the settings we
+// want."
+//
+// It could not be worked around from a doctrine, which is what made it a bug rather than a
+// preference: `posture()` in rules/shift.mjs falls back station -> `doctrine.shift` -> built-in
+// default, so DELETING a field from a station does not stop it being sent, it just sends the
+// default instead. The only way to say "leave this alone" is here.
+//
+// Dropped fields are RETURNED, never merely omitted — a setting that quietly does nothing is
+// the failure this repository has paid for twice (`purpose` missing from a schema for a year,
+// and the whitelist ten lines below this one).
+const dropYielded = (args, yieldSet, dropped) => {
+  if (!yieldSet.size) return args;
+  const out = {};
+  for (const [k, v] of Object.entries(args)) {
+    if (yieldSet.has(k) && v !== undefined) { dropped.push(k); continue; }
+    out[k] = v;
+  }
+  return out;
+};
+
+export function callsForFleetPlan(plan = [], why = null, { yieldTo = [] } = {}) {
+  const yieldSet = new Set(yieldTo);
+  const yieldedFields = [];
   if (!Array.isArray(plan)) throw new Error('fleet intent plan must be an array');
   const calls = [];
   for (const step of plan) {
@@ -105,7 +134,7 @@ export function callsForFleetPlan(plan = [], why = null) {
     if (step.do === 'deploy') {
       const agent = need(step, 'agent');
       const assigned_room = step.to == null ? null : Number(step.to);
-      calls.push({ tool: 'autopilot', args: {
+      calls.push({ tool: 'autopilot', args: dropYielded({
         agent, action: 'start', mode: 'farm', assigned_room,
         hunt: step.hunt,
         max_threat_over: step.max_threat_over,
@@ -132,7 +161,7 @@ export function callsForFleetPlan(plan = [], why = null) {
         purpose: step.purpose,
         goals: step.goals,
         max_bots_per_safe_spot: step.max_bots_per_safe_spot,
-      }, why: step.why ?? why });
+      }, yieldSet, yieldedFields), why: step.why ?? why });
       continue;
     }
     // WALK THERE. `deploy` sets the assignment and trusts the keeper to act on it, which
@@ -159,11 +188,14 @@ export function callsForFleetPlan(plan = [], why = null) {
     }
     throw new Error(`fleet action "${step?.do ?? '?'}" has no executor in src/act/fleet-plan.mjs`);
   }
+  // Non-enumerable so every existing caller that maps or compares this array is unaffected,
+  // and `deepEqual` on the calls in the tests still passes.
+  Object.defineProperty(calls, 'yielded', { value: [...new Set(yieldedFields)], enumerable: false });
   return calls;
 }
 
-export async function applyFleetPlan(broker, intent, { commit = false } = {}) {
-  const calls = callsForFleetPlan(intent.plan, intent.why); // validate all before acting
+export async function applyFleetPlan(broker, intent, { commit = false, yieldTo = [] } = {}) {
+  const calls = callsForFleetPlan(intent.plan, intent.why, { yieldTo }); // validate all before acting
   const results = [];
   for (const call of calls) {
     const invoke = commit ? broker.call.bind(broker) : broker.write.bind(broker);
@@ -190,6 +222,10 @@ export async function applyFleetPlan(broker, intent, { commit = false } = {}) {
     results,
     failures,
     partial: failures.length > 0 && failures.length < results.length,
+    // Which fields this plan did NOT write because the doctrine yields them. Present only
+    // when something was actually dropped, so it reads as an event rather than as noise,
+    // and it lands in the journal beside the calls that WERE sent.
+    ...(calls.yielded?.length ? { yielded: calls.yielded } : {}),
     shortfalls: intent.shortfalls,
     notes: intent.notes,
     why: intent.why,

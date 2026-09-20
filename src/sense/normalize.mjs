@@ -121,6 +121,18 @@ export function normalizeFleetRow(r = {}) {
     commitment: r.committed ?? r.commitment ?? null,
     parked: r.parked ?? null,
     piloted: r.piloted ?? null,
+    // WHERE IN THE ROOM, which is not the same question as which room and is the one a spell
+    // cares about. `SuccessChance` (spell.kod:1174-1240) applies a distance penalty without
+    // line of sight and past a range simply HALVES the chance, so "arrived in room 106" and
+    // "standing next to the caster" are different facts with very different odds: measured on
+    // prod 2026-09-18, opposite ends of the Brownestone Inn gave 0 successes in 5 casts, and
+    // adjacent gave one on the second.
+    //
+    // Dropped by this whitelist until now, exactly as the comment above predicts — the service
+    // desk emitted no approach step at all, silently, because it guards on this field being
+    // present. The broker has always sent it.
+    position: (Number.isFinite(Number(r.position?.row)) && Number.isFinite(Number(r.position?.col)))
+      ? { row: Number(r.position.row), col: Number(r.position.col) } : null,
     // `stalled` is either false, a string, or an object with a `why`. All three occur.
     stalled: (r.stalled && r.stalled !== false) ? r.stalled : null,
     // THE KEEPER'S OWN ORDERS, NOW FREE.

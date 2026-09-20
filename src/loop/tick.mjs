@@ -48,7 +48,8 @@ export async function tickCharacter(ctx, row) {
     // is doing. `return-to-station` is the one that needed it: a character eleven hops into a
     // walk to the Duke's hall is in none of the rooms that walk ends at, so it read as
     // out-of-position and was recalled — 28 times in one watch, against zero food taken.
-    let obs = { ...observeFromBoard(row, { now }), memory: ctx.memory?.read() ?? null };
+    let obs = { ...observeFromBoard(row, { now }), memory: ctx.memory?.read() ?? null,
+      human_controls: ctx.controls?.ownership() ?? null };
     let { intent, considered } = decide(characterRules, obs, config);
     line.considered = considered;
 
@@ -145,7 +146,7 @@ export async function tickFleet(ctx, { decide: runRules = true, only = null } = 
     if (commit && ctx.circuits)
       await ctx.ensureClaim?.(agents.filter(agent => !only || only.has(agent)));
     const factions = ctx.factions?.snapshot(agents) ?? null;
-    const obs = { ...observed, memory, strategies, factions };
+    const obs = { ...observed, memory, strategies, factions, human_controls: ctx.controls?.ownership() ?? null };
     if (factions) {
       // Scoped like the maintenance enrichment below: a run that manages a handful of
       // characters must not pay a per-character inventory read for every OTHER character that

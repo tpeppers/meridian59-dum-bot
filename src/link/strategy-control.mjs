@@ -5,6 +5,9 @@
 // hot-swappable, makes the catalogue self-describing, and fails closed when DUM is down.
 
 import { createServer } from 'node:http';
+import { createHash, timingSafeEqual } from 'node:crypto';
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
 import { STRATEGY_CATALOG, STRATEGY_IDS } from '../strategies/catalog.mjs';
 
 const json = (res, status, body) => {
@@ -13,6 +16,23 @@ const json = (res, status, body) => {
     'content-length': Buffer.byteLength(data), 'cache-control': 'no-store' });
   res.end(data);
 };
+
+// Compare-and-set for native controls. A repaint, stale click, or restart must not
+// turn an old toggle into a new policy decision. Legacy callers remain compatible.
+export const strategyRevision = (fleet, agents, states) => createHash('sha256')
+  .update(JSON.stringify({fleet, agents, states})).digest('hex');
+
+export async function updateStrategies(store, body, resolveItems = null) {
+  const settings = await canonicalItemSettings(body.settings ?? {}, resolveItems);
+  // Check AFTER any async canonicalization, then update synchronously.
+  if (body.expected_revision !== undefined) {
+    const { states } = store.states(body.agents);
+    if (body.expected_pid !== process.pid || body.expected_fleet !== store.fleet ||
+        body.expected_revision !== strategyRevision(store.fleet, body.agents, states))
+      throw Object.assign(new Error('strategy view changed; refresh before saving'), { status: 409 });
+  }
+  return store.update(body.agents, body.changes ?? {}, settings);
+}
 
 // THE LAST FORM IS WRITTEN AS A PATTERN ON PURPOSE, and it is not obfuscation.
 //
@@ -38,10 +58,12 @@ async function bodyOf(req) {
 }
 
 export class StrategyControlServer {
-  constructor({ store, factions = null, journal = null, detailStats = null, resolveItems = null,
+  constructor({ store, factions = null, journal = null, detailStats = null, resolveItems = null, controls = null,
                 resolveFactionStatuses = null,
+                tacticalTokenFile = process.env.M59_DUM_TACTICAL_TOKEN_FILE,
                 url = 'http://127.0.0.1:8916' }) {
     this.store = store;
+    this.controls = controls;
     this.factions = factions;
     this.journal = journal;
     this.detailStats = detailStats;
@@ -51,6 +73,10 @@ export class StrategyControlServer {
     if (!['127.0.0.1', 'localhost', '[::1]'].includes(this.url.hostname))
       throw new Error('strategy control must bind to loopback');
     this.server = null;
+    const tokenFile = tacticalTokenFile;
+    this.tacticalToken = tokenFile ? readFileSync(tokenFile, 'utf8').trim() : null;
+    if (this.tacticalToken && !/^[a-f0-9]{64}$/.test(this.tacticalToken))
+      throw new Error('invalid local tactical capability file');
   }
 
   async start() {
@@ -58,9 +84,29 @@ export class StrategyControlServer {
     this.server = createServer(async (req, res) => {
       try {
         if (!loopback(req.socket.remoteAddress)) return json(res, 403, { error: 'loopback only' });
+        if (req.headers.origin || req.headers['sec-fetch-site'] === 'cross-site') return json(res, 403, { error: 'use the local control application' });
         const u = new URL(req.url ?? '/', this.url);
+        if (u.pathname === '/controls') {
+          if (!this.controls) return json(res, 503, { error: 'human controls unavailable' });
+          if (req.method === 'GET') return json(res, 200, await this.controls.snapshot((u.searchParams.get('agents') ?? '').split(',').filter(Boolean)));
+          if (req.method === 'POST') return json(res, 200, await this.controls.save(await bodyOf(req)));
+          return json(res, 405, { error: 'method not allowed' });
+        }
         if (u.pathname === '/health' && req.method === 'GET')
-          return json(res, 200, { ok: true, fleet: this.store.fleet });
+          return json(res, 200, { ok: true, fleet: this.store.fleet, pid: process.pid, strategy_cas: 1, human_controls: this.controls ? 1 : 0,
+            tactical_handoff: this.tacticalToken && this.tacticalHandoff ? 1 : 0,
+            root: fileURLToPath(new URL('../../', import.meta.url)) });
+        if (u.pathname === '/tactical') {
+          if (!this.tacticalToken || !this.tacticalHandoff)
+            return json(res, 503, { error: 'qualified tactical handoff is unavailable' });
+          const bearer = Buffer.from(String(req.headers.authorization ?? ''));
+          const expected = Buffer.from(`Bearer ${this.tacticalToken}`);
+          if (req.headers.origin || req.headers.host !== this.url.host ||
+              bearer.length !== expected.length || !timingSafeEqual(bearer, expected))
+            return json(res, 403, { error: 'local tactical capability required' });
+          if (req.method !== 'POST') return json(res, 405, { error: 'POST required' });
+          return json(res, 200, await this.tacticalHandoff.request(await bodyOf(req)));
+        }
         if (u.pathname === '/observability' && req.method === 'GET') {
           const hours = Number(u.searchParams.get('hours') ?? 2);
           return json(res, 200, { fleet: this.store.fleet,
@@ -103,17 +149,18 @@ export class StrategyControlServer {
         if (req.method === 'GET') {
           const agents = (u.searchParams.get('agents') ?? '').split(',').map(s => s.trim()).filter(Boolean);
           const { states } = this.store.states(agents);
-          return json(res, 200, { catalogue: STRATEGY_CATALOG, states, selected: agents.length });
+          return json(res, 200, { catalogue: STRATEGY_CATALOG, states, selected: agents.length,
+            fleet: this.store.fleet, pid: process.pid, strategy_cas: 1,
+            revision: strategyRevision(this.store.fleet, agents, states) });
         }
         if (req.method === 'POST') {
           const body = await bodyOf(req);
-          const settings = await canonicalItemSettings(body.settings ?? {}, this.resolveItems);
-          const { states } = this.store.update(body.agents, body.changes ?? {}, settings);
+          const { states } = await updateStrategies(this.store, body, this.resolveItems);
           return json(res, 200, { ok: true, catalogue: STRATEGY_CATALOG, states,
             selected: body.agents.length });
         }
         return json(res, 405, { error: 'method not allowed' });
-      } catch (e) { return json(res, 400, { error: e.message }); }
+      } catch (e) { return json(res, e.status === 409 ? 409 : 400, { error: e.message }); }
     });
     await new Promise((resolveStart, reject) => {
       this.server.once('error', reject);

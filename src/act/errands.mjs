@@ -54,9 +54,23 @@
 
 import { recordCrateCheck } from '../decide/rules/crate.mjs';
 import { recordSellrun } from '../decide/rules/sellrun.mjs';
+import { recordDeskUncurse } from '../decide/rules/servicedesk.mjs';
 import { recordFeastOutbound, recordFeastGrab, recordFeastAbandon, recordFeastPkCheck } from '../decide/rules/feast.mjs';
 
 import { JourneyProgress } from './journey-progress.mjs';
+
+export async function finishCoop(broker, step, signal = null, renew = null,
+  wait = ms => new Promise(resolve => setTimeout(resolve, ms))) {
+  const until = Date.now() + (step.timeout_ms ?? 1_200_000);
+  while (Date.now() < until && !signal?.aborted) {
+    const result = await broker.call('reagent_coop', step.args, { timeoutMs: 30_000 });
+    if (!result?.pending) return result;
+    if (renew) await renew();
+    await wait(3000);
+  }
+  await broker.call('cancel_movement', { agent: step.args.agent, why: 'reagent coop stop interrupted' }).catch(() => {});
+  return { error: 'reagent coop stop interrupted before completion' };
+}
 
 // Each sale call is one bounded offer. Continue only after a receipt; rejected names
 // are carried forward so a merchant is asked about them once during this visit.
@@ -175,6 +189,14 @@ export const ERRANDS = {
   // Leaves one fact behind: when this character last ran the Barloque sell circuit, so the
   // rule's per-character cooldown can gate the next one.
   'sellrun-circuit': { record: recordSellrun, topic: 'sellrun' },
+  // THE SERVICE DESK. The reveal errand records NOTHING on purpose: the item's rarity grade is
+  // the record, it lives on the item, and it is what the errand's own `expect` already reads --
+  // a copy here would be a second, staler answer to a question the world answers itself.
+  'desk-reveal': { record: null, topic: null },
+  // The uncurse errand does record, and for the reason this registry's refusal gives. It crosses
+  // the world; if the cast did not take, nothing about the world has changed to stop the next
+  // pass sending the same character on the same journey. A failure is remembered and backed off.
+  'desk-uncurse': { record: recordDeskUncurse, topic: 'service_desk' },
   // THE FEAST HALL JOURNEY, IN THREE SHORT ERRANDS JOINED BY MEMORY. The hall is eleven
   // hops from where the fleet farms, and one blocking errand per character would stand
   // the whole bot down for the walk (see "IT BLOCKS THE PASS" above). So `outbound` only
@@ -260,6 +282,7 @@ export async function runErrand(broker, intent, { commit = false, holder = null,
   let stopped = null;
   // The sentence that ended a repeated step early, if one did. See `stop_when` below.
   let satisfied = null;
+  let coopCompleted = false;
 
   // SAY SO BEFORE WALKING, AND SAY SO EVEN IF THE WALK FAILS.
   //
@@ -306,6 +329,10 @@ export async function runErrand(broker, intent, { commit = false, holder = null,
   for (let i = 0; i < steps.length; i++) {
     if (signal?.aborted) { stopped = 'DUM is stopping'; break; }
     const planned = steps[i];
+    if (planned.coop_opportunity && coopCompleted) {
+      results.push({ tool: planned.tool, skipped: true, why: 'guild tithe already completed this town trip' });
+      continue;
+    }
     // A long HTTP response can time out while the keeper keeps walking. Launch
     // each journey briefly and use the existing room-arrival wait for ordering.
     const step = commit && planned.tool === 'travel' && planned.expect === 'arrived'
@@ -364,6 +391,8 @@ export async function runErrand(broker, intent, { commit = false, holder = null,
           ? finishCleanup(broker, step, signal, holder ? () => claimBusy(CEILING_MS, intent.why) : null)
           : step.tool === 'sell_all' && step.args.max_offers
           ? finishSale(broker, step, signal, holder ? () => claimBusy(CEILING_MS, intent.why + ' (selling)') : null)
+          : step.tool === 'reagent_coop'
+          ? finishCoop(broker, step, signal, holder ? () => claimBusy(CEILING_MS, intent.why + ' (reagent coop)') : null)
           : broker.call(step.tool, step.args, { timeoutMs: step.timeout_ms }))
           .catch(e => ({ error: e.message }))
       : await broker.write(step.tool, step.args, { why: step.why });
@@ -374,6 +403,8 @@ export async function runErrand(broker, intent, { commit = false, holder = null,
     // collected — which is correct: a plan describes the walk it would take, it does
     // not pretend to know what the crate would have said.
     if (!commit) continue;
+
+    if (step.coop_opportunity && !r?.error && !r?.deferred) coopCompleted = true;
 
     if (step.collect === 'messages' && Array.isArray(r?.messages)) transcript.push(...r.messages);
     if (step.stop_when instanceof RegExp && Array.isArray(r?.messages)) {

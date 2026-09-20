@@ -32,6 +32,7 @@
  */
 
 import { FACULTIES } from '../config/schema.mjs';
+import { humanIntent } from '../strategies/human-overlay.mjs';
 
 export class RuleSet {
   /**
@@ -124,7 +125,14 @@ export function decide(ruleSet, obs, doctrine, { max = 1, agentsOf = intentAgent
     }
     let out;
     try {
-      out = rule.decide(obs, doctrine);
+      // Earlier fleet rules have already reserved their actors. Let the next rule
+      // plan for the remaining characters, instead of proposing a whole-fleet batch
+      // that is then rejected because one cook or shopper appears in both plans.
+      // Keep the disjointness check below: plans may also name actors indirectly.
+      const available = rule.scope === 'fleet' && taken.size && Array.isArray(obs.characters)
+        ? { ...obs, characters: obs.characters.filter(row => !taken.has(row.agent)) }
+        : obs;
+      out = rule.decide(available, doctrine);
     } catch (e) {
       // A THROWING RULE MUST NOT STOP THE TABLE. The consequence of one bad rule
       // should be that one decision is not made, not that every character below it in
@@ -149,7 +157,7 @@ export function decide(ruleSet, obs, doctrine, { max = 1, agentsOf = intentAgent
       considered.push({ rule: rule.id, verdict: 'no', why: out.why ?? null });
       continue;
     }
-    const intent = {
+    let intent = {
       rule: rule.id,
       faculty: rule.faculty,
       // A FLEET RULE HAS NO `obs.agent`, AND SOME OF THEM PICK ONE. Pairing writes a
@@ -198,6 +206,10 @@ export function decide(ruleSet, obs, doctrine, { max = 1, agentsOf = intentAgent
     //
     // Only `orders` intents are filtered. A `report` carries no fields to write, and a
     // fleet `plan` is a list of calls rather than a policy diff; neither is yieldable.
+    if (obs.human_controls) {
+      intent = humanIntent(intent, obs);
+      if (!intent) { considered.push({ rule: rule.id, verdict: 'no', why: 'operator overlay owns these orders, or the remaining fields already agree' }); continue; }
+    }
     if (intent.kind === 'orders' && !intent.plan) {
       const fields = Object.keys(intent.orders)
         .filter(k => !['action', 'why', 'batch', 'agent'].includes(k));

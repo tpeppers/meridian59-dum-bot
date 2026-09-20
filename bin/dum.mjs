@@ -25,6 +25,7 @@ import { StrategyStore } from '../src/record/strategies.mjs';
 import { FactionGoalStore } from '../src/record/factions.mjs';
 import { DetailStats } from '../src/record/detail-stats.mjs';
 import { StrategyControlServer } from '../src/link/strategy-control.mjs';
+import { HumanControls } from '../src/link/human-controls.mjs';
 import { existsSync, readFileSync, mkdirSync, createWriteStream } from 'node:fs';
 import { resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -200,18 +201,22 @@ function context({ config, commit }) {
   // The same loopback server carries strategy assignments and durable faction goals.
   // Factions are independent of the optional strategy catalogue, so a committed DUM
   // run must expose this control plane even when strategies.enabled is false.
+  const controls = commit ? new HumanControls({ broker, store: strategies, config,
+    restartConfig: () => doctrine().config, url: config.link.strategy_control_url, only: agentScope() }) : null;
+  broker.humanControls = controls;
   const strategyServer = commit
-    ? new StrategyControlServer({ store: strategies, factions, journal, detailStats,
+    ? new StrategyControlServer({ store: strategies, factions, journal, detailStats, controls,
         resolveItems: items => broker.call('resolve_item_names', { items }),
         resolveFactionStatuses: async agents => Object.fromEntries(await Promise.all(
           agents.map(async agent => [agent, await broker.call('faction_status', { agent })]))),
-        url: config.link.strategy_control_url }) : null;
+        url: config.link.strategy_control_url,
+        tacticalTokenFile: flag('tactical-token-file', process.env.M59_DUM_TACTICAL_TOKEN_FILE) }) : null;
   // WHO DUM IS, ON THE WIRE. One string, computed once, because it is an identity the
   // harness checks rather than a label: only the holder of a claim may declare that
   // character busy or free it again, so a second spelling of this would be a second
   // process as far as the broker is concerned — able to claim, unable to release.
   const holder = `dum/${config.name}@pid-${process.pid}`;
-  return { broker, config, journal, memory, strategies, factions, detailStats, strategyServer,
+  return { broker, config, journal, memory, strategies, factions, detailStats, strategyServer, controls,
            commit, holder, only: agentScope() };
 }
 

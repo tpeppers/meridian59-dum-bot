@@ -305,3 +305,32 @@ so one unsuccessful recall cannot consume every fleet decision.
 Town jobs pace RPC starts without awaiting unrelated characters' journeys. The ownership heartbeat runs independently of decision passes, and station recalls share the per-character job guard. Keeper-backed claim, busy, free, yield and heartbeat must affect the keeper process that owns the socket.
 
 Travel steps requiring arrival use background launch plus a room poll, so an HTTP response timeout cannot release a still-walking character. An empty farmer awaits its food circuit before any station recall.
+
+## Temporary tactical handoff (B1041)
+
+The optional authenticated loopback `/tactical` interface reserves one character
+for a C&C command. It depends on broker `/health` fleet/PID identity and on
+`autopilot action:release` honoring an explicit `by` and directional `faculties`
+list. It never uses an unscoped release. Keeper survival and recovery stay owned
+by the harness. A missing capability file disables this optional endpoint.
+
+The link captures per-character epochs before queuing writes and validates them
+after pacing. A reservation refuses in-flight writes rather than interrupting a
+long errand; queued old decisions cannot dispatch after release. Read calls and
+unrelated characters continue. The ordinary claim/heartbeat loop skips reserved
+characters. Expiry or authenticated release removes only the reservation; the
+next normal decision uses the latest configuration and reacquires its own claim.
+No saved strategy settings are rewritten and no stopped process is started.
+
+The local `tactical_token_file` configuration (or `M59_DUM_TACTICAL_TOKEN_FILE`)
+points to a private 64-hex capability. Never commit or log its contents. Health
+reports `tactical_handoff:1` only when configured and attached, plus the exact
+DUM PID and checkout root. Yield, heartbeat and release are nonce-, character-,
+room-, broker- and DUM-incarnation-bound with a 45-second reservation. Failed or
+uncertain yield does not permit a duplicate claim of success. The C&C companion
+must release its commander lease before requesting DUM resume; expiry remains
+the fallback when control release is uncertain.
+
+This introduces no idle broker/game reads. An explicit handoff checks cached
+broker health and yields only DUM's existing directional claim. It does not call
+`leave`, `join`, broker lifecycle, `goInert`, or the game movement/combat tools.

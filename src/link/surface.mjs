@@ -52,13 +52,14 @@ export const READ = new Set([
 // detector — is stronger than anything this repository would grow, and a deterministic
 // bot has nothing to say that is worth reopening that surface for.
 export const WRITE = new Set([
+  'policy_control', 'dum_controls',
   // The single most important one: orders to the keeper. Nearly everything DUM does is
   // a change to this.
   'autopilot',
   // Placement.
   'travel', 'spread', 'walk_to', 'cancel_movement',
   // Economy.
-  'bank', 'sell', 'sell_all', 'shop', 'supply', 'quartermaster',
+  'bank', 'sell', 'sell_all', 'shop', 'supply', 'quartermaster', 'reagent_coop',
   // THE OTHER HALF OF SURVIVING A DEATH. A bank holds money and a vault holds OBJECTS, and
   // everything in neither is on the floor of wherever the character fell. It is on the write
   // list rather than in NOT_YET because the decision it encodes - "this pack has more in it
@@ -152,6 +153,10 @@ export const NOT_YET = new Set([
  * @returns {string|null}
  */
 export function deny(tool, args = {}) {
+  if (tool === 'reagent_coop') return ['contribute', 'supply', 'tithe', 'town'].includes(args.action)
+    && typeof args.request_id === 'string' && args.request_id.length > 0 ? null : 'coop stop needs an action and stable request_id';
+  if (tool === 'policy_control') return ['read', 'save'].includes(args.action) ? null : 'unknown human policy operation';
+  if (tool === 'dum_controls') return ['list', 'register'].includes(args.action) ? null : 'unknown DUM registration operation';
   if (NEVER[tool]) return `refused — ${NEVER[tool]}`;
   if (READ.has(tool) || WRITE.has(tool)) {
     // ARGUMENT-LEVEL CHECK, because the tool name is not enough for this one either.
@@ -185,10 +190,37 @@ export function deny(tool, args = {}) {
       return `refused — act verb:"${args.verb ?? '?'}" reaches into the character's pack. ` +
              `DUM only claims verb:"go", which acts on the square underfoot, and ` +
              `verb:"activate" on a Feast Hall dispenser. See src/link/surface.mjs`;
-    if (tool === 'cast' && !['create weapon', 'create food']
-          .includes(String(args.spell ?? '').trim().toLowerCase()))
-      return `refused — DUM may cast only the self-only provisioning spell "create weapon", ` +
-             `not "${args.spell ?? '?'}"`;
+    // WHAT DUM MAY CAST, AND THE LINE THIS LIST DRAWS.
+    //
+    // It began as "self-only provisioning": `create weapon` and `create food` act on the caster
+    // and nobody else, so allowing them claims nothing about other characters. That is a real
+    // boundary and it is why the refusal names it.
+    //
+    // TWO SERVICE SPELLS ARE ADDED, 2026-09-17, for the desk in src/decide/rules/servicedesk.mjs,
+    // and they are added BY NAME because the boundary is worth keeping narrow:
+    //
+    //   `reveal`        targets an ITEM IN THE CASTER'S OWN PACK. `IsTargetInRange`
+    //                   (reveal.kod:94-97) is `who = GetOwner(target)`, so it cannot reach
+    //                   another character's property at all — it is self-only in the same sense
+    //                   the provisioning spells are, just aimed at a thing rather than a body.
+    //
+    //   `remove curse`  targets ANOTHER PLAYER, and that is genuinely new. It is allowed because
+    //                   it is the one spell that UNDOES something: `CanPayCosts`
+    //                   (remcurse.kod:65-92) refuses any target that is not a Player and any
+    //                   Player not `IsCursedByItems`, so the worst it can do to a fleet-mate is
+    //                   nothing. A cursed item can never be unequipped by any other means, and
+    //                   the alternative to casting it is leaving the wearer taxed for ever
+    //                   (lethring.kod takes 20 off the vigor rest ceiling).
+    //
+    // WHAT IS STILL REFUSED IS EVERYTHING THAT CHANGES A FLEET-MATE FOR THE BETTER OR WORSE IN A
+    // WAY THAT LASTS — buffs, heals, attacks. This list is a list and not a category on purpose:
+    // "targeted spells" would have admitted every attack spell in the game the day somebody
+    // wanted one healing spell. To add one, add its name and say what it cannot do.
+    const CASTABLE = ['create weapon', 'create food', 'reveal', 'remove curse'];
+    if (tool === 'cast' && !CASTABLE.includes(String(args.spell ?? '').trim().toLowerCase()))
+      return `refused — DUM may cast only ${CASTABLE.map(n => `"${n}"`).join(', ')}, ` +
+             `not "${args.spell ?? '?'}". Widening this is a boundary change: see the note ` +
+             `above it in src/link/surface.mjs`;
     // `autopilot` is on the write list and `autopilot --hard` ENDS the keeper rather
     // than making it inert: no frames, no observe(), no death record, no post-mortem.
     // The harness's own note is that deaths kept happening in exactly the windows it

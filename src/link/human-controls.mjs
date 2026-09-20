@@ -5,6 +5,7 @@ import { existsSync, readFileSync, writeFileSync, mkdirSync, renameSync } from '
 import { dirname } from 'node:path';
 import { STRATEGY_CATALOG, validateStrategySettingsMap, validateStrategyIds } from '../strategies/catalog.mjs';
 import { canonicalItemSettings } from './strategy-control.mjs';
+import { applyReload } from './reload.mjs';
 import { WRITE } from './surface.mjs';
 
 const hash = x => createHash('sha256').update(JSON.stringify(x)).digest('hex');
@@ -72,6 +73,22 @@ export class HumanControls {
       throw new Error('operator room lock owns movement');
     return args;
   }
+  /**
+   * Re-read the doctrine from disk and apply what can be applied to the RUNNING config.
+   *
+   * This is the write half of `restartConfig`, which until now only ever powered a preview
+   * — "a GET never replaces the running defaults", in `snapshot` below. `this.config` is the
+   * same object `run.mjs` destructured once and `tick.mjs` re-destructures every pass, so
+   * `applyReload` mutates it in place rather than replacing it; see the argument in
+   * reload.mjs. Keys that cannot take effect without a restart are reported and deliberately
+   * NOT written, because a value that looks applied and is not is the failure this control
+   * plane exists to avoid.
+   */
+  reload() {
+    const report = applyReload(this.config, this.restartConfig());
+    return { ok: true, pid: process.pid, doctrine: this.config.name, ...report };
+  }
+
   async snapshot(agents) {
     if (this.only?.length && agents?.some(a => !this.only.includes(a))) throw new Error('selected agent is outside this DUM scope');
     const policy = await this.broker.call('policy_control', { action: 'read', ...(agents?.length ? { agents } : this.only?.length ? { agents: this.only } : {}) });

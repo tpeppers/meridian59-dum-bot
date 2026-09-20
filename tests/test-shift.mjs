@@ -9,7 +9,7 @@
 import assert from 'node:assert/strict';
 import { loadDoctrine } from '../src/config/load.mjs';
 import { validate } from '../src/config/schema.mjs';
-import { shiftAssignments, shiftFleetRules } from '../src/decide/rules/shift.mjs';
+import { shiftAssignments, shiftFleetRules, admitsLocation } from '../src/decide/rules/shift.mjs';
 import { HUNT_ROOMS, QUARRY_LEVEL, admits, engagementCeiling, cryptAssignment,
   STRATEGY_IDS } from '../src/strategies/catalog.mjs';
 import { weaponFleetRules } from '../src/decide/rules/weapons.mjs';
@@ -700,4 +700,64 @@ test('a station saying nothing about buffs never redeploys for it', () => {
     policy: { assignedRoom: 39, hunt: ['battered skeleton'], purpose: 'advance',
               roam: false, trainingStyle: 'short_sword', buffAllies: null } };
   assert.ok(!JSON.stringify(fire([row], d)).includes('buff_allies'));
+});
+
+// GEOFENCE — A STATION ON GROUND YOU CANNOT GET BACK TO.
+//
+// Raza and Hazar are the newbie towns: a character stands up in one at creation, leaves
+// through a one-way museum portal, and can never return. A `max_health` band alone is a trap
+// there, because a band is a condition a character FALLS INTO — every death costs 1-2 max
+// health, so a veteran would eventually match a "below 25" nursery, be assigned a Mausoleum
+// it cannot route to, and idle there for ever: assigned, reported healthy, never travelling.
+
+test('a geofenced station admits a unit standing inside the fence', () => {
+  assert.ok(admitsLocation({ room: 1016, geofence: [1011, 1012, 1016] }, { room: 1016 }));
+  assert.ok(admitsLocation({ room: 1016, geofence: [1011, 1012, 1016] }, { room: 1012 }));
+});
+
+test('and refuses one standing outside it, which is the whole point', () => {
+  const nursery = { room: 1016, geofence: [1011, 1012, 1016] };
+  // The failure this prevents: a veteran that died its way under the nursery's max-health
+  // floor while standing in Castle Victoria, half a world from a room it cannot reach.
+  assert.ok(!admitsLocation(nursery, { room: 38 }));
+  assert.ok(!admitsLocation(nursery, { room: 589 }));
+});
+
+test('the two newbie towns do not admit each other', () => {
+  // Hazar 1001-1008 and Raza 1011-1018 are mirror copies, each with its own Mausoleum, and
+  // neither is reachable from the other. A fence naming one town must refuse the other.
+  const raza  = { room: 1016, geofence: [1011, 1012, 1016] };
+  const hazar = { room: 1006, geofence: [1001, 1002, 1006] };
+  assert.ok(admitsLocation(raza, { room: 1012 }) && !admitsLocation(hazar, { room: 1012 }));
+  assert.ok(admitsLocation(hazar, { room: 1002 }) && !admitsLocation(raza, { room: 1002 }));
+});
+
+test('an unreported room is refused, not admitted', () => {
+  // UNKNOWN IS REFUSED, as it is for a max-health band and for `requires`. Admitting a row
+  // whose room was not reported would station a character on a missing field.
+  const nursery = { room: 1016, geofence: [1011, 1016] };
+  assert.ok(!admitsLocation(nursery, { room: null }));
+  assert.ok(!admitsLocation(nursery, {}));
+});
+
+test('no geofence means the station is open, so every existing station is unaffected', () => {
+  assert.ok(admitsLocation({ room: 27 }, { room: 589 }));
+  assert.ok(admitsLocation({ room: 27, geofence: [] }, { room: 589 }));
+});
+
+test('`row.room` on a raw board row is the NAME, and the fence still resolves the number', () => {
+  // The trap normalize.mjs documents: on the fleet board `room` is "Mausoleum" and the
+  // number is `room_num`. Reading the name as a number yields NaN, which the
+  // unknown-is-refused rule then turns into a station that silently admits nobody at all.
+  assert.ok(admitsLocation({ room: 1016, geofence: [1016] }, { room_num: 1016 }));
+});
+
+test('the schema refuses a geofence that omits the station own room', () => {
+  // Otherwise the unit is un-admitted the moment it arrives: assign, walk, un-assign, repeat.
+  const d = doctrine();
+  d.shift = { ...d.shift, on: true, stations: [
+    { room: 39, hunt: ['battered skeleton'], geofence: [38] },
+  ] };
+  const said = JSON.stringify(validate(d));
+  assert.ok(/geofence/.test(said) && /own room/.test(said), said.slice(0, 300));
 });

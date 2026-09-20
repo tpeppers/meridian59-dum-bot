@@ -496,6 +496,37 @@ export const HUNT_ROOMS = Object.freeze({
   // never appears in it.
   2600: Object.freeze({ room: 2600, name: 'The crypt in Marion', threat: 75,
     generates: Object.freeze(['spectral mummy']) }),
+  // THE NEWBIE GROUND, AND THE ONLY ROOM IN THIS TABLE A 20-MAX-HEALTH BODY CAN WORK.
+  // Raza is where a freshly created character stands up -- the harness has a `graduate`
+  // fleetscript whose whole job is walking one OUT of Raza -- and the Mausoleum next door
+  // is what it is meant to kill first.
+  //
+  // THREAT 25 IS THE WHOLE ROOM, NOT JUST THE QUARRY, and here they happen to be equal.
+  // The room generates three things and every one of them is level 25: `Mummy` sets
+  // viLevel 25 (mummy.kod:47), and both `BlackMummy` -- the "shadow mummy" -- and
+  // `MummyNoTreasure` extend it WITHOUT overriding viLevel, changing only viDifficulty
+  // (blackmum.kod:38 raises it to 4). A room whose hardest resident is its own quarry is
+  // rare in this table and it is why this one is safe at the bottom of the fleet.
+  //
+  // AND IT IS GENTLER THAN THE ROOM THE HARNESS ALREADY CALLS SAFE for this band. A mummy
+  // and a baby spider are both level 25 and both land about 2.1 a blow, but the mummy is
+  // viDifficulty 2 against the spider's 4. CLAUDE.md's rule -- a creature's LEVEL is not
+  // how dangerous it is, viDifficulty is -- makes this the softer of the two.
+  //
+  // THE STATION THAT USES THIS SHOULD BOUND ITSELF AT `max_health.below: 25`. A kill pays
+  // only while the creature's level is strictly ABOVE max health, so mummies advance a
+  // character up to 24 and pay nothing at 25. The room graduates its own occupants, and a
+  // station without that bound leaves somebody here farming for no advancement at all.
+  //
+  // THERE ARE TWO NEWBIE TOWNS AND THEY ARE MIRRORS: Hazar is 1001-1008 and Raza is
+  // 1011-1018, each with its own inn, smith, magic shop, pub, museum and Mausoleum. A
+  // character stands up in one of them and cannot reach the other, so both Mausoleums are
+  // listed and a station geofenced to one town must name that town's room. Same 39x40
+  // geometry, same three spawns at the same rates, same threat.
+  1006: Object.freeze({ room: 1006, name: 'Mausoleum', threat: 25,
+    generates: Object.freeze(['mummy']) }),
+  1016: Object.freeze({ room: 1016, name: 'Mausoleum', threat: 25,
+    generates: Object.freeze(['mummy']) }),
   // Castle Victoria. 38 is the main room and 39 is the floor above it; 41, the
   // Underbasement one door below, generates narthyl worms at level 120 and is absent for
   // the same reason 2602 and 552 are.
@@ -532,7 +563,7 @@ export const HUNT_ROOMS = Object.freeze({
 
   // THE BRAWLING SCHOOL. A nursery for characters whose proficiency is too low to land on
   // the valley quarry next door -- see the 554 stations in prod-weaponcraft-training.jsonc.
-  // AlfaTwo sat in 544 for twelve hours with brawling at 6 and took ZERO kills: he clears
+  // A farmer sat in 544 for twelve hours with brawling at 6 and took ZERO kills: it clears
   // the engagement ceiling comfortably (60 against a threat of 50) and still cannot hit a
   // level-50 fungus beast often enough to matter. The ceiling answers "may I fight this",
   // never "can I win", and this room is where that difference gets fixed.
@@ -582,6 +613,10 @@ export const QUARRY_LEVEL = Object.freeze({
   frogman: 70, centipede: 30, zombie: 55, 'baby spider': 25, orc: 45, spider: 50,
   'fungus beast': 50, 'groundworm larva': 35,
   skeleton: 75, 'battered skeleton': 60, 'spectral mummy': 40,
+  // mummy.kod:47. Distinct from the `spectral mummy` above it, which is a different class
+  // in a different room at a different level -- and the pair is exactly why `admits` reads
+  // this table by exact name rather than matching on a substring.
+  mummy: 25,
 });
 export const CRYPT_QUARRY_LEVEL = QUARRY_LEVEL;
 

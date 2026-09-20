@@ -142,6 +142,33 @@ const admitsStation = (st, maxHealth) => {
 export const hasAgentGate = (st = {}) =>
   [].concat(st?.only ?? []).length > 0 || [].concat(st?.except ?? []).length > 0;
 
+// A STATION MAY REQUIRE THE UNIT TO ALREADY BE THERE, AND SOME GROUND IS ONE-WAY.
+//
+//   "geofence": [1011, 1012, 1016]   only units already standing in one of these
+//
+// Raza and Hazar are the newbie towns, and the operator's constraint is that you cannot go
+// BACK once you have left: the way out is the museum portal and there is no return leg — the
+// harness has a `graduate` fleetscript for leaving and no counterpart for arriving. A band
+// alone cannot express that. `max_health: {below: 25}` is a condition a character FALLS INTO
+// from outside, because deaths cost 1-2 max health each, so a veteran that dies enough would
+// be assigned the Mausoleum, be unable to route to it, and idle there for ever — assigned,
+// reported healthy, and never travelling. That is the stranded-outside-the-confine failure
+// with a one-way door instead of a confinement.
+//
+// UNKNOWN IS REFUSED, exactly as it is for a max-health band and for `requires`. A row whose
+// room was not reported is a question, not a permission, and admitting it would station a
+// character on the strength of a missing field.
+export const admitsLocation = (st = {}, row = {}) => {
+  const list = [].concat(st?.geofence ?? []).map(Number).filter(Number.isFinite);
+  if (!list.length) return true;
+  // `row.room` IS THE NAME, NOT THE NUMBER — "Mausoleum", not 1016 (normalize.mjs, and
+  // errands.mjs:142 says so in as many words). Reading it as a number yields NaN, which the
+  // unknown-is-refused rule below then turns into "this station admits nobody at all" — a
+  // geofence that silently empties itself. Same resolution chain as errands.mjs:144.
+  const at = Number(row?.room ?? row?.room_num ?? row?.room?.num ?? row?.where?.num);
+  return Number.isFinite(at) && list.includes(at);
+};
+
 export const admitsAgent = (st = {}, row = {}) => {
   const norm = v => String(v ?? '').trim().toLowerCase();
   const names = new Set([norm(row?.agent), norm(row?.character)].filter(Boolean));
@@ -197,7 +224,7 @@ export function requirementsMet(st = {}, row = {}) {
  */
 export function stationIndexFor(stations = [], maxHealth, row = null) {
   return stations.findIndex(st => bandAdmits(st, maxHealth) && admitsStation(st, maxHealth) &&
-    (row == null || requirementsMet(st, row)));
+    (row == null || (requirementsMet(st, row) && admitsLocation(st, row))));
 }
 
 /** A stable name for a station, for the memory and for the journal. */
@@ -343,7 +370,8 @@ export function shiftAssignments(rows = [], doctrine = {}, fleetObs = { characte
   // and call it an overflow.
   const eligible = stations.map(st => new Set(opted
     .filter(row => bandAdmits(st, row.level) && admitsStation(st, row.level) &&
-                   requirementsMet(st, row) && admitsAgent(st, row))
+                   requirementsMet(st, row) && admitsAgent(st, row) &&
+                   admitsLocation(st, row))
     .map(row => row.agent)));
 
   const taken = new Set();

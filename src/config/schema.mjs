@@ -109,6 +109,36 @@ export function validate(c) {
   // A LENDING LIST THAT DOES NOT MATCH ANYBODY EXCLUDES NOBODY, SILENTLY. The whole value
   // of `not_ours` is that DUM stops touching a body somebody else is driving, so a blank
   // or non-string entry has to be refused here rather than quietly matching nothing.
+  // THE SERVICE DESK. Validated rather than merely defaulted, because a key that silently does
+  // nothing is how `purpose` stayed out of a schema for a year with every keeper's audit off.
+  if (c.service_desk != null) {
+    const d = c.service_desk;
+    if (typeof d !== 'object' || Array.isArray(d))
+      say('service_desk', 'must be an object');
+    else {
+      if (typeof d.on !== 'boolean') say('service_desk.on', 'must be true or false');
+      if (typeof d.agent !== 'string' || !d.agent.trim())
+        say('service_desk.agent', 'must be the agent handle of the character keeping the desk');
+      // A ROOM THAT IS NOT A NUMBER IS NOT A ROOM, and `on` turns this into an exemption from
+      // the recall — so a bad value here would leave the desk being walked to a hunting
+      // station rather than merely failing to work.
+      if (!Number.isInteger(d.room) || d.room <= 0)
+        say('service_desk.room', 'must be a positive room number — it is also what exempts the ' +
+            'desk from the station recall, so a wrong one is worse than a missing one');
+      for (const k of ['reveal', 'uncurse'])
+        if (d[k] != null && typeof d[k] !== 'boolean')
+          say(`service_desk.${k}`, 'must be true or false');
+      if (d.max_per_errand != null && (!Number.isInteger(d.max_per_errand) || d.max_per_errand < 1))
+        say('service_desk.max_per_errand', 'must be a positive whole number of casts per errand');
+      if (d.travel_timeout_ms != null &&
+          (!Number.isInteger(d.travel_timeout_ms) || d.travel_timeout_ms < 1000))
+        say('service_desk.travel_timeout_ms', 'must be at least 1000 ms');
+      if (d.on === true && d.uncurse === false && d.reveal === false)
+        say('service_desk', 'is on with both services off, which does nothing. Switch `on` off ' +
+            'instead, so the recall exemption goes with it');
+    }
+  }
+
   if (!Array.isArray(c.not_ours))
     say('not_ours', 'must be a list of in-world character names DUM must not drive');
   else if (c.not_ours.some(n => typeof n !== 'string' || !n.trim()))
@@ -480,6 +510,30 @@ export function validate(c) {
               'quietly pile into whichever station is left');
         }
       }
+      // GEOFENCE — THE OPTIONAL ROOM GATE, FOR GROUND YOU CANNOT GET BACK TO.
+      //
+      // `"geofence": [1011, 1012, 1016]` admits only units ALREADY standing in one of those
+      // rooms. Omit it and the station is open to anyone the other gates admit, which is the
+      // behaviour every station had before this existed.
+      //
+      // It exists because a band is a condition a character FALLS INTO. Raza and Hazar are
+      // the newbie towns and the way out is a one-way museum portal, so a `max_health` band
+      // on the Mausoleum would eventually catch a veteran that had died its way under the
+      // floor — deaths cost 1-2 max health each — assign it a room it can never route to,
+      // and leave it idling there: assigned, reported healthy, never travelling.
+      if (st?.geofence !== undefined) {
+        const fence = [].concat(st.geofence).map(Number);
+        if (!fence.length || fence.some(n => !Number.isFinite(n)))
+          say(`${where}.geofence`, 'must be a list of room numbers');
+        // THE SELF-CONSISTENCY GUARD, AND IT IS THE ONE WORTH HAVING. A geofence that does
+        // not contain the station's OWN room un-admits the unit the moment it arrives: the
+        // recall walks it there, the next pass finds it outside the fence, and it is
+        // un-assigned and sent away again. That flip-flop reads as movement on every board.
+        else if (!fence.includes(Number(st.room)))
+          say(`${where}.geofence`, `does not list this station's own room ${st.room}, so a ` +
+            'unit stops being admitted the moment it arrives — assign, walk, un-assign, repeat');
+      }
+
       // A NIGHT ROOM WITHOUT `when` IS THE EXPENSIVE MISTAKE. The undead generators make
       // nothing for 85 minutes in every 120, so a station on one without a gate parks a
       // shift in an empty field for most of the day and looks fine doing it.

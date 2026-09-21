@@ -45,6 +45,15 @@ export const LIVE_RELOADABLE = Object.freeze([
   'factions',    // tick.mjs:168
   'weapons',     // tick.mjs:211-219
   'shift',       // tick.mjs:187 — stations are read fresh, not captured
+  // THE KEY THAT ACTUALLY SETS THE VIGOR GATE, and it was unclassified — so a reload
+  // REPORTED it and left the live value alone, which is the honest behaviour but reads to a
+  // hurried operator as though the edit took. `tickCharacter` destructures `config` on every
+  // call (tick.mjs:39) and hands it straight to the rules (tick.mjs:53), and throttle.mjs
+  // reads `doctrine.throttle` inside `enabled` (:203) and `decide` (:209, :211, :217) — so it
+  // is read fresh per pass by exactly the definition this list is for. Classifying it is what
+  // makes `prod-castle-hp-bands.jsonc`'s own warning — that the throttle overwrites both
+  // `shift.fight_above_vigor` and a direct push — fixable without restarting the whole bot.
+  'throttle',    // throttle.mjs:203, :209, :211, :217 — read off ctx.config every pass
   'cadence',     // tick.mjs:282 and run.mjs:198, which is why this must mutate in place
 ]);
 

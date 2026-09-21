@@ -24,6 +24,24 @@ test('a changed not_ours is applied, and an unchanged key is not', () => {
   assert.equal(plan.restart_required.length, 0);
 });
 
+// THE VIGOR GATE, 2026-09-20. `throttle` was in neither list, so a reload REPORTED it under
+// `unclassified` and deliberately left the live value alone — correct behaviour that reads, to
+// somebody who has just edited a doctrine and posted a reload, exactly like an edit that took.
+// It is read off ctx.config every pass (tick.mjs:39 -> :53 -> throttle.mjs:203/:209/:211/:217),
+// so it belongs in LIVE_RELOADABLE. This pins that it stays there: the failure it guards against
+// is silent in both directions, since an unclassified key is not an error either.
+test('a changed throttle is applied, not reported as unclassified', () => {
+  const now = { ...live(), throttle: { with_food: 60, no_food: 60, min_meals: 1 } };
+  const next = { ...live(), throttle: { with_food: 40, no_food: 40, min_meals: 1 } };
+  const plan = planReload(now, next);
+  assert.ok(LIVE_RELOADABLE.includes('throttle'), 'throttle must be classified as live-reloadable');
+  assert.ok(plan.applied.includes('throttle'), JSON.stringify(plan));
+  assert.equal(plan.unclassified.length, 0, 'an unclassified throttle is the bug this pins');
+  const cfg = { ...now };
+  applyReload(cfg, next);
+  assert.equal(cfg.throttle.with_food, 40, 'the live config must carry the new floor');
+});
+
 test('planReload is pure — asking must not change the running bot', () => {
   const now = live();
   planReload(now, { ...live(), not_ours: ['Marco Polo', 'BravoTwo'] });

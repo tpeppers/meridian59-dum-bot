@@ -143,6 +143,21 @@ export const ORDER_FIELDS = {
   // deposit and the withdraw on it together, because taking from a shared pool you do not
   // contribute to is the only configuration that cannot work.
   guild_wants:        { policy: 'guildWants', compare: sameObject },
+  // STAND STILL AND KEEP A ROOM ENCHANTMENT UP. The keeper's half of the posted caster:
+  // `maintainRoomEnchantPost` takes a safe spot, renews `forces of light` off its own
+  // clock, and stops when the reagents run out. DUM owns none of that — it owns whether
+  // the character is posted at all, which room, and where the reagents come from.
+  //
+  // `sameSettings` rather than `sameObject`, and that is not a detail. See its comment:
+  // the harness normalises this object on the way in, so a whole-object compare against
+  // what comes back never converges, and a rule that never converges starves every rule
+  // below it (CLAUDE.md, "A RULE THAT CANNOT CONVERGE").
+  room_enchant:       { policy: 'roomEnchant', compare: sameSettings },
+  // TAKE REAGENTS A FLEETMATE WALKS OVER AND OFFERS, without negotiating a moment. It is
+  // on this list because it is the OTHER supply route for a caster that cannot farm: the
+  // operator's words were "buy more reagents (or be given them by the fleet)", and this is
+  // the half that makes the second clause work without anybody scheduling anything.
+  accept_donations:   { policy: 'acceptDonations', compare: sameSettings },
 };
 
 function sameList(a, b) {
@@ -156,6 +171,42 @@ function sameObject(a, b) {
   if (typeof a !== 'object' || typeof b !== 'object') return false;
   const ordered = value => Object.fromEntries(Object.entries(value).sort(([x], [y]) => x.localeCompare(y)));
   return JSON.stringify(ordered(a)) === JSON.stringify(ordered(b));
+}
+
+/**
+ * Agreement on the keys the INTENT carries, and on nothing else.
+ *
+ * WHY THIS IS NOT `sameObject`. `sameObject` is right for a field the harness stores
+ * verbatim. It is wrong for a settings block the harness NORMALISES, and both of the
+ * fields using this one are normalised hard on the way in (m59-broker.mjs): names are
+ * trimmed and lowercased, numbers are floored and clamped into a range, and a key that
+ * was not sent is simply absent from what comes back — `assume_ability` and
+ * `drop_for_space` both behave that way.
+ *
+ * So a whole-object compare reads "different" on every pass against a keeper that agrees
+ * completely. That is not a cosmetic bug: character rules are first-match-wins, so a rule
+ * that can never converge wins the match every tick and the rules below it never run at
+ * all. The repository has paid for that shape twice already — 6,126 intents in one day,
+ * none of them sent, with the journal showing a healthy rule doing its job.
+ *
+ * Comparing only the intent's own keys is the same discipline `unyielded()` applies one
+ * level up: have an opinion about what you set, and none about what you did not.
+ */
+function sameSettings(current, wanted) {
+  if (wanted == null || current == null) return (wanted ?? null) === (current ?? null);
+  if (typeof current !== 'object' || typeof wanted !== 'object') return false;
+  // The harness's own normalisation, mirrored — not guessed. A rule that emits
+  // `["Forces Of Light"]` and a keeper holding `["forces of light"]` agree.
+  //
+  // NUMBERS ARE LEFT ALONE. The broker floors its millisecond and count fields, and
+  // mirroring that here looked right and was not: several policy fields are FRACTIONS of
+  // max health, and flooring made 0.85 and 0.5 the same number — so the diff agreed about
+  // a value it disagreed with completely. Measured against the live fleet, 2026-09-23.
+  const norm = v => Array.isArray(v) ? v.map(norm)
+                  : typeof v === 'string' ? v.trim().toLowerCase()
+                  : v;
+  return Object.entries(wanted).every(([k, v]) =>
+    JSON.stringify(norm(current[k]) ?? null) === JSON.stringify(norm(v) ?? null));
 }
 
 const same = (a, b) => (a === b) || (a == null && b == null);

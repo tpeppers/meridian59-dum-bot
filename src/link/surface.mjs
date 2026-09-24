@@ -141,6 +141,10 @@ export const WRITE = new Set([
 // a deliberate act with a comment attached rather than a silent widening.
 export const NOT_YET = new Set([
   'attack', 'fight', 'face', 'attack_intent', 'move_intent',
+  // `rescue` HERE IS THE HARNESS TOOL, not the spell. The tool rescues somebody ELSE — it is
+  // the operator's "go and fetch that character out of a hole" button — and that decision is
+  // not one DUM claims. Casting `rescue` ON YOURSELF is a different act and is allowed, by
+  // name, through `cast`; see CASTABLE below.
   'context_intent', 'pilot', 'recording', 'rescue', 'leave_raza', 'split', 'trade',
   'loot', 'chat', 'converse', 'inbox', 'describe', 'look_at', 'go_through',
   'movement_mode', 'cancel_action', 'wait_for_event',
@@ -212,11 +216,30 @@ export function deny(tool, args = {}) {
     //                   the alternative to casting it is leaving the wearer taxed for ever
     //                   (lethring.kod takes 20 off the vigor rest ceiling).
     //
+    //   `rescue`        ADDED 2026-09-23, for the posted caster's supply trip in
+    //                   src/decide/rules/roomcaster.mjs. It is the most self-only spell on
+    //                   this list: `GetNumSpellTargets` returns 0 (rescue.kod:63-66), so it
+    //                   cannot be aimed at anything, and what it does is move THE CASTER to
+    //                   safety. It has no destination argument either — rescue.kod:124-163
+    //                   picks one itself, a guild hall in the same region first and the home
+    //                   room last — so DUM cannot even choose where somebody ends up with it.
+    //
+    //                   What it costs is one emerald, and that is the reason it is worth the
+    //                   widening rather than a reason against it: the outbound town leg is
+    //                   where this fleet loses people, and a 20-max-health caster walking
+    //                   across the map to buy the gems it just ran out of is the single trip
+    //                   most likely to end in a postmortem. One gem deletes that road.
+    //
     // WHAT IS STILL REFUSED IS EVERYTHING THAT CHANGES A FLEET-MATE FOR THE BETTER OR WORSE IN A
     // WAY THAT LASTS — buffs, heals, attacks. This list is a list and not a category on purpose:
     // "targeted spells" would have admitted every attack spell in the game the day somebody
     // wanted one healing spell. To add one, add its name and say what it cannot do.
-    const CASTABLE = ['create weapon', 'create food', 'reveal', 'remove curse'];
+    //
+    // NOTE WHAT IS NOT HERE: `forces of light`. The posted caster's own spell is cast by the
+    // KEEPER, not by DUM — `Autopilot.maintainRoomEnchantPost` owns the renewal because it
+    // owns the safe spot and the one-second clock. DUM sets the policy that turns it on and
+    // buys the reagents it burns, and that split is the whole design of roomcaster.mjs.
+    const CASTABLE = ['create weapon', 'create food', 'reveal', 'remove curse', 'rescue'];
     if (tool === 'cast' && !CASTABLE.includes(String(args.spell ?? '').trim().toLowerCase()))
       return `refused — DUM may cast only ${CASTABLE.map(n => `"${n}"`).join(', ')}, ` +
              `not "${args.spell ?? '?'}". Widening this is a boundary change: see the note ` +

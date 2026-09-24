@@ -147,6 +147,69 @@ export const DEFAULTS = {
     travel_timeout_ms: 600_000,
   },
 
+  // ---------------------------------------------------------------- the posted caster
+  //
+  // ONE CHARACTER STANDING IN ONE ROOM KEEPING A ROOM ENCHANTMENT UP, and the supply line
+  // that keeps it able to. The keeper does the casting — it owns the safe spot and the
+  // one-second renewal clock — and DUM owns which room, what the standing orders are, and
+  // where the next hundred reagents come from. The argument for that split, and the trap
+  // that makes it non-negotiable, are at the top of src/decide/rules/roomcaster.mjs.
+  //
+  // OFF BY DEFAULT, and not for tidiness: `forces of light` burns two elderberries AND a
+  // gem roughly once a minute, for ever, and a caster left running unattended will spend an
+  // operator's whole emerald supply lighting a room for nobody.
+  room_caster: {
+    on: false,
+    // WHO. Null means "whichever character this doctrine is scoped to", which for the
+    // single-character invocation this was written for is already answered by `--agent`.
+    // Naming one is belt and braces: the scope flag is a thing a person types and forgets.
+    agent: null,
+    // WHERE. No default — a post with no room is not a post, and guessing one would station
+    // a character somewhere nobody chose. The schema refuses `on` without it.
+    room: null,
+    spell: 'forces of light',
+    // Recast this far before the duration lapses, so the room is never dark between throws.
+    margin_ms: 8000,
+    // Keep this much mana back from the enchantment. It is the keeper's way out of trouble,
+    // and the enchantment is the thing that can wait.
+    mana_floor: 19,
+    // The posture for a body whose whole job is to stand still and cast. See `posture()`.
+    rest_below: 0.5,
+    flee_below: 0.9,
+    min_health: 1,
+    min_bulk_free: 40,
+    // GO SHOPPING BELOW THIS MANY CASTS, AND BUY UP TO THAT MANY. The floor is deliberately
+    // well above zero: the trip takes minutes and the room is dark for all of them.
+    restock_below_casts: 10,
+    restock_to_casts: 60,
+    // EMERALDS THAT MUST SURVIVE THE TRIP. A rescue costs one (rescue.kod:57), so spending
+    // the last gem to go and buy more is the one configuration that cannot work.
+    emerald_reserve: 2,
+    // Start the trip by teleporting rather than walking. The outbound town leg is where this
+    // fleet loses people; see the note on `rescue` in src/link/surface.mjs.
+    rescue: true,
+    // SOMETHING IN THIS PACK THAT MUST NOT LEAVE THE POST. A pattern, matched against the
+    // pack, that blocks the supply trip while it is still aboard — for a caster who is also
+    // holding something the whole fleet queues at that room for. On this fleet it is the
+    // Chalice of the Rain: every farmer's town trip rides it home, so the holder walking off
+    // with it puts them all back on the road that kills them.
+    //
+    // The harness hands it to an alternate just above this rule's restock floor; this is the
+    // gate that stops the trip winning that race. Measured on prod 2026-09-24, before it
+    // existed: relief ticket raised, never claimed, timed out, and nine minutes later the
+    // trip left the castle with the cup. null is off, which is the default.
+    hand_off_item: null,
+    // AND IT DOES NOT WAIT FOR EVER. Below this many castings the trip goes regardless: a
+    // caster holding the cup and unable to cast serves the fleet exactly as little as one who
+    // has walked off with it. Counted in castings rather than seconds so the wait is pure and
+    // cannot get stuck — every casting spends the thing the trip exists to replace.
+    hand_off_floor_casts: 2,
+    travel_timeout_ms: 600_000,
+    // `reagents` is unset here on purpose: the default is `FORCES_OF_LIGHT.lines` in the
+    // rule file, read off forceslt.kod, and a doctrine that overrides it is naming different
+    // merchants rather than a different spell's costs.
+  },
+
   // ---------------------------------------------------------------- cadence
   cadence: {
     // HOW MANY FLEET DECISIONS ONE PASS MAY HAND OUT.

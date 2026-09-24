@@ -28,7 +28,7 @@ const [reveal, uncurse] = serviceDeskFleetRules;
 const ARMED = { service_desk: { on: true, agent: 'hk1', room: 106 } };
 
 const desk = (over = {}) => ({
-  agent: 'hk1', character: 'Loial the Ogier', in_game: true, room: 106,
+  agent: 'hk1', character: 'Alpha', in_game: true, room: 106,
   mana: { value: 65, max: 65 },
   items: [{ name: 'orc tooth', amount: 21, tag: 1, rarity: 0 },
           { name: 'emerald', amount: 98, tag: 1, rarity: 0 },

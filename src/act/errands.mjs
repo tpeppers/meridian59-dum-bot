@@ -56,6 +56,7 @@ import { recordCrateCheck } from '../decide/rules/crate.mjs';
 import { recordSellrun } from '../decide/rules/sellrun.mjs';
 import { recordDeskUncurse } from '../decide/rules/servicedesk.mjs';
 import { recordFeastOutbound, recordFeastGrab, recordFeastAbandon, recordFeastPkCheck } from '../decide/rules/feast.mjs';
+import { recordCasterResupply, recordCasterRescue } from '../decide/rules/roomcaster.mjs';
 
 import { JourneyProgress } from './journey-progress.mjs';
 
@@ -131,6 +132,53 @@ export async function waitForMovementRelease(broker, agent, { now = Date.now, pa
     await pause(500);
   } while (now() - started < timeoutMs);
   return false;
+}
+
+/**
+ * Turn "forty elderberries off the listing that step made" into `buy_ids`.
+ *
+ * Data in, data out — no functions in an intent, so the whole errand still journals as
+ * JSON and a bad purchase is reproducible from its own log line, which is the rule
+ * `src/decide/` lives by and the reason this is not fleetscript's function-valued
+ * argument.
+ *
+ * THREE REFUSALS, AND EACH IS A DIFFERENT SENTENCE ON PURPOSE. "the shop was never
+ * listed", "the counter has no row matching X" and "nothing to buy" are three distinct
+ * things that a single `null` would flatten into one, and only the middle one means the
+ * merchant is out of stock. A shortage and a bug must not read the same.
+ *
+ * @param {object} step     carrying `buy_from: { label, lines: [{ match, amount }] }`
+ * @param {object[]} results the transcript so far
+ * @returns {{buy_ids?: object[], why?: string}}
+ */
+export function bindBuyLines(step, results = []) {
+  const { label, lines = [] } = step.buy_from ?? {};
+  if (!lines.length) return { why: 'nothing to buy: the step named no lines' };
+  const listing = [...results].reverse()
+    .find(r => r.label === label && Array.isArray(r.result?.items));
+  if (!listing)
+    // NOT "the shop is empty". The listing step may have been skipped, stopped, or run in
+    // dry-run — in all three cases nothing was ever asked, and reporting that as an empty
+    // counter would blame the merchant for our own missing step.
+    return { why: `no shop listing labelled "${label}" in this errand — the counter was ` +
+                  'never opened, which is not the same as it having nothing' };
+  const buy_ids = [];
+  const missing = [];
+  for (const line of lines) {
+    const re = new RegExp(String(line.match), 'i');
+    const row = listing.result.items.find(i => re.test(String(i?.name ?? '')));
+    // AN ID IS A HANDLE AND A NEGATIVE ONE IS NOT AN ID — the same synthesised-index trap
+    // servicedesk.mjs refuses a cast at. Here it would be a purchase aimed at nothing.
+    if (!row || !(Number(row.id) > 0)) { missing.push(String(line.match)); continue; }
+    buy_ids.push({ id: Number(row.id), amount: Math.max(1, Math.floor(Number(line.amount) || 1)) });
+  }
+  if (!buy_ids.length)
+    return { why: `this counter has no row matching ${missing.join(', ')} — it is a ` +
+                  'merchant that does not stock it, not a failed purchase' };
+  // A PARTIAL MATCH STILL BUYS. Emeralds and elderberries are sold by different people on
+  // this fleet's own map, so "one of the two lines is missing" is the ordinary case at
+  // either counter, not an error.
+  return { buy_ids, ...(missing.length ? { partial: missing } : {}) };
 }
 
 async function waitForArrival(broker, agent, dest, timeoutMs, signal = null, renew = null) {
@@ -222,6 +270,23 @@ export const ERRANDS = {
   'loyalty-offer': { record: null, topic: null },
   'faction-game-engage': { record: null, topic: null },
   'faction-game-deliver': { record: null, topic: null },
+  // THE POSTED CASTER'S SUPPLY TRIP, AND IT RECORDS FOR THE REASON `desk-uncurse` DOES.
+  // Nothing about the world changes when a shopping trip fails — the caster is still out
+  // of reagents on the next pass, so the same trigger is still true and the same trip goes
+  // out again, for ever, each lap reporting success. That is "a trip that cannot fix the
+  // thing that opened it will run for ever" (CLAUDE.md, the economy traps), and the memory
+  // is what bounds it.
+  'caster-resupply': { record: recordCasterResupply, topic: 'room_caster' },
+  // THE TELEPORT OUT, WHICH IS ITS OWN ERRAND BECAUSE IT LANDS LATE. One cast and nothing
+  // else: `rescue` is delayed 15-25s, its reply says nothing useful, and a `travel` in the
+  // same errand would set off walking and then be teleported out of its own journey. It
+  // records because without a memory the trigger stays true for the whole delay and it
+  // would cast again, and again, at one emerald a throw. See src/decide/rules/roomcaster.mjs.
+  'caster-rescue': { record: recordCasterRescue, topic: 'room_caster' },
+  // Walking back to the post. Nothing to record: "he is at his post" is his room on the
+  // fleet board, and a copy here would be a second, staler answer to a question the world
+  // answers itself — the same argument `return-to-station` makes.
+  'caster-return': { record: null, topic: null },
 };
 
 /**
@@ -335,7 +400,7 @@ export async function runErrand(broker, intent, { commit = false, holder = null,
     }
     // A long HTTP response can time out while the keeper keeps walking. Launch
     // each journey briefly and use the existing room-arrival wait for ordering.
-    const step = commit && planned.tool === 'travel' && planned.expect === 'arrived'
+    let step = commit && planned.tool === 'travel' && planned.expect === 'arrived'
       ? { ...planned, args: { ...planned.args, background: true } } : planned;
     // EXTEND AS IT GOES, rather than asking for the worst case once.
     //
@@ -377,6 +442,24 @@ export async function runErrand(broker, intent, { commit = false, holder = null,
     if (stopped && !step.always) {
       results.push({ tool: step.tool, skipped: true, why: `after ${stopped}` });
       continue;
+    }
+    // A BUY LEARNS ITS IDS FROM THE LISTING, BECAUSE NOBODY CAN KNOW THEM IN ADVANCE.
+    //
+    // `shop` buys by object id and an object id is a HANDLE: renumbered on every server
+    // save and recycled within hours (CLAUDE.md, the protocol traps). So a rule cannot
+    // write "forty elderberries" as a step argument — it has to open the shop, read the
+    // row, and buy that. The harness's own fleetscript `shop` step does exactly this and
+    // this is the same two calls, expressed as DATA so the intent still journals as JSON
+    // and the decision stays reproducible from its own log line.
+    //
+    // A LINE THAT MATCHES NOTHING SKIPS THE STEP RATHER THAN SENDING AN EMPTY BUY. `shop`
+    // with no `buy_ids` is the LISTING call: it succeeds, buys nothing and reads exactly
+    // like a purchase from out here — the silence-is-the-default-failure shape this
+    // repository keeps paying for.
+    if (step.buy_from) {
+      const bound = bindBuyLines(step, results);
+      if (bound.why) { results.push({ tool: step.tool, skipped: true, why: bound.why }); continue; }
+      step = { ...step, args: { ...step.args, buy_ids: bound.buy_ids } };
     }
     // A STEP WITH NO TARGET IS SKIPPED, NOT SENT. The return leg's destination is the
     // room the character came from, and a board row that did not report a room number

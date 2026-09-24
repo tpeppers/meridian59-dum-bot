@@ -139,6 +139,116 @@ export function validate(c) {
     }
   }
 
+  // THE POSTED CASTER, AND ONE CHECK IN HERE IS WORTH THE WHOLE FEATURE.
+  //
+  // Everything else in this block is ordinary shape validation. The claim check is not. A
+  // doctrine that claims `work` or `movement` for a posted caster switches off the exact
+  // behaviour it was written to arrange, and NOTHING REPORTS IT: `Autopilot.isRoomEnchantPost`
+  // requires `!facultyHeld('work') && !facultyHeld('movement')`, because the keeper only keeps
+  // a room enchantment standing while nobody else is steering. DUM would hold a healthy claim
+  // on a healthy character, these rules would fire and converge, every log on both sides would
+  // read correct, and the room would simply never be lit.
+  //
+  // That is the exact shape this repository keeps paying for, so it is refused at load rather
+  // than written down somewhere and remembered. See the top of src/decide/rules/roomcaster.mjs.
+  if (c.room_caster != null) {
+    const d = c.room_caster;
+    if (typeof d !== 'object' || Array.isArray(d))
+      say('room_caster', 'must be an object');
+    else {
+      if (typeof d.on !== 'boolean') say('room_caster.on', 'must be true or false');
+      if (d.agent != null && (typeof d.agent !== 'string' || !d.agent.trim()))
+        say('room_caster.agent', 'must be the agent handle of the character keeping the post, ' +
+            'or null for "whichever character this doctrine is scoped to"');
+      if (d.on === true && (!Number.isInteger(d.room) || d.room <= 0))
+        say('room_caster.room', 'must be a positive room number — a post with no room is not a ' +
+            'post, and there is no sensible default to guess');
+      if (d.on === true) {
+        const taken = ['work', 'movement'].filter(f => c.claim?.[f] === 'bot');
+        if (taken.length)
+          say(`claim.${taken[0]}`,
+              `room_caster.on is true and this doctrine claims ${taken.join(' and ')} for the ` +
+              'bot. The keeper only keeps a room enchantment up while NOBODY ELSE holds work ' +
+              'or movement (Autopilot.isRoomEnchantPost), so this configuration switches the ' +
+              'post off SILENTLY — the claim succeeds, the rules converge, and the room is ' +
+              'never lit. Set them to "keeper": DUM takes the body for an errand through the ' +
+              '`busy` lease instead, which is what declareBusy is for and which needs a claim ' +
+              'on some faculty, not on those two');
+      }
+      if (d.spell != null && (typeof d.spell !== 'string' || !d.spell.trim()))
+        say('room_caster.spell', 'must be the name of a room enchantment the caster knows');
+      for (const k of ['margin_ms', 'mana_floor', 'min_bulk_free', 'emerald_reserve'])
+        if (d[k] != null && (!Number.isFinite(Number(d[k])) || Number(d[k]) < 0))
+          say(`room_caster.${k}`, 'must be a number of zero or more');
+      for (const k of ['rest_below', 'flee_below', 'min_health'])
+        if (d[k] != null && (!Number.isFinite(Number(d[k])) || Number(d[k]) < 0 || Number(d[k]) > 1))
+          say(`room_caster.${k}`, 'must be a fraction of max health between 0 and 1');
+      // A FLOOR AT OR ABOVE THE TARGET IS A TRIP THAT CANNOT FIX WHAT OPENED IT: he comes home
+      // still under the floor, the trigger is still true, and he sets straight back out —
+      // every lap reporting success. CLAUDE.md names that failure in the economy traps.
+      const below = Number(d.restock_below_casts ?? 10), to = Number(d.restock_to_casts ?? 60);
+      for (const [k, v] of [['restock_below_casts', below], ['restock_to_casts', to]])
+        if (!Number.isFinite(v) || v < 0) say(`room_caster.${k}`, 'must be a number of casts');
+      if (Number.isFinite(below) && Number.isFinite(to) && to <= below)
+        say('room_caster.restock_to_casts',
+            `must be above restock_below_casts (${below}) — buying up to ${to} casts when the ` +
+            `trip opens below ${below} brings the character home still under the floor, so it ` +
+            'sets out again immediately and every lap reports success');
+      if (d.rescue != null && typeof d.rescue !== 'boolean')
+        say('room_caster.rescue', 'must be true or false');
+      if (d.hand_off_item != null) {
+        if (typeof d.hand_off_item !== 'string' || !d.hand_off_item.trim())
+          say('room_caster.hand_off_item', 'must be a pattern matched against the pack — the ' +
+              'thing that must not leave the post — or null for "nothing"');
+        // A PATTERN THAT WILL NOT COMPILE IS A GATE THAT NEVER FIRES, and this one's whole
+        // job is to be in the way of a trip that would otherwise walk off with the fleet's
+        // chalice. Refused at load rather than thrown inside a rule, where the engine catches
+        // it and the only sign is one `error` line in `considered`.
+        else { try { new RegExp(d.hand_off_item); }
+               catch { say('room_caster.hand_off_item', 'is not a valid regular expression'); } }
+      }
+      if (d.hand_off_floor_casts != null
+          && (!Number.isFinite(Number(d.hand_off_floor_casts)) || Number(d.hand_off_floor_casts) < 0))
+        say('room_caster.hand_off_floor_casts', 'must be a number of castings, zero or more');
+      if (d.hand_off_item && Number(d.hand_off_floor_casts ?? 2) >= Number(d.restock_below_casts ?? 10))
+        say('room_caster.hand_off_floor_casts',
+            `must be below restock_below_casts (${Number(d.restock_below_casts ?? 10)}) — at or ` +
+            'above it the hand-off gate can never hold the trip up for a single tick, so it ' +
+            'reads as configured and does nothing');
+      if (d.travel_timeout_ms != null &&
+          (!Number.isInteger(d.travel_timeout_ms) || d.travel_timeout_ms < 1000))
+        say('room_caster.travel_timeout_ms', 'must be at least 1000 ms');
+      if (d.reagents != null) {
+        if (!Array.isArray(d.reagents) || !d.reagents.length)
+          say('room_caster.reagents', 'must be a non-empty list of {item, match, per_cast, ' +
+              "room, seller}, or absent to use the spell's own costs read off the kod");
+        else for (const [i, l] of d.reagents.entries()) {
+          if (typeof l?.item !== 'string' || !l.item.trim())
+            say(`room_caster.reagents[${i}].item`, 'must be the reagent name');
+          if (typeof l?.match !== 'string' || !l.match.trim())
+            say(`room_caster.reagents[${i}].match`, 'must be a pattern the pack and the shop ' +
+                'list are searched with — the game spells one of these reagents three ways');
+          else { try { new RegExp(l.match); }
+                 catch { say(`room_caster.reagents[${i}].match`, 'is not a valid regular expression'); } }
+          if (!Number.isInteger(l?.per_cast) || l.per_cast < 1)
+            say(`room_caster.reagents[${i}].per_cast`, 'must be how many one cast consumes');
+          if (l?.restock_to != null && (!Number.isInteger(l.restock_to) ||
+              l.restock_to <= below * (Number(l.per_cast) || 1)))
+            say(`room_caster.reagents[${i}].restock_to`, 'must be a whole count of this reagent ' +
+                `above the restock floor (${below} casts x ${l?.per_cast ?? 1}) — a target at or ` +
+                'under the floor brings him home still short');
+          // A LINE WITH NO COUNTER IS A LINE THE TRIP CAN NEVER FILL. Refused here rather than
+          // discovered as a supply trip that comes home with half of what it went out for.
+          if (d.on === true && (!Number.isInteger(l?.room) || l.room <= 0))
+            say(`room_caster.reagents[${i}].room`, 'must be the room of a merchant that sells ' +
+                'it — the two halves of this spell are not sold by the same person');
+          if (d.on === true && (typeof l?.seller !== 'string' || !l.seller.trim()))
+            say(`room_caster.reagents[${i}].seller`, 'must name the merchant to open a shop with');
+        }
+      }
+    }
+  }
+
   if (!Array.isArray(c.not_ours))
     say('not_ours', 'must be a list of in-world character names DUM must not drive');
   else if (c.not_ours.some(n => typeof n !== 'string' || !n.trim()))

@@ -219,7 +219,7 @@ test('not_ours: the exclusion is by character, never by roster handle', async ()
 // line of sight and past a range simply HALVES the chance. Measured on prod 2026-09-18: twelve
 // rows and ten columns apart gave 0 successes in 5 casts; adjacent gave one on the second.
 test('sense: a row keeps its position through the whitelist', () => {
-  const r = normalizeFleetRow({ agent: 'acct08', character: 'Alfa',
+  const r = normalizeFleetRow({ agent: 'acct08', character: 'Alpha',
                                 position: { row: 5, col: 6 } });
   assert.deepEqual(r.position, { row: 5, col: 6 });
 });

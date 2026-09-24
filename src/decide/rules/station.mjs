@@ -141,6 +141,20 @@ export function isDoctrineDestination(room, doctrine = {}) {
   // walked home.
   if (doctrine.service_desk?.on && Number.isInteger(Number(doctrine.service_desk?.room)))
     out.add(Number(doctrine.service_desk.room));
+  // THE POSTED CASTER'S ROOM, AND THE COUNTERS ITS SUPPLY TRIP VISITS. Same argument as the
+  // desk one line up, with one addition: this errand deliberately leaves the character
+  // STANDING IN A SHOP for as long as the buy takes, so the two merchant rooms have to be
+  // exempt as well or a recall and a supply trip fight over one body — the recall winning
+  // the moment the `busy` lease lapses, and the caster arriving home with nothing.
+  //
+  // Gated on `room_caster.on` for the reason the others are: with the post switched off
+  // those are ordinary rooms again and a character idling in one SHOULD be walked home.
+  if (doctrine.room_caster?.on) {
+    if (Number.isInteger(Number(doctrine.room_caster?.room)))
+      out.add(Number(doctrine.room_caster.room));
+    for (const l of doctrine.room_caster?.reagents ?? [])
+      if (Number.isInteger(Number(l?.room))) out.add(Number(l.room));
+  }
   for (const r of doctrine.station?.also_allowed ?? []) out.add(Number(r));
   return out.has(Number(room));
 }

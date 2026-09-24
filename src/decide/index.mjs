@@ -37,6 +37,7 @@ import { foodFleetRules } from './rules/food.mjs';
 import { castleVictoriaFleetRules } from './rules/castle-victoria.mjs';
 import { stationRules } from './rules/station.mjs';
 import { serviceDeskFleetRules } from './rules/servicedesk.mjs';
+import { roomCasterRules } from './rules/roomcaster.mjs';
 import { factionCharacterRules, factionActiveFleetRules, factionRequestFleetRules,
   loyaltyFleetRules } from './rules/factions.mjs';
 import { factionGameFleetRules } from './rules/faction-games.mjs';
@@ -62,6 +63,20 @@ export const characterRules = new RuleSet('character', [
   // "what should it be doing" is unreliable while the answer to "is it doing anything"
   // is no.
   ...escalateRules.filter(r => !isFleet(r)),
+  // THE POSTED CASTER, ABOVE EVERY RULE THAT ASSUMES A CHARACTER HUNTS.
+  //
+  // Off for every fleet that has not armed it (`room_caster.on`), and scoped to one agent
+  // when the doctrine names one, so the cost to everybody else is one comparison. It sits
+  // here because everything below it — the ladder, placement, the station recall — is a
+  // decision about a character that fights for a living, and the whole point of a post is
+  // that this one does not and must never be re-tasked into a room where it would have to.
+  //
+  // Its own first rule is policy maintenance of the same shape as `economy-thresholds`
+  // below: it returns null the moment the keeper agrees, so it can sit above work without
+  // starving it. Its convergence test is `agreesOn` in the same file, and that test is the
+  // reason this placement is safe — see CLAUDE.md, "A RULE THAT CANNOT CONVERGE STARVES
+  // EVERY RULE BELOW IT, AND LOOKS BUSY DOING IT".
+  ...roomCasterRules.filter(r => !isFleet(r)),
   // Strategy-backed policy maintenance returns null once the keeper agrees, so it can
   // run ahead of the ladder without starving ordinary work decisions.
   ...economyRules.filter(r => !isFleet(r)),

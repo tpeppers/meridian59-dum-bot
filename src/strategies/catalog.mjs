@@ -102,6 +102,25 @@ export const STRATEGY_CATALOG = Object.freeze([
         default: 0.85, description: 'Rest threshold while stationed.' }),
       Object.freeze({ id: 'dedicate', title: 'Arrange dedications', type: 'boolean', default: true,
         description: 'Plan owner -> dedicator -> owner enchant rounds at the stage room.' }),
+      Object.freeze({ id: 'depot_keep', title: 'Depot stock per weapon', type: 'integer',
+        min: 0, max: 10, default: 2,
+        description: 'Real weapons of each name the stage-room depot keeps to re-arm units whose ' +
+          'family has no spare. Everything above this is for the courier to sell.' }),
+      Object.freeze({ id: 'courier', title: 'Courier loot to a buyer', type: 'boolean', default: true,
+        description: 'Walk the surplus REAL weapons in the depot to a weapon buyer and back. Trolls ' +
+          'drop real long swords (highhumt.kod, 7 per roll, about one kill in five); a conjured ' +
+          'weapon is refused by every merchant (item.kod:1110-1126) and is never carried.' }),
+      Object.freeze({ id: 'courier_room', title: 'Buyer room', type: 'integer', min: 1, default: 374,
+        description: '374 Quintor in Jasper (seven hops, through 599). 113 the Barloque smith and ' +
+          '201 Colhorr in Marion also buy weapons.' }),
+      Object.freeze({ id: 'courier_min_items', title: 'Courier minimum load', type: 'integer',
+        min: 1, max: 20, default: 6,
+        description: 'Real weapons above the depot stock before a run is worth the road.' }),
+      Object.freeze({ id: 'courier_every_min', title: 'Courier cooldown (minutes)', type: 'integer',
+        min: 10, max: 1440, default: 60, description: 'At most one run per this many minutes.' }),
+      Object.freeze({ id: 'courier_health', title: 'Courier health floor', type: 'number',
+        min: 0.5, max: 1, default: 0.9,
+        description: 'The road starts in Ukgoth; the courier sets out near full or not at all.' }),
     ]),
   }),
   Object.freeze({

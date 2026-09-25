@@ -29,6 +29,7 @@ import { crateFleetRules } from './rules/crate.mjs';
 import { sellrunFleetRules } from './rules/sellrun.mjs';
 import { feastFleetRules } from './rules/feast.mjs';
 import { shiftFleetRules } from './rules/shift.mjs';
+import { trollFleetRules } from './rules/trolls.mjs';
 import { swarmFleetRules } from './rules/swarm.mjs';
 import { graveyardFleetRules } from './rules/graveyard.mjs';
 import { mootFleetRules } from './rules/moot.mjs';
@@ -263,6 +264,13 @@ export const fleetRules = new RuleSet('fleet', [
   // weapons. A character already deployed keeps that posture in its roster, so demotion only
   // delays a character that is out of position or newly rebuilt. If a rebuilt character is
   // seen fighting on default thresholds, this ordering is the first suspect.
+  //
+  // THE UKGOTH TROLLS STATION, BESIDE THE HUNT SHIFT AND FOR THE SAME REASON: it places units.
+  // It owns every unit on its strategy outright (the shifts step over them via `trollOwned`),
+  // it is `pass` on its first line when nobody has it selected, and its one expensive act — a
+  // dedication round — is bounded to one per pass. It moved down with the shift (2026-09-10),
+  // for the same starvation argument above.
+  ...trollFleetRules,
   ...shiftFleetRules,
   // BELOW THE SHIFT ON PURPOSE. A round trip to a counter is most of a 35-minute
   // window, so the shift decides first and this only fires for characters it has not

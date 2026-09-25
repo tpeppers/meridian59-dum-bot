@@ -23,6 +23,7 @@
 // crossing BETWEEN them mid-shift costs the walk and buys nothing, which is why
 // `assignRooms` below never moves a character that is already on either one.
 import { keeperWeaponPriority } from '../weapons.mjs';
+import { trollOwned } from '../../strategies/catalog.mjs';
 
 export const GRAVEYARD = 70;
 export const CRYPT = 71;
@@ -233,7 +234,7 @@ export const graveyardFleetRules = [
     decide(fleetObs, doctrine) {
       const rows = fleetObs.characters ?? [];
       const g = doctrine.graveyard ?? {};
-      const live = rows.filter(r => r.in_game);
+      const live = rows.filter(r => r.in_game && !trollOwned(fleetObs, doctrine, r.agent));
       if (!live.length) return { kind: 'pass', why: 'nobody in game' };
 
       // The room decides, not the clock. Either room generating counts as open — they run

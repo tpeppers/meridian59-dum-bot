@@ -88,6 +88,10 @@ export const ORDER_FIELDS = {
   roam:              { policy: 'roam' },
   roam_limit:        { policy: 'roamLimit' },
   weapon_priority:   { policy: 'weaponPriority', compare: sameList },
+  // BETWEEN TWO WEAPONS OF THE SAME RANK, WIELD THE ONE READ AS MAGIC. A tie-break, never a
+  // ranking (m59-broker.mjs `prefer_magic_weapon` -> policy.preferMagicWeapon), so it can be
+  // on without forcing any weapon family. The Ukgoth Trolls strategy sends it.
+  prefer_magic_weapon: { policy: 'preferMagicWeapon' },
   // TRAINING STYLE IS A WEAPON DECISION NO PRESET CAN MAKE, because bare hands are not a
   // weapon and no ranking can name them. The harness has carried it the whole time
   // (m59-broker.mjs `training_style` -> `policy.trainingStyle`, enum normal | short_sword |

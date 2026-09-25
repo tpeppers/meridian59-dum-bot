@@ -340,3 +340,17 @@ because it silently plans only half the doctrine.
 **Keys here are agent names, and agent names identify accounts on a shared server.**
 A doctrine that needs them belongs in `doctrines/local/`, which is gitignored.
 Everything tracked in this repository addresses characters by role.
+
+
+## A station may require a magic weapon
+
+Besides skills, a station's `requires` may hold a weapon clause:
+
+```jsonc
+"requires": [ { "magic_weapon": { "wielded": true, "spares": 1 } } ]
+```
+
+It reads the harness's `weapon_magic` row: the wielded weapon must be read as bypassing
+NONMAGIC and at least `spares` others must be too. Unknown is refused, as for every other
+clause. The Ukgoth Trolls strategy applies the same test itself; the clause is for a doctrine
+that wants the gate on an ordinary shift station.

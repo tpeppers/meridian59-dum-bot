@@ -1,0 +1,53 @@
+{
+  "extends": "survive.jsonc",
+  "name": "ukgoth-trolls — trolls on magic weapons, dedicated at the stage room",
+  "why": "a troll resists NONMAGIC 80 (troll.kod:64-67), so this doctrine sends a unit into Ukgoth only while the weapon in its hand is READ as magic and it carries magic spares, and holds it at the stage room for a Kraanan dedication until it does. Characters keep the weapon family they train: the magic preference is a tie-break, never a ranking.",
+
+  // WHO RUNS IT. This file names no fleet and no character (CLAUDE.md rule 4). A local doctrine
+  // that extends it names the fleet; the characters are chosen with `--agent`, and the scope
+  // must include the stage room's dedicator and reagent depot as well as the fighters, because
+  // fleet rules decide over in-scope characters only (loop/tick.mjs). Those two are too small to
+  // be deployed and are left where they stand; the strategy only borrows their hands and packs.
+  "fleet": null,
+
+  // THE RULE'S FACULTY MUST BE CLAIMED OR IT IS INERT. `ukgoth-trolls` is a movement rule, and it
+  // hands weapons and reagents about, so work, movement and economy are the bot's. The four
+  // protected faculties stay the keeper's: an unattended character still runs from a troll.
+  "claim": {
+    "identity": "keeper",
+    "mortality": "keeper",
+    "survival": "keeper",
+    "recovery": "keeper",
+    "work": "bot",
+    "movement": "bot",
+    "economy": "bot",
+    "social": "keeper"
+  },
+
+  "strategies": {
+    "enabled": true,
+    // Every in-scope unit gets it; the rule itself decides who is a fighter (size and magic) and
+    // who merely stands at the stage room lending a hand or a pack.
+    "defaults": ["ukgoth-trolls"],
+    "settings": {
+      "ukgoth-trolls": {
+        "room": 599,
+        "stage_room": 2,
+        "hunt": ["troll"],
+        "min_max_health": 70,
+        "magic_spares": 1,
+        "flee_below": 0.45,
+        "rest_below": 0.85,
+        "dedicate": true
+      }
+    }
+  },
+
+  // A FLEET PASS EVERY TWO MINUTES, because a dedication round is one per pass and a unit waiting
+  // at the stage room for its turn is a unit not fighting.
+  "cadence": {
+    "character_ms": 60000,
+    "fleet_ms": 120000,
+    "backoff_ms": 60000
+  }
+}

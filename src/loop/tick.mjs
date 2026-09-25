@@ -89,6 +89,23 @@ export async function tickCharacter(ctx, row) {
     const applied = await apply(broker, intent, obs, { commit, yieldTo: config.yield_to ?? [], holder: ctx.holder });
     line.applied = applied;
 
+    // WHAT AN ERRAND LEARNED, AND THIS PATH NEVER WROTE IT DOWN. `tickFleet` has always
+    // patched memory from `readErrand`; the per-character path ran the same errands and threw
+    // the answer away. So every character-rule errand ran with no memory at all: the caster's
+    // rescue re-cast every tick until the teleport landed (two or three casts a trip, an
+    // emerald each, on prod 2026-09-24), and its supply trip's backoff after a trip that
+    // bought nothing never started. `obs.memory` is the pre-errand snapshot, as there.
+    if (applied.errand) {
+      const learned = readErrand(applied, { at: now, memory: obs.memory ?? {} });
+      if (learned) {
+        line.memory_patch = learned;
+        ctx.memory?.patch(learned.topic, learned.patch);
+      }
+      if (applied.stopped)
+        journal.finding(agent, `the ${applied.errand} errand stopped early: ${applied.stopped}`,
+                        { sent: applied.sent });
+    }
+
     if (applied.acted) {
       line.verified = await verify(broker, applied);
       if (line.verified.verified === false)

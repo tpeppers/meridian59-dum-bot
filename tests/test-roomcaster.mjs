@@ -26,7 +26,8 @@ import { roomCasterRules, castsOnHand, spendableEmeralds, posture, agreesOn,
          recordCasterResupply, recordCasterRescue, coolingDown, rescuePending, unpinned,
          stillHoldingHandOff, handOffBlocking,
          shortOfReagents, FORCES_OF_LIGHT, RESCUE,
-         ROOM_CASTER_TOPIC } from '../src/decide/rules/roomcaster.mjs';
+         ROOM_CASTER_TOPIC, RESCUE_WINDOW_MS, RESCUE_CAST_TIMEOUT_MS,
+         RESCUE_LANDING_MS } from '../src/decide/rules/roomcaster.mjs';
 import { isDoctrineDestination } from '../src/decide/rules/station.mjs';
 import { bindBuyLines, ERRANDS } from '../src/act/errands.mjs';
 import { ORDER_FIELDS, planOrders } from '../src/act/orders.mjs';
@@ -551,6 +552,25 @@ test('caster: the shopping leg waits for the landing rather than predicting it',
   eq(out.kind, 'pass');
   ok(/not knowable until it does/.test(out.why),
      'rescue.kod picks its own destination, so where he is is read rather than guessed');
+});
+
+test('caster: the window covers the slowest cast plus the latest landing', () => {
+  ok(RESCUE_WINDOW_MS >= RESCUE_CAST_TIMEOUT_MS + RESCUE_LANDING_MS,
+     'a window shorter than that re-casts on a teleport that is still coming');
+  eq(rescueOut.decide(empty(), ARMED).orders.steps[0].timeout_ms, RESCUE_CAST_TIMEOUT_MS,
+     'and the step times out on the same number the window is built from');
+  const memory = { [ROOM_CASTER_TOPIC]: { acct08: { rescued_at: 5_000 } } };
+  ok(rescuePending(memory, 'acct08', 5_000 + RESCUE_CAST_TIMEOUT_MS + RESCUE_LANDING_MS),
+     'still in flight at the latest possible landing');
+});
+
+test('caster: once the rescue has landed the shopping leg goes at once', () => {
+  // Inside the window but no longer at the post: the room changing IS the landing, and
+  // waiting out the rest of the window leaves him standing wherever it put him.
+  const memory = { [ROOM_CASTER_TOPIC]: { acct08: { rescued_at: 5_000 } } };
+  const out = resupply.decide(empty({ memory, at: 5_000 + 20_000, room: 106 }), ARMED);
+  eq(out.kind, 'errand');
+  eq(out.orders.errand, 'caster-resupply');
 });
 
 test('caster: with rescue switched off the trip simply walks', () => {

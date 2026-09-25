@@ -298,8 +298,19 @@ export function coolingDown(memory, agent, now) {
   return left > 0 ? Math.round(left / 1000) : null;
 }
 
+/**
+ * HOW LONG A RESCUE MAY STILL BE IN FLIGHT, measured from the tick that sent it. The cast
+ * step may take up to its own timeout to come back, and the teleport lands 15-25s after the
+ * cast (rescue.kod:94), so the latest possible landing is the sum; the rest is margin for a
+ * slow board. Re-casting inside this window spends a second emerald on a teleport that is
+ * already coming.
+ */
+export const RESCUE_CAST_TIMEOUT_MS = 30_000;
+export const RESCUE_LANDING_MS = 25_000;
+export const RESCUE_WINDOW_MS = RESCUE_CAST_TIMEOUT_MS + RESCUE_LANDING_MS + 35_000;
+
 /** Is this character mid-rescue — cast, and not yet landed? */
-export function rescuePending(memory, agent, now, windowMs = 90_000) {
+export function rescuePending(memory, agent, now, windowMs = RESCUE_WINDOW_MS) {
   const row = memory?.[ROOM_CASTER_TOPIC]?.[agent];
   if (!row || !Number.isFinite(Number(row.rescued_at))) return false;
   return Number(now) - Number(row.rescued_at) < windowMs;
@@ -572,7 +583,7 @@ export const roomCasterRules = [
             // nothing useful to do in the meantime that a later tick cannot do better from a
             // board that knows where he actually is.
             { tool: 'cast', args: { agent: obs.agent, spell: RESCUE.spell },
-              expect: null, timeout_ms: 30_000, estimate_ms: 20_000 },
+              expect: null, timeout_ms: RESCUE_CAST_TIMEOUT_MS, estimate_ms: 20_000 },
           ],
         },
         why: `out of ${short.binding.join(' and ')} — rescuing out rather than walking the ` +
@@ -608,7 +619,10 @@ export const roomCasterRules = [
       if (cooling != null)
         return { kind: 'pass', why: `inside the backoff from a failed supply trip (${cooling}s ` +
                  'left) — a trip that cannot fix what opened it must not run every pass' };
-      if (rescuePending(obs.memory, obs.agent, now))
+      // STILL STANDING AT THE POST is what "not landed yet" looks like. Once the room has
+      // changed the teleport is over, and waiting out the rest of the window would only
+      // leave him standing wherever it put him.
+      if (rescuePending(obs.memory, obs.agent, now) && Number(row.room) === room)
         return { kind: 'pass', why: 'the rescue has not landed yet; the counter leg starts ' +
                  'from wherever it puts him, which is not knowable until it does' };
       // A HURT CHARACTER IS RECOVERING, NOT SHOPPING. Same floor `return-to-station` applies

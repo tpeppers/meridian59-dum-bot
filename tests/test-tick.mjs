@@ -5,7 +5,8 @@
 // fleet must cost one call, not one plus N.
 
 import assert from 'node:assert/strict';
-import { pass } from '../src/loop/tick.mjs';
+import { pass, tickCharacter } from '../src/loop/tick.mjs';
+import { DEFAULTS } from '../src/config/defaults.mjs';
 import { Journal } from '../src/record/journal.mjs';
 import * as fx from './fixtures.mjs';
 
@@ -181,4 +182,48 @@ test('tick: fleet rules can be skipped while the board is still read', async () 
                             { decideFleet: false });
   assert.equal(result.fleet.decided, false);
   assert.equal(result.fleet.considered, undefined);
+});
+
+// ------------------------------------------------------------ errand memory, per character
+
+/** A posted caster at its post, out of berries, with gems to rescue on. NATO name: see dum-guard. */
+function casterTick() {
+  let store = {};
+  const patches = [];
+  const memory = { read: () => store,
+                   patch: (t, p) => { patches.push([t, p]); store = { ...store, [t]: { ...(store[t] ?? {}), ...p } }; } };
+  const calls = [];
+  const broker = { url: 'x', call: async (tool) => { calls.push(tool); return {}; },
+                   write: async (tool) => { calls.push('write:' + tool); return {}; } };
+  let t = 1_000_000;
+  const ctx = { broker, journal: quietJournal(), commit: true, memory, now: () => t,
+                ensureClaim: async () => {}, holder: 'dum/test',
+                config: { ...DEFAULTS, claim: { work: 'keeper', movement: 'keeper', economy: 'bot' },
+                          room_caster: { ...DEFAULTS.room_caster, on: true, agent: 'acct08', room: 2,
+                                         spell: 'forces of light', rescue: true, min_health: 1 } } };
+  const row = { agent: 'acct08', character: 'Alpha', in_game: true, room: 2, room_name: 'post', room_num: 2,
+                health: '20/20', mana: '65/65', level: 20, vigor_of: '80/200', purse: 4000,
+                pack_items: [{ name: 'elderberry', amount: 8 }, { name: 'emerald', amount: 18 },
+                             { name: 'shilling', amount: 4000 }] };
+  return { ctx, row, calls, patches, advance: ms => { t += ms; } };
+}
+
+test('tick: a character-rule errand leaves its memory behind, as a fleet errand always did', async () => {
+  // Measured on prod 2026-09-24: the per-character path ran errands and never called
+  // readErrand, so a posted caster's rescue re-cast on every tick until it landed.
+  const c = casterTick();
+  const first = await tickCharacter(c.ctx, c.row);
+  assert.equal(first.intent?.rule, 'caster-rescue-to-shop');
+  assert.equal(c.calls.filter(x => x === 'cast').length, 1);
+  assert.deepEqual(c.patches, [['room_caster', { acct08: { rescued_at: 1_000_000 } }]]);
+  assert.ok(first.memory_patch, 'and the patch is journalled as data');
+});
+
+test('tick: a rescue in flight is not cast again on the next tick', async () => {
+  const c = casterTick();
+  await tickCharacter(c.ctx, c.row);
+  c.advance(30_000);                                 // DUM's own tick, still inside the window
+  const second = await tickCharacter(c.ctx, c.row);
+  assert.equal(c.calls.filter(x => x === 'cast').length, 1, 'one cast, one emerald');
+  assert.equal(second.intent ?? null, null, 'and the counter leg waits too: he is still at the post');
 });

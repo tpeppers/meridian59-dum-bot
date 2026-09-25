@@ -58,7 +58,7 @@ test('trolls: unknown weapon magic is refused, never assumed', () => {
   assert.equal(trollReadiness(row('a', { weapon_magic: unread }), s).ready, false);
   assert.equal(trollReadiness(row('a', { weapon_magic: mundane() }), s).ready, false);
   assert.equal(trollReadiness(row('a'), s).ready, true);
-  assert.equal(trollReadiness(row('a', { weapon_magic: magic({ magic_spares: 0 }) }), s).ready, false,
+  assert.equal(trollReadiness(row('a', { weapon_magic: magic({ magic_spares: 0, weapons: [magic().weapons[0]] }) }), s).ready, false,
     'the default demands one magic spare');
   assert.equal(trollReadiness(row('a', { max_health: 65 }), s).ready, false, 'default floor is 70');
 });
@@ -162,4 +162,73 @@ test('trolls: the surface admits enchant weapon at an item id and at nothing els
   assert.match(deny('cast', { agent: 'a', spell: 'enchant weapon', target: 'troll' }), /object id/);
   assert.match(deny('cast', { agent: 'a', spell: 'fireball', target: 5 }), /refused/);
   assert.equal(deny('cast', { agent: 'a', spell: 'create weapon' }), null);
+});
+
+// ---- the supply line --------------------------------------------------------------------
+
+import { familyMagicSpares, surplusWeapons, planSupply, planCourier, recordTrollCourier,
+  WEAPON_BUYERS } from '../src/decide/rules/trolls.mjs';
+
+const W = (id, name, magic, over = {}) => ({ id, name, class: magic ? 'enchanted' : 'mundane',
+  bypasses_nonmagic: magic, made: false, wielded: false, ...over });
+const wm = (weapons) => ({ wielded: (() => { const w = weapons.find(x => x.wielded);
+    return w ? { name: w.name, class: w.class, bypasses_nonmagic: w.bypasses_nonmagic, made: w.made } : null; })(),
+  magic_spares: weapons.filter(w => !w.wielded && w.bypasses_nonmagic).length, unknown: 0, weapons });
+const hammerer = (agent, weapons, over = {}) => row(agent, { room: 2, mode: 'idle',
+  policy: { assignedRoom: 2, roam: false, preferMagicWeapon: true, weaponPriority: ['hammer', 'axe'] },
+  weapon_magic: wm(weapons), ...over });
+
+test('trolls: a magic AXE is no spare to a hammer trainee (the tie-break never wields it)', () => {
+  const r = hammerer('h', [W(1, 'hammer', true, { wielded: true }), W(2, 'axe', true)]);
+  assert.equal(familyMagicSpares(r), 0);
+  assert.equal(trollReadiness(r, settings(doctrine())).ready, false);
+  const ok2 = hammerer('h', [W(1, 'hammer', true, { wielded: true }), W(3, 'hammer', true)]);
+  assert.equal(trollReadiness(ok2, settings(doctrine())).ready, true);
+});
+
+test('trolls: surplus goes UP to the depot — other families and real extras, never conjured', () => {
+  const r = hammerer('h', [W(1, 'hammer', true, { wielded: true }), W(2, 'hammer', true), W(3, 'hammer', false),
+    W(4, 'hammer', false), W(5, 'long sword', false), W(6, 'axe', false, { made: true })]);
+  const out = surplusWeapons(r, 2).map(w => w.id).sort();
+  assert.deepEqual(out, [4, 5], 'keeps 2 family spares (magic first); the extra hammer and the sword go; the conjured axe stays');
+});
+
+test('trolls: the depot hands DOWN a family weapon, and Create Weapon is the fallback', () => {
+  const s = settings(doctrine());
+  const bare = hammerer('h', [W(1, 'hammer', false, { wielded: true })], {
+    provides: ['create weapon'], mana: { value: 30, max: 40 } });
+  const depot = row('depot', { room: 2, max_health: 20, pack_items: [{ name: 'elderberry', amount: 300 }],
+    weapon_magic: wm([W(9, 'long sword', false), W(8, 'hammer', false)]) });
+  const fighters = new Set(['h']);
+  const down = planSupply([{ row: bare, s, ready: false }], [bare, depot], fighters);
+  const give = down.plan.find(p => p.do === 'give-weapon' && p.from === 'depot');
+  assert.equal(give?.what?.[0]?.id, 8, 'the depot hammer, not the long sword');
+  const emptyDepot = { ...depot, weapon_magic: wm([W(9, 'long sword', false)]) };
+  const conj = planSupply([{ row: bare, s, ready: false }], [bare, emptyDepot], fighters);
+  assert.ok(conj.plan.some(p => p.do === 'cast-create-weapon' && p.agent === 'h'));
+});
+
+test('trolls: the courier sells only REAL surplus, after its cooldown, and walks back', () => {
+  const s = settings(doctrine());
+  const depot = row('depot', { room: 2, max_health: 20, pack_items: [{ name: 'elderberry', amount: 300 }],
+    weapon_magic: wm([...Array.from({ length: 9 }, (_, i) => W(100 + i, 'long sword', false)),
+      W(200, 'long sword', false, { made: true })]) });
+  const c = hammerer('c', [W(1, 'hammer', true, { wielded: true }), W(2, 'hammer', true)],
+    { health: { value: 75, max: 75, pct: 1 } });
+  const fighters = new Set(['c']);
+  const out = planCourier([{ row: c, s, ready: true }], [c, depot], fighters, s, {}, 1_000_000);
+  assert.equal(out.errand?.orders?.errand, 'troll-courier');
+  const ids = out.errand.orders.context.ids;
+  assert.equal(ids.length, 7, 'nine real long swords less the depot stock of two');
+  assert.ok(!ids.includes(200), 'the conjured one is never carried');
+  const steps = out.errand.orders.steps.map(x => x.tool);
+  assert.deepEqual(steps, ['supply', 'travel', 'sell', 'travel']);
+  assert.equal(out.errand.orders.steps[2].args.to, WEAPON_BUYERS[374]);
+  assert.equal(out.errand.orders.steps[3].always, true, 'the walk back runs whatever happened');
+  const cooling = planCourier([{ row: c, s, ready: true }], [c, depot], fighters, s,
+    { courier_last_at: 1_000_000 }, 1_000_000 + 10 * 60_000);
+  assert.match(cooling.why, /cooldown/);
+  const hurt = { ...c, health: { value: 50, max: 75, pct: 0.66 } };
+  assert.match(planCourier([{ row: hurt, s, ready: true }], [hurt, depot], fighters, s, {}, 1).why, /health/);
+  assert.equal(recordTrollCourier({ agent: 'c', at: 5, stopped: null }).patch.courier_last_at, 5);
 });

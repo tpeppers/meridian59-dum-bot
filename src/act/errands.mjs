@@ -55,6 +55,7 @@
 import { recordCrateCheck } from '../decide/rules/crate.mjs';
 import { recordSellrun } from '../decide/rules/sellrun.mjs';
 import { recordDeskUncurse } from '../decide/rules/servicedesk.mjs';
+import { recordTrollCourier } from '../decide/rules/trolls-record.mjs';
 import { recordFeastOutbound, recordFeastGrab, recordFeastAbandon, recordFeastPkCheck } from '../decide/rules/feast.mjs';
 import { recordCasterResupply, recordCasterRescue } from '../decide/rules/roomcaster.mjs';
 
@@ -245,6 +246,8 @@ export const ERRANDS = {
   // the world; if the cast did not take, nothing about the world has changed to stop the next
   // pass sending the same character on the same journey. A failure is remembered and backed off.
   'desk-uncurse': { record: recordDeskUncurse, topic: 'service_desk' },
+  // The Ukgoth depot's surplus real weapons, walked to a buyer. `trolls` holds its cooldown.
+  'troll-courier': { record: recordTrollCourier, topic: 'trolls' },
   // THE FEAST HALL JOURNEY, IN THREE SHORT ERRANDS JOINED BY MEMORY. The hall is eleven
   // hops from where the fleet farms, and one blocking errand per character would stand
   // the whole bot down for the walk (see "IT BLOCKS THE PASS" above). So `outbound` only

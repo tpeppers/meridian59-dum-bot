@@ -18,8 +18,8 @@
 
 import { keeperWeaponPriority, presetForTraining } from '../weapons.mjs';
 import { trainingWeaponFor, stationTargetLevel } from '../training.mjs';
-import { STRATEGY_IDS, strategyEnabled, HUNT_ROOMS, admits, engagementCeiling, QUARRY_LEVEL }
-  from '../../strategies/catalog.mjs';
+import { STRATEGY_IDS, strategyEnabled, HUNT_ROOMS, admits, engagementCeiling, QUARRY_LEVEL,
+  trollOwned } from '../../strategies/catalog.mjs';
 import { activeFactionWork } from './factions.mjs';
 import { takeable } from '../engine.mjs';
 
@@ -184,13 +184,34 @@ export const admitsAgent = (st = {}, row = {}) => {
 export const hasRequirements = (st = {}) =>
   st?.requires != null && [].concat(st.requires).length > 0;
 
+// A WEAPON CLAUSE: {magic_weapon: {wielded: true, spares: 1}}.
+//
+// A troll resists NONMAGIC 80 (troll.kod:64-67), so the question a troll station asks is not
+// what the character HOLDS in skills but whether the weapon in its hand is magic — and it has to
+// be answered from a READING, because nothing on the wire says so. The harness reports the
+// readings as `weapon_magic` on the fleet row (m59-weapon-magic.mjs). UNKNOWN IS REFUSED, like
+// every other clause here: a weapon nobody has looked at is a question, not a permission, and a
+// mundane one in Ukgoth is a character that cannot win.
+export function magicWeaponMet(clause = {}, row = {}) {
+  const wm = row?.weapon_magic;
+  if (!wm || typeof wm !== 'object') return false;
+  const wantWielded = clause.wielded !== false;
+  if (wantWielded && wm.wielded?.bypasses_nonmagic !== true) return false;
+  const spares = Number.isInteger(clause.spares) ? clause.spares : 0;
+  return (Number(wm.magic_spares) || 0) >= spares;
+}
+
 export function requirementsMet(st = {}, row = {}) {
   const reqs = st.requires == null ? [] : [].concat(st.requires);
   if (!reqs.length) return true;
+  const weaponReqs = reqs.filter(r => r?.magic_weapon !== undefined);
+  if (!weaponReqs.every(r => magicWeaponMet(r.magic_weapon, row))) return false;
+  const skillReqs = reqs.filter(r => r?.magic_weapon === undefined);
+  if (!skillReqs.length) return true;
   const list = row?.skills ?? row?.progress?.skills;
   if (!Array.isArray(list)) return false;
   const norm = v => String(v ?? '').trim().toLowerCase();
-  return reqs.every(req => {
+  return skillReqs.every(req => {
     // A CLAUSE MAY NAME SEVERAL SKILLS, AND THEN IT MEANS *ANY* OF THEM. Graduating on
     // "hammer, axe or fencing" is one decision, not three, and writing it as three clauses
     // would mean all three — which nobody has on the day they graduate.
@@ -601,7 +622,9 @@ export const shiftFleetRules = [{
   offWhy: 'shift.on is off',
   why: 'units running Short swording belong in a crypt room that generates their quarry, with roaming off',
   decide(observation, doctrine) {
-    const live = (observation.characters ?? []).filter(r => r.in_game);
+    // A troll hunter belongs to the Ukgoth Trolls rule alone (catalog.mjs `trollOwned`).
+    const live = (observation.characters ?? []).filter(r => r.in_game &&
+      !trollOwned(observation, doctrine, r.agent));
     if (!live.length) return { kind: 'pass', why: 'nobody in game' };
 
     const assignments = shiftAssignments(live, doctrine, observation);

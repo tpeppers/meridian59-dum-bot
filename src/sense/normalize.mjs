@@ -164,6 +164,12 @@ export function normalizeFleetRow(r = {}) {
     // `reagents` is the create-food pair counted; `has_food` is the keeper's own answer.
     // Absent on an older broker, and null means "not answered", never "empty".
     pack_items: Array.isArray(r.pack_items) ? r.pack_items : null,
+    // WHICH WEAPONS BYPASS A TROLL'S NONMAGIC 80, as the keeper READ them (look text, lapse
+    // sentence) — never inferred from a name, because an enchantment does not rename anything.
+    // `{wielded:{name,class,bypasses_nonmagic,made}, magic_spares, unknown, weapons:[{id,...}]}`.
+    // Null means an older harness did not answer, which the troll gate refuses rather than
+    // reading as "nothing is magic" or "everything is".
+    weapon_magic: (r.weapon_magic && typeof r.weapon_magic === 'object') ? r.weapon_magic : null,
     reagents: (r.reagents && typeof r.reagents === 'object')
       ? { elderberry: num(r.reagents.elderberry), herbs: num(r.reagents.herbs) } : null,
     has_food: bool(r.has_food),

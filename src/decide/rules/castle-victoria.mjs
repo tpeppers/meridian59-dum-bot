@@ -1,5 +1,5 @@
 import { keeperWeaponPriority } from '../weapons.mjs';
-import { STRATEGY_IDS, strategyEnabled, strategySettings } from '../../strategies/catalog.mjs';
+import { STRATEGY_IDS, strategyEnabled, strategySettings, trollOwned } from '../../strategies/catalog.mjs';
 import { activeFactionWork } from './factions.mjs';
 
 const sameList = (a, b) => Array.isArray(a) && Array.isArray(b) &&
@@ -181,7 +181,7 @@ export const castleVictoriaFleetRules = [{
 
   decide(fleetObs, doctrine) {
     let live = (fleetObs.characters ?? []).filter(r => r.in_game && !r.parked &&
-      !activeFactionWork(fleetObs, r));
+      !activeFactionWork(fleetObs, r) && !trollOwned(fleetObs, doctrine, r.agent));
     const cv = doctrine.castle_victoria;
 
     // A SHIFT IS FLEET-SCOPED, AND SOMETIMES THE FLEET IS THREE PEOPLE.

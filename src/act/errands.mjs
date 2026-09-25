@@ -54,6 +54,7 @@
 
 import { recordCrateCheck } from '../decide/rules/crate.mjs';
 import { recordSellrun } from '../decide/rules/sellrun.mjs';
+import { recordTrollCourier } from '../decide/rules/trolls-record.mjs';
 import { recordFeastOutbound, recordFeastGrab, recordFeastAbandon, recordFeastPkCheck } from '../decide/rules/feast.mjs';
 
 import { JourneyProgress } from './journey-progress.mjs';
@@ -175,6 +176,8 @@ export const ERRANDS = {
   // Leaves one fact behind: when this character last ran the Barloque sell circuit, so the
   // rule's per-character cooldown can gate the next one.
   'sellrun-circuit': { record: recordSellrun, topic: 'sellrun' },
+  // The Ukgoth depot's surplus real weapons, walked to a buyer. `trolls` holds its cooldown.
+  'troll-courier': { record: recordTrollCourier, topic: 'trolls' },
   // THE FEAST HALL JOURNEY, IN THREE SHORT ERRANDS JOINED BY MEMORY. The hall is eleven
   // hops from where the fleet farms, and one blocking errand per character would stand
   // the whole bot down for the walk (see "IT BLOCKS THE PASS" above). So `outbound` only

@@ -29,6 +29,7 @@ import { crateFleetRules } from './rules/crate.mjs';
 import { sellrunFleetRules } from './rules/sellrun.mjs';
 import { feastFleetRules } from './rules/feast.mjs';
 import { shiftFleetRules } from './rules/shift.mjs';
+import { trollFleetRules } from './rules/trolls.mjs';
 import { swarmFleetRules } from './rules/swarm.mjs';
 import { graveyardFleetRules } from './rules/graveyard.mjs';
 import { mootFleetRules } from './rules/moot.mjs';
@@ -119,6 +120,11 @@ export const fleetRules = new RuleSet('fleet', [
   // the same reason: it establishes the hands-off patrol policy that everything below then
   // maintains. It is `pass` on its first line when `crypt.shift` is off.
   ...shiftFleetRules,
+  // THE UKGOTH TROLLS STATION, BESIDE THE HUNT SHIFT AND FOR THE SAME REASON: it places units.
+  // It owns every unit on its strategy outright (the shifts above and below step over them via
+  // `trollOwned`), it is `pass` on its first line when nobody has it selected, and its one
+  // expensive act — a dedication round — is bounded to one per pass.
+  ...trollFleetRules,
   // A human-led swarm still wins. Once free, an ASSIGNED one-hour faction quest outranks
   // standing maintenance windows. Merely asking for a new assignment is below the farm
   // baseline: a stopped/rejoined character should resume useful work before it records

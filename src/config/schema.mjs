@@ -446,6 +446,26 @@ export function validate(c) {
         // A string, or a LIST meaning "any of these". Graduating on hammer-or-axe-or-fencing
         // is one decision; writing it as three clauses would mean all three, which nobody
         // holds on the day they graduate.
+        // OR A WEAPON CLAUSE: {magic_weapon: {wielded: true, spares: 1}} — the troll gate.
+        // See magicWeaponMet in rules/shift.mjs; it reads the harness's weapon_magic row.
+        if (req.magic_weapon !== undefined) {
+          const m = req.magic_weapon;
+          if (!m || typeof m !== 'object' || Array.isArray(m))
+            say(`${where}.requires.magic_weapon`, 'must be {wielded?: true, spares?: N}');
+          else {
+            for (const k of Object.keys(m))
+              if (!['wielded', 'spares'].includes(k))
+                say(`${where}.requires.magic_weapon.${k}`, 'unknown key; {wielded?, spares?}');
+            if (m.wielded !== undefined && typeof m.wielded !== 'boolean')
+              say(`${where}.requires.magic_weapon.wielded`, 'must be true or false');
+            if (m.spares !== undefined && !(Number.isInteger(m.spares) && m.spares >= 0))
+              say(`${where}.requires.magic_weapon.spares`, 'must be a whole number, 0 or more');
+          }
+          for (const k of Object.keys(req))
+            if (!['magic_weapon', 'why'].includes(k))
+              say(`${where}.requires.${k}`, 'a magic_weapon clause stands alone: {magic_weapon, why?}');
+          continue;
+        }
         const names = req.skill == null ? [] : [].concat(req.skill);
         if (!names.length || names.some(n => typeof n !== 'string' || !n.trim()))
           say(`${where}.requires`, 'every clause needs a `skill` name, or a list of names ' +

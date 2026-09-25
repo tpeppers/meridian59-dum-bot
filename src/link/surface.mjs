@@ -185,10 +185,19 @@ export function deny(tool, args = {}) {
       return `refused — act verb:"${args.verb ?? '?'}" reaches into the character's pack. ` +
              `DUM only claims verb:"go", which acts on the square underfoot, and ` +
              `verb:"activate" on a Feast Hall dispenser. See src/link/surface.mjs`;
-    if (tool === 'cast' && !['create weapon', 'create food']
+    // ENCHANT WEAPON IS THE ONE ITEM-TARGETED SPELL, and only at an item BY ID. It is a Kraanan
+    // dedication of a weapon in the caster's own pack (enchwp.kod: the target must be in range),
+    // which the Ukgoth Trolls strategy needs because a troll resists NONMAGIC 80. A numeric
+    // target is an object id; a name could resolve to a creature or a player, and the point of
+    // this guard is that widening provisioning never widens DUM into combat magic.
+    if (tool === 'cast' && String(args.spell ?? '').trim().toLowerCase() === 'enchant weapon') {
+      if (!(typeof args.target === 'number' && Number.isInteger(args.target) && args.target > 0))
+        return `refused — DUM may cast "enchant weapon" only at an item by object id, not ` +
+               `"${args.target ?? '?'}"`;
+    } else if (tool === 'cast' && !['create weapon', 'create food']
           .includes(String(args.spell ?? '').trim().toLowerCase()))
-      return `refused — DUM may cast only the self-only provisioning spell "create weapon", ` +
-             `not "${args.spell ?? '?'}"`;
+      return `refused — DUM may cast only the self-only provisioning spells "create weapon" and ` +
+             `"create food", and "enchant weapon" at an item id — not "${args.spell ?? '?'}"`;
     // `autopilot` is on the write list and `autopilot --hard` ENDS the keeper rather
     // than making it inert: no frames, no observe(), no death record, no post-mortem.
     // The harness's own note is that deaths kept happening in exactly the windows it

@@ -27,6 +27,7 @@ export const STRATEGY_IDS = Object.freeze({
   DETAILED_STATS: 'detailed-strategy-stats',
   PLAY_FACTION_GAMES: 'play-faction-games',
   AUTO_LEVEL_PLANNED: 'auto-level-planned-school',
+  UKGOTH_TROLLS: 'ukgoth-trolls',
 });
 
 export const STRATEGY_CATALOG = Object.freeze([
@@ -53,6 +54,54 @@ export const STRATEGY_CATALOG = Object.freeze([
     requirements: ['Observed faction membership', 'Freshly verified opposing token carrier',
       'Ordinary combat readiness'],
     description: 'Inspect nearby players for a visible Council token, fight only verified carriers from another faction, recover a dropped token, and deliver it to the unit\'s own liege when no positively verified weak councilor is known.',
+  }),
+  Object.freeze({
+    id: STRATEGY_IDS.UKGOTH_TROLLS,
+    title: 'Ukgoth Trolls',
+    group: 'Combat doctrine',
+    purpose: 'Hunt trolls in Ukgoth on enchanted weapons, re-dedicated at the stage room',
+    requirements: ['Max health at or above the setting (a level-90 troll is admitted from 60)',
+      'The wielded weapon must bypass NONMAGIC (enchanted, born magic, or nerudite), plus spares',
+      'A harness that reports weapon_magic on the fleet row',
+      'A co-located dedicator who knows enchant weapon, with 3 elderberry + 1 orc tooth per weapon'],
+    description:
+      'TROLLS RESIST MUNDANE WEAPONS 80 (troll.kod:64-67), so an unenchanted sword, axe or ' +
+      'hammer lands a fifth of its damage and a character on one is not fighting slowly, it is ' +
+      'losing. Kraanan\'s enchant weapon clears the flag (waench.kod:108-109): five times the ' +
+      'damage, whatever the family. So this strategy never forces a weapon family — each unit ' +
+      'keeps training the axe, hammer or sword it trains — and requires only that the weapon ' +
+      'be magic.\n' +
+      'A unit that qualifies is deployed to the room with roaming off and the keeper told to ' +
+      'prefer a magic weapon over a mundane one of the same rank (the lapse swap happens at ' +
+      'one second, in the harness). A unit that does not qualify is held at the stage room, ' +
+      'where a dedicator enchants its weapons by hand — owner hands over, dedicator casts, ' +
+      'hands back — drawing the reagents from a co-located depot when it has none.\n' +
+      'THE GUARDIAN OF ZJIRIA IS NOT QUARRY. Three level-120 stone trolls are PLACED around the ' +
+      'node at game hour 0 (i9.kod:181-199), not generated, and the harness refuses them by ' +
+      'name. They killed 180 characters in this room. Nothing here names them.',
+    settings: Object.freeze([
+      Object.freeze({ id: 'room', title: 'Troll room', type: 'integer', min: 1, default: 599,
+        description: 'Ukgoth, Holy Land of Trolls. 100% trolls, cap 15, one every 70 s (i9.kod).' }),
+      Object.freeze({ id: 'stage_room', title: 'Stage room', type: 'integer', min: 1, default: 2,
+        description: 'Outside Castle Victoria: one hop from the troll room (the easy direction) ' +
+          'and one from the castle. Where dedication happens and the depot stands.' }),
+      Object.freeze({ id: 'hunt', title: 'Quarry', type: 'item-list', default: ['troll'],
+        description: 'Only what the room GENERATES. The placed Guardians are deliberately absent.' }),
+      Object.freeze({ id: 'min_max_health', title: 'Minimum max health', type: 'integer',
+        min: 60, max: 200, default: 70,
+        description: 'The level ceiling admits a level-90 troll from 60; the plan starts at 70 ' +
+          'because even enchanted, one troll costs about 60 health to kill alone.' }),
+      Object.freeze({ id: 'magic_spares', title: 'Magic spares required', type: 'integer',
+        min: 0, max: 3, default: 1,
+        description: 'Spares that already bypass NONMAGIC. An enchantment lapses on a real-hours ' +
+          'timer; the spare is what turns a lapse mid-fight into a swap instead of a death.' }),
+      Object.freeze({ id: 'flee_below', title: 'Flee below', type: 'number', min: 0.2, max: 0.9,
+        default: 0.45, description: 'Do not lower it for this quarry.' }),
+      Object.freeze({ id: 'rest_below', title: 'Rest below', type: 'number', min: 0.3, max: 1,
+        default: 0.85, description: 'Rest threshold while stationed.' }),
+      Object.freeze({ id: 'dedicate', title: 'Arrange dedications', type: 'boolean', default: true,
+        description: 'Plan owner -> dedicator -> owner enchant rounds at the stage room.' }),
+    ]),
   }),
   Object.freeze({
     id: STRATEGY_IDS.CREATE_WEAPONS,
@@ -441,6 +490,13 @@ export function strategySettings(observation, doctrine, agent, id) {
   return validateStrategySettings(id, { ...doctrineValues, ...assignedValues });
 }
 
+// ONE OWNER PER BODY. A unit on the Ukgoth Trolls strategy is placed by that rule alone: the
+// hunt shift, the Castle Victoria shift and the graveyard shift each place EVERY live row, and
+// any of them re-deploying a troll hunter to a skeleton room — or a skeleton hunter into Ukgoth
+// on a mundane weapon — is exactly the silent tug-of-war those rules' comments already warn of.
+export const trollOwned = (observation, doctrine, agent) =>
+  strategyEnabled(observation, doctrine, agent, STRATEGY_IDS.UKGOTH_TROLLS);
+
 export function strategyRows(observation, doctrine, id) {
   return (observation.characters ?? []).filter(r => r.in_game &&
     strategyEnabled(observation, doctrine, r.agent, id));
@@ -515,6 +571,16 @@ export const HUNT_ROOMS = Object.freeze({
   // castle rooms between them can say.
   544: Object.freeze({ room: 544, name: 'Valley of Ileria', threat: 50,
     generates: Object.freeze(['fungus beast', 'groundworm larva']) }),
+  // UKGOTH. The generator is 100% troll, level 90, difficulty 8 (i9.kod, troll.kod), so the
+  // threat is 90 and the ceiling admits it from 60 max health. The three Guardians of Zjiria
+  // (StoneTroll, level 120) are PLACED at game hour 0, not generated, and are deliberately
+  // not listed: this table says what a room produces, and the harness refuses them by name.
+  //
+  // A MUNDANE WEAPON DOES A FIFTH HERE (troll.kod:64-67, NONMAGIC 80), which no ceiling can
+  // see. Only the Ukgoth Trolls strategy may station a unit in 599, because it is the one
+  // place that checks the weapon is magic first.
+  599: Object.freeze({ room: 599, name: 'Ukgoth, Holy Land of Trolls', threat: 90,
+    generates: Object.freeze(['troll']), needs_magic_weapon: true }),
 });
 
 // Kept for the crypt-only callers and tests that name it.
@@ -526,6 +592,7 @@ export const QUARRY_LEVEL = Object.freeze({
   frogman: 70, centipede: 30, zombie: 55,
   'fungus beast': 50, 'groundworm larva': 35,
   skeleton: 75, 'battered skeleton': 60, 'spectral mummy': 40,
+  troll: 90,
 });
 export const CRYPT_QUARRY_LEVEL = QUARRY_LEVEL;
 

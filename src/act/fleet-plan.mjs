@@ -132,7 +132,37 @@ export function callsForFleetPlan(plan = [], why = null) {
         purpose: step.purpose,
         goals: step.goals,
         max_bots_per_safe_spot: step.max_bots_per_safe_spot,
+        prefer_magic_weapon: step.prefer_magic_weapon,
       }, why: step.why ?? why });
+      continue;
+    }
+    // THE KEEPER'S MAGIC TIE-BREAK ON ITS OWN, for a unit held at a stage room: it must already
+    // prefer the enchanted twin the moment a dedication hands it back.
+    if (step.do === 'magic-policy') {
+      calls.push({ tool: 'autopilot', args: { agent: need(step, 'agent'), action: 'start',
+        prefer_magic_weapon: step.prefer !== false }, why: step.why ?? why });
+      continue;
+    }
+    // A REAGENT BY NAME. `supply` takes a single reagent's whole name and an amount
+    // (m59-broker.mjs `supply.what`), and the free board carries names without ids, so this is
+    // the one hand-over that is not addressed by object id.
+    if (step.do === 'give-reagent') {
+      const from = need(step, 'from'), to = need(step, 'to'), item = need(step, 'item');
+      calls.push({ tool: 'supply', args: { from, to, what: String(item),
+        amount: Number(step.amount ?? 1), who_travels: 'neither' },
+        timeoutMs: 180_000, why: step.why ?? why });
+      calls.push(resumeKeeper(from, step.why ?? why), resumeKeeper(to, step.why ?? why));
+      continue;
+    }
+    // KRAANAN'S DEDICATION, aimed at a weapon IN THE CASTER'S OWN PACK by object id
+    // (enchwp.kod: the target must be in range, and a pack is). 17 mana, 3 elderberry, 1 orc
+    // tooth, a 30-second trance. The weapon goes back to its owner in the NEXT step whether or
+    // not this landed — applyFleetPlan carries on past a failure, which is the finally block.
+    if (step.do === 'cast-enchant-weapon') {
+      const agent = need(step, 'agent'), target = need(step, 'target');
+      calls.push({ tool: 'cast', args: { agent, spell: 'enchant weapon', target: Number(target) },
+                   timeoutMs: 90_000, why: step.why ?? why });
+      calls.push(resumeKeeper(agent, step.why ?? why));
       continue;
     }
     // WALK THERE. `deploy` sets the assignment and trusts the keeper to act on it, which

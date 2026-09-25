@@ -42,6 +42,22 @@ test('a changed throttle is applied, not reported as unclassified', () => {
   assert.equal(cfg.throttle.with_food, 40, 'the live config must carry the new floor');
 });
 
+// THE RECALL'S ALLOWLIST, 2026-09-25. A reload applied `shift` (the assignment) and reported
+// `station` (the recall's allowlist) as unclassified, so a new station was assigned and never
+// walked to. Both halves of a station edit have to land together, or the reload is half an edit.
+test('a changed station allowlist is applied alongside shift, not left unclassified', () => {
+  const now = { ...live(), station: { recall: true, rooms: [544, 38, 39] } };
+  const next = { ...live(), shift: { stations: [{ room: 27 }, { room: 544 }] },
+                 station: { recall: true, rooms: [544, 27, 38, 39] } };
+  const plan = planReload(now, next);
+  assert.ok(LIVE_RELOADABLE.includes('station'), 'station must be classified as live-reloadable');
+  assert.ok(plan.applied.includes('station') && plan.applied.includes('shift'), JSON.stringify(plan));
+  assert.equal(plan.unclassified.length, 0, 'an unclassified station is the bug this pins');
+  const cfg = { ...now };
+  applyReload(cfg, next);
+  assert.ok(cfg.station.rooms.includes(27), 'the live recall must be able to walk to the new station');
+});
+
 test('planReload is pure — asking must not change the running bot', () => {
   const now = live();
   planReload(now, { ...live(), not_ours: ['Marco Polo', 'BravoTwo'] });

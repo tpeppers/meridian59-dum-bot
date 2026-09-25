@@ -55,6 +55,15 @@ export const LIVE_RELOADABLE = Object.freeze([
   // `shift.fight_above_vigor` and a direct push — fixable without restarting the whole bot.
   'throttle',    // throttle.mjs:203, :209, :211, :217 — read off ctx.config every pass
   'cadence',     // tick.mjs:282 and run.mjs:198, which is why this must mutate in place
+  // THE RECALL'S ALLOWLIST, and the second half of every station edit. `shift` above was
+  // live, so a new station was ASSIGNED on reload — and `station.rooms`, which decides whether
+  // return-to-station will walk anybody there, was unclassified and kept its old value. On
+  // 2026-09-25 a reload answered `applied: ["shift"], unclassified: ["station"]`, and characters
+  // stationed in the Icky Cave (27) sat stranded in Barloque for the rest of the evening: their
+  // keepers hold no destination while this bot leases movement, and the recall discarded 27.
+  // Every read is inside a rule, off the doctrine it is handed each pass (station.mjs:71, :158,
+  // :236, :248; shift.mjs:665), so it is read fresh by the definition this list is for.
+  'station',
 ]);
 
 /**

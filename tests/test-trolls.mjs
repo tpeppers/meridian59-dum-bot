@@ -210,7 +210,7 @@ test('trolls: the depot hands DOWN a family weapon, and Create Weapon is the fal
   const s = settings(doctrine());
   const bare = hammerer('h', [W(1, 'hammer', false, { wielded: true })], {
     provides: ['create weapon'], mana: { value: 30, max: 40 } });
-  const depot = row('depot', { room: 2, max_health: 20, pack_items: [{ name: 'elderberry', amount: 300 }],
+  const depot = row('depot', { room: 2, max_health: 20, policy: { assignedRoom: 2 }, pack_items: [{ name: 'elderberry', amount: 300 }],
     weapon_magic: wm([W(9, 'long sword', false), W(8, 'hammer', false)]) });
   const fighters = new Set(['h']);
   const down = planSupply([{ row: bare, s, ready: false }], [bare, depot], fighters);
@@ -223,7 +223,7 @@ test('trolls: the depot hands DOWN a family weapon, and Create Weapon is the fal
 
 test('trolls: the courier sells only REAL surplus, after its cooldown, and walks back', () => {
   const s = settings(doctrine());
-  const depot = row('depot', { room: 2, max_health: 20, pack_items: [{ name: 'elderberry', amount: 300 }],
+  const depot = row('depot', { room: 2, max_health: 20, policy: { assignedRoom: 2 }, pack_items: [{ name: 'elderberry', amount: 300 }],
     weapon_magic: wm([...Array.from({ length: 9 }, (_, i) => W(100 + i, 'long sword', false)),
       W(200, 'long sword', false, { made: true })]) });
   const c = hammerer('c', [W(1, 'hammer', true, { wielded: true }), W(2, 'hammer', true)],
@@ -290,4 +290,49 @@ test('trolls: a unit with a mundane spare to dedicate takes only a MAGIC hand-do
   const out2 = planSupply([{ row: withSpare, s, ready: false }, { row: magicLender, s, ready: false }],
                           [withSpare, magicLender], new Set(['h', 'm']));
   assert.equal(out2.plan.find(p => p.to === 'h')?.what?.[0]?.id, 33, 'a magic one saves the dedication');
+});
+
+// THE 2026-09-26 STALL: a passing castle farmer with a full pack was the depot, every pass
+// handed it scimitars the server refused, and the refused hand-ups used the whole budget.
+import { depotIn, refusedPairs, SUPPLY_REFUSAL_MS } from '../src/decide/rules/trolls.mjs';
+import { refusedSupplies } from '../src/act/fleet-plan.mjs';
+
+test('trolls: a depot is stationed at the stage room and has pack room', () => {
+  const passer = row('cliff', { room: 2, max_health: 72, policy: { assignedRoom: 38 } });
+  assert.equal(depotIn([passer], 2, new Set()), null, 'a character passing through is not the depot');
+  const full = row('full', { room: 2, max_health: 25, policy: { assignedRoom: 2 }, pack: { percent: 97 } });
+  assert.equal(depotIn([full], 2, new Set()), null, 'a full pack cannot take a hand-up');
+  const ok = row('raph', { room: 2, max_health: 25, policy: { assignedRoom: 2 }, pack: { percent: 30 } });
+  assert.equal(depotIn([passer, full, ok], 2, new Set())?.agent, 'raph');
+});
+
+test('trolls: arming comes before tidying — a conjure is planned even with surplus to hand up', () => {
+  const s = settings(doctrine());
+  const depot = row('depot', { room: 2, max_health: 20, policy: { assignedRoom: 2 },
+    weapon_magic: wm([]) });
+  const junk = Array.from({ length: 6 }, (_, i) => W(50 + i, 'long sword', false));
+  const hoarder = hammerer('g', [W(1, 'hammer', false, { wielded: true }), ...junk]);
+  const bare = hammerer('p', [W(2, 'hammer', false, { wielded: true })],
+    { provides: ['create weapon'], mana: { value: 30, max: 40 } });
+  const out = planSupply([{ row: hoarder, s, ready: false }, { row: bare, s, ready: false }],
+                         [hoarder, bare, depot], new Set(['g', 'p']));
+  assert.ok(out.plan.some(p => p.do === 'cast-create-weapon' && p.agent === 'p'), JSON.stringify(out.plan));
+  assert.ok(out.plan.length <= 4);
+});
+
+test('trolls: a refused pair is skipped until the cooldown runs, and the tick records it', () => {
+  const s = settings(doctrine());
+  const depot = row('depot', { room: 2, max_health: 20, policy: { assignedRoom: 2 }, weapon_magic: wm([]) });
+  const h = hammerer('h', [W(1, 'hammer', false, { wielded: true }), W(5, 'long sword', false)]);
+  const applied = { refused: [{ from: 'h', to: 'depot', what: [{ id: 5, amount: 1 }], reason_code: 'receiver_full' }] };
+  const learned = refusedSupplies(applied, 1000);
+  assert.equal(learned.topic, 'supply');
+  assert.equal(learned.patch['h>depot'].reason_code, 'receiver_full');
+  const fresh = refusedPairs(learned.patch, 1000 + 60_000);
+  const out = planSupply([{ row: h, s, ready: false }], [h, depot], new Set(['h']), { refused: fresh });
+  assert.ok(!out.plan.some(p => p.from === 'h' && p.to === 'depot'), JSON.stringify(out.plan));
+  const later = refusedPairs(learned.patch, 1000 + SUPPLY_REFUSAL_MS + 1);
+  const again = planSupply([{ row: h, s, ready: false }], [h, depot], new Set(['h']), { refused: later });
+  assert.ok(again.plan.some(p => p.from === 'h' && p.to === 'depot'));
+  assert.equal(refusedSupplies({}, 1), null);
 });

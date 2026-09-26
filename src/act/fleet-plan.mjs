@@ -224,6 +224,18 @@ export function callsForFleetPlan(plan = [], why = null, { yieldTo = [] } = {}) 
   return calls;
 }
 
+/**
+ * The memory patch for an applied plan's refused hand-overs, or null. Pure. Topic `supply`,
+ * one key per `from>to` pair (Memory.patch is shallow, so each pair overwrites only itself).
+ */
+export function refusedSupplies(applied, at) {
+  if (!applied?.refused?.length) return null;
+  const patch = {};
+  for (const r of applied.refused)
+    patch[`${r.from}>${r.to}`] = { at, reason_code: r.reason_code, ids: (r.what ?? []).map(w => w.id) };
+  return { topic: 'supply', patch };
+}
+
 export async function applyFleetPlan(broker, intent, { commit = false, yieldTo = [] } = {}) {
   const calls = callsForFleetPlan(intent.plan, intent.why, { yieldTo }); // validate all before acting
   const results = [];
@@ -243,6 +255,7 @@ export async function applyFleetPlan(broker, intent, { commit = false, yieldTo =
     }
   }
   const failures = results.filter(r => r.error);
+  const refused = results.filter(r => r.tool === 'supply' && r.result?.supplied === false);
   return {
     acted: commit && calls.length > 0,
     kind: commit ? 'fleet-plan' : 'dry-run-fleet-plan',
@@ -251,6 +264,13 @@ export async function applyFleetPlan(broker, intent, { commit = false, yieldTo =
     sent: calls.map(({ tool, args }) => ({ tool, args })),
     results,
     failures,
+    // A `supply` that ANSWERED is not one that happened: it returns `supplied: false` with the
+    // server's reason (receiver_full, counterparty_busy...) instead of throwing. Listed apart
+    // from `failures` so `partial` keeps meaning what it meant; `refusedSupplies` turns these
+    // into memory so the next pass does not plan the same refused trade.
+    ...(refused.length ? { refused: refused.map(r => ({ from: r.args.from, to: r.args.to,
+      what: r.args.what, reason_code: r.result.reason_code ?? null,
+      reason: r.result.reason ?? null })) } : {}),
     partial: failures.length > 0 && failures.length < results.length,
     // Which fields this plan did NOT write because the doctrine yields them. Present only
     // when something was actually dropped, so it reads as an event rather than as noise,

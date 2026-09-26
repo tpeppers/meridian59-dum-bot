@@ -134,9 +134,42 @@ const staged = (row, room) => {
     p.preferMagicWeapon === true;
 };
 
-/** The stage room's depot: the co-located non-fighter holding the most elderberry. */
+// A TRADE THE SERVER REFUSED IS NOT RETRIED EVERY PASS. `supply` answers `supplied: false`
+// with a reason rather than throwing, so nothing upstream saw it fail, and the same refused
+// hand-over was planned again every 30 seconds — using up the pass's hand-over budget
+// before the lend and conjure steps below it ever got a turn. The tick records each refusal
+// under memory topic `supply` (see `refusedSupplies` in act/fleet-plan.mjs), keyed
+// `from>to`; this skips that pair until the cooldown has run.
+export const SUPPLY_REFUSAL_MS = 15 * 60_000;
+export const pairKey = (from, to) => `${from}>${to}`;
+
+/** The giver>receiver pairs refused within the cooldown, as a Set. Pure. */
+export function refusedPairs(mem = {}, now = null) {
+  const out = new Set();
+  for (const [key, v] of Object.entries(mem ?? {})) {
+    const at = Number(v?.at);
+    if (!Number.isFinite(at)) continue;
+    if (now == null || now - at < SUPPLY_REFUSAL_MS) out.add(key);
+  }
+  return out;
+}
+
+// A DEPOT LIVES AT THE STAGE ROOM, AND HAS ROOM. On 2026-09-26 the only non-fighter in room 2
+// was a castle farmer — 72 health passing through, assigned to 38, pack full — so he
+// was the depot, and every pass for two hours handed him scimitars the server refused
+// ("<name> can't carry all the items you have offered"). So: stationed there by its own
+// policy, and a pack under DEPOT_PACK_CEILING when the board says how full it is.
+const DEPOT_PACK_CEILING = 80;
+const hasPackRoom = r => !Number.isFinite(Number(r?.pack?.percent)) ||
+  Number(r.pack.percent) < DEPOT_PACK_CEILING;
+
+/**
+ * The stage room's depot: the non-fighter STATIONED at the stage room (its assigned room) with
+ * room in its pack, holding the most elderberry.
+ */
 export function depotIn(rows, room, fighters = new Set()) {
-  return rows.filter(r => r.in_game && r.room === room && !fighters.has(r.agent) && takeable(r) && !r.piloted)
+  return rows.filter(r => r.in_game && r.room === room && !fighters.has(r.agent) && takeable(r) &&
+      !r.piloted && r.policy?.assignedRoom === room && hasPackRoom(r))
     .sort((a, b) => carried(b, 'elderberry') - carried(a, 'elderberry') ||
       carried(b, 'orc tooth') - carried(a, 'orc tooth'))[0] ?? null;
 }
@@ -200,8 +233,9 @@ export const trollFleetRules = [{
     if (courier.errand) return courier.errand;
 
     // ---- 3. supply, then 4. one dedication
-    const supply = planSupply(atStage, rows, fighters);
-    const round = planDedication(atStage.filter(x => !x.ready && x.s.dedicate), rows);
+    const refused = refusedPairs(fleetObs.memory?.supply, fleetObs.at);
+    const supply = planSupply(atStage, rows, fighters, { refused });
+    const round = planDedication(atStage.filter(x => !x.ready && x.s.dedicate), rows, { refused });
     const plan = [...supply.plan, ...round.plan];
     if (!plan.length)
       return { kind: 'pass', why: [summary, courier.why, supply.why, round.why].filter(Boolean).join('; ') };
@@ -277,21 +311,17 @@ export { recordTrollCourier } from './trolls-record.mjs';
  * THE STAGE ROOM'S HAND-OVERS, all by object id. Pure. A few per pass (each is a `supply`, a
  * verified two-sided trade), and no cast but the self-cast Create Weapon fallback.
  */
-export function planSupply(atStage, rows, fighters, { max = 4 } = {}) {
+export function planSupply(atStage, rows, fighters, { max = 4, refused = new Set() } = {}) {
   const plan = [];
   if (!atStage.length) return { plan, why: null };
   const s = atStage[0].s;
   const depot = depotIn(rows, s.stage_room, fighters);
   const given = new Set();
-  // UP: surplus to the depot.
-  if (depot) for (const { row, s: st } of atStage) {
-    for (const w of surplusWeapons(row, st.magic_spares + 1)) {
-      if (plan.length >= max) break;
-      plan.push({ do: 'give-weapon', from: row.agent, to: depot.agent, what: [{ id: w.id, amount: 1 }],
-        weapon: w.name, why: `${row.agent} will never wield this ${w.name} for the trolls; the depot keeps it` });
-      given.add(w.id);
-    }
-  }
+  const ok = (from, to) => !refused.has(pairKey(from, to));
+  // DOWN BEFORE UP. A hand-down or a conjure is what gets a unit armed; a hand-up only tidies.
+  // With UP first, a crew carrying nine spare long swords spent the whole `max` every pass
+  // tidying, and nobody was ever armed.
+  //
   // DOWN: a family weapon for a unit with too few magic spares — from the depot, or from a CREW
   // MATE. Operator, 2026-09-26: everyone at 75+ runs this, "so they may need to coordinate
   // exchanging enchanted weapons". With the whole crew above the line there is no non-fighter to
@@ -315,6 +345,7 @@ export function planSupply(atStage, rows, fighters, { max = 4 } = {}) {
     ];
     let lent = null;
     for (const src of sources) {
+      if (!ok(src.agent, row.agent)) continue;
       const w = src.pool.filter(fits).sort(bestFirst)[0];
       if (w && (!lent || bestFirst(w, lent.w) < 0)) lent = { src, w };
     }
@@ -330,6 +361,17 @@ export function planSupply(atStage, rows, fighters, { max = 4 } = {}) {
       plan.push({ do: 'cast-create-weapon', agent: row.agent,
         why: `${row.agent} has no spare of its family to dedicate; conjure one (the family is a roll — ` +
           'a mismatch is handed up next pass)' });
+  }
+  // UP: surplus to the depot, with whatever of the budget is left.
+  if (depot) for (const { row, s: st } of atStage) {
+    if (!ok(row.agent, depot.agent)) continue;
+    for (const w of surplusWeapons(row, st.magic_spares + 1)) {
+      if (plan.length >= max) break;
+      if (given.has(w.id)) continue;
+      plan.push({ do: 'give-weapon', from: row.agent, to: depot.agent, what: [{ id: w.id, amount: 1 }],
+        weapon: w.name, why: `${row.agent} will never wield this ${w.name} for the trolls; the depot keeps it` });
+      given.add(w.id);
+    }
   }
   const up = depot ? plan.filter(p => p.do === 'give-weapon' && p.to === depot.agent).length : 0;
   const down = depot ? plan.filter(p => p.do === 'give-weapon' && p.from === depot.agent).length : 0;
@@ -347,13 +389,13 @@ export function planSupply(atStage, rows, fighters, { max = 4 } = {}) {
  * the weapon goes back whether or not the cast landed. A depot top-up comes first when the
  * dedicator is short of reagents.
  */
-export function planDedication(needers = [], rows = []) {
+export function planDedication(needers = [], rows = [], { refused = new Set() } = {}) {
   if (!needers.length) return { plan: [], why: null };
   for (const { row, s } of needers) {
     const w = dedicationTarget(row);
     if (!w) continue;
     const here = rows.filter(r => r.in_game && r.room === s.stage_room && r.agent !== row.agent &&
-      takeable(r) && !r.piloted);
+      takeable(r) && !r.piloted && !refused.has(pairKey(row.agent, r.agent)));
     const casters = here.filter(r => knows(r, DEDICATE.spell) && (r.mana?.value ?? 0) >= DEDICATE.mana)
       .sort((a, b) => Number(hasReagents(b)) - Number(hasReagents(a)) ||
         (b.mana?.value ?? 0) - (a.mana?.value ?? 0));

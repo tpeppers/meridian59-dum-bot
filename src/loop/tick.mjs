@@ -15,6 +15,7 @@ import { observeFleet, observeFromBoard, deepen, enrichForMoot, enrichEquipment,
          enrichMaintenance, enrichFactionInventory, enrichFactionGames, enrichFactionLoyalty, enrichTravelEstimates } from '../sense/observe.mjs';
 import { characterRules, fleetRules, decide } from '../decide/index.mjs';
 import { apply } from '../act/orders.mjs';
+import { refusedSupplies } from '../act/fleet-plan.mjs';
 import { verify } from '../act/verify.mjs';
 import { readErrand } from '../act/errands.mjs';
 import { FEAST_HALL } from '../decide/feast-hall.mjs';
@@ -306,6 +307,7 @@ export async function tickFleet(ctx, { decide: runRules = true, only = null } = 
 
     const applied = await apply(broker, intent, obs, { commit, yieldTo: config.yield_to ?? [], holder: ctx.holder });
     line.applied = applied;
+    rememberRefusals(ctx, line, applied, now);
 
     // THE REST OF THIS PASS'S DECISIONS. Disjoint from the first by construction, so each
     // gets its own claim and its own apply. A failure is recorded per intent rather than
@@ -359,6 +361,7 @@ export async function tickFleet(ctx, { decide: runRules = true, only = null } = 
         });
         line.applied_extra.push({ rule: extra.rule, agent: extra.agent, applied: out,
                                   ms: Date.now() - started });
+        rememberRefusals(ctx, line, out, now);
       } catch (e) {
         line.applied_extra.push({ rule: extra.rule, agent: extra.agent,
                                   error: e.message, ms: Date.now() - started });
@@ -455,6 +458,17 @@ export function fleetIntentAgents(intent = {}) {
  * trade a visible hang for a silent half-applied order.
  */
 export const EXTRA_INTENT_MS = 20_000;
+
+// A REFUSED TRADE IS A FACT THE NEXT BOARD WILL NOT SHOW. The goods are still where they were,
+// so the same rule re-plans the same hand-over. On 2026-09-26 that was one scimitar, a staged unit
+// to a full castle farmer, every pass for two hours — journalled `ok` each time, because `supply`
+// answers rather than throws. Remembered here; rules/trolls.mjs skips the pair for a while.
+export function rememberRefusals(ctx, line, applied, now) {
+  const learned = refusedSupplies(applied, now);
+  if (!learned) return;
+  (line.memory_patches ??= []).push(learned);
+  ctx.memory?.patch(learned.topic, learned.patch);
+}
 
 /** Run `fn`, but give up after `ms` rather than letting one await stop the loop. */
 export async function withDeadline(ms, fn) {

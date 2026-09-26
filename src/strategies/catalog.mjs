@@ -527,8 +527,21 @@ export function strategySettings(observation, doctrine, agent, id) {
 // hunt shift, the Castle Victoria shift and the graveyard shift each place EVERY live row, and
 // any of them re-deploying a troll hunter to a skeleton room — or a skeleton hunter into Ukgoth
 // on a mundane weapon — is exactly the silent tug-of-war those rules' comments already warn of.
-export const trollOwned = (observation, doctrine, agent) =>
-  strategyEnabled(observation, doctrine, agent, STRATEGY_IDS.UKGOTH_TROLLS);
+//
+// AND ONLY A UNIT BIG ENOUGH TO BE A TROLL HUNTER. Operator, 2026-09-26: "everyone at 75+ HPs
+// runs this", which means the strategy is enabled fleet-wide and SIZE decides who is in it. So
+// ownership applies the same gate trollReadiness does — max health at or above the setting and
+// the engagement ceiling admitting every quarry — or enabling it for everybody would take the
+// Castle Victoria and valley bands away from the characters under the line while the troll rule
+// ignores them. A unit crossing the line either way changes owner on its next pass.
+export const trollOwned = (observation, doctrine, agent) => {
+  if (!strategyEnabled(observation, doctrine, agent, STRATEGY_IDS.UKGOTH_TROLLS)) return false;
+  const row = (observation.characters ?? []).find(r => r.agent === agent);
+  const mh = Number(row?.max_health);
+  if (!Number.isFinite(mh)) return false;
+  const s = strategySettings(observation, doctrine, agent, STRATEGY_IDS.UKGOTH_TROLLS);
+  return mh >= s.min_max_health && (s.hunt ?? []).every(q => admits(mh, s.room, q));
+};
 
 export function strategyRows(observation, doctrine, id) {
   return (observation.characters ?? []).filter(r => r.in_game &&

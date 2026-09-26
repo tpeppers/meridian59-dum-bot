@@ -13,7 +13,7 @@ import { trollFleetRules, trollReadiness, dedicationTarget, planDedication }
   from '../src/decide/rules/trolls.mjs';
 import { requirementsMet, shiftFleetRules } from '../src/decide/rules/shift.mjs';
 import { callsForFleetPlan } from '../src/act/fleet-plan.mjs';
-import { STRATEGY_IDS, strategySettings, admits, HUNT_ROOMS, QUARRY_LEVEL }
+import { STRATEGY_IDS, strategySettings, admits, HUNT_ROOMS, QUARRY_LEVEL, trollOwned }
   from '../src/strategies/catalog.mjs';
 
 const test = globalThis.__dumTest;
@@ -133,11 +133,24 @@ test('trolls: no dedicator with mana, or only the weapon in hand, plans nothing 
 
 test('trolls: the hunt shift steps over a troll hunter', () => {
   const d = doctrine();
-  const units = Array.from({ length: 4 }, (_, i) => row(`t${i + 1}`, { level: 60, max_health: 60, room: 39 }));
+  const units = Array.from({ length: 4 }, (_, i) => row(`t${i + 1}`, { level: 75, max_health: 75, room: 39 }));
   const agents = Object.fromEntries(units.map(u => [u.agent, [ID]]));
   const out = shiftFleetRules[0].decide(obs(units, agents), d);
   const touched = (out.plan ?? []).map(p => p.agent);
   assert.equal(touched.length, 0, `the shift deployed ${touched.join(', ')}`);
+});
+
+// SIZE DECIDES OWNERSHIP (2026-09-26): the strategy is enabled for everybody and "everyone at
+// 75+" hunts trolls. A unit under the line must stay with its shift, or enabling the strategy
+// fleet-wide would strand every smaller character while the troll rule ignores it.
+test('trolls: a unit under the minimum is NOT troll-owned, so its shift keeps placing it', () => {
+  const d = doctrine();
+  const small = row('sm', { level: 60, max_health: 60, room: 39 });
+  const big = row('bg', { level: 75, max_health: 75, room: 39 });
+  const o = obs([small, big], { sm: [ID], bg: [ID] });
+  assert.equal(trollOwned(o, d, 'sm'), false, 'a 60-max-health unit is not a troll hunter');
+  assert.equal(trollOwned(o, d, 'bg'), true, 'a 75-max-health unit is');
+  assert.equal(trollOwned(o, d, 'nobody'), false, 'an unknown unit is owned by nothing');
 });
 
 test('trolls: a station may require a magic weapon, and the schema checks the clause', () => {
@@ -231,4 +244,50 @@ test('trolls: the courier sells only REAL surplus, after its cooldown, and walks
   const hurt = { ...c, health: { value: 50, max: 75, pct: 0.66 } };
   assert.match(planCourier([{ row: hurt, s, ready: true }], [hurt, depot], fighters, s, {}, 1).why, /health/);
   assert.equal(recordTrollCourier({ agent: 'c', at: 5, stopped: null }).patch.courier_last_at, 5);
+});
+
+// CREW EXCHANGE (2026-09-26): "everyone at 75+ runs this, so they may need to coordinate
+// exchanging enchanted weapons". With the whole crew above the line there is no non-fighter depot,
+// so a fighter at the stage room lends from its SURPLUS to a crew mate short of spares.
+const axer = (agent, weapons, over = {}) => row(agent, { room: 2, mode: 'idle',
+  policy: { assignedRoom: 2, roam: false, preferMagicWeapon: true, weaponPriority: ['axe', 'hammer'] },
+  weapon_magic: wm(weapons), ...over });
+
+test('trolls: with no depot, a crew mate lends a MAGIC family weapon from its surplus', () => {
+  const s = settings(doctrine());
+  const needy = hammerer('h', [W(1, 'hammer', false, { wielded: true })]);
+  // An axe trainee carrying a looted magic hammer it will never wield for the trolls.
+  const lender = axer('a', [W(10, 'axe', true, { wielded: true }), W(11, 'axe', true), W(12, 'axe', true),
+                            W(13, 'hammer', true)]);
+  const out = planSupply([{ row: needy, s, ready: false }, { row: lender, s, ready: false }],
+                         [needy, lender], new Set(['h', 'a']));
+  const give = out.plan.find(p => p.do === 'give-weapon' && p.to === 'h');
+  assert.equal(give?.from, 'a', JSON.stringify(out));
+  assert.equal(give?.what?.[0]?.id, 13, "the magic hammer, from the axe trainee's surplus");
+});
+
+test('trolls: a lender never gives what it keeps for itself', () => {
+  const s = settings(doctrine());
+  const needy = hammerer('h', [W(1, 'hammer', false, { wielded: true })]);
+  // Exactly magic_spares + 1 of its own family and nothing else: nothing to spare.
+  const lender = hammerer('b', [W(20, 'hammer', true, { wielded: true }), W(21, 'hammer', true), W(22, 'hammer', true)]);
+  const out = planSupply([{ row: needy, s, ready: false }, { row: lender, s, ready: false }],
+                         [needy, lender], new Set(['h', 'b']));
+  assert.ok(!out.plan.some(p => p.do === 'give-weapon' && p.from === 'b'), JSON.stringify(out.plan));
+});
+
+test('trolls: a unit with a mundane spare to dedicate takes only a MAGIC hand-down', () => {
+  const s = settings(doctrine());
+  const withSpare = hammerer('h', [W(1, 'hammer', false, { wielded: true }), W(2, 'hammer', false)]);
+  const mundaneLender = axer('a', [W(10, 'axe', true, { wielded: true }), W(11, 'axe', true), W(12, 'axe', true),
+                                   W(13, 'hammer', false)]);
+  const out = planSupply([{ row: withSpare, s, ready: false }, { row: mundaneLender, s, ready: false }],
+                         [withSpare, mundaneLender], new Set(['h', 'a']));
+  assert.ok(!out.plan.some(p => p.do === 'give-weapon' && p.to === 'h'),
+            'another mundane hammer would only queue a second dedication');
+  const magicLender = axer('m', [W(30, 'axe', true, { wielded: true }), W(31, 'axe', true), W(32, 'axe', true),
+                                 W(33, 'hammer', true)]);
+  const out2 = planSupply([{ row: withSpare, s, ready: false }, { row: magicLender, s, ready: false }],
+                          [withSpare, magicLender], new Set(['h', 'm']));
+  assert.equal(out2.plan.find(p => p.to === 'h')?.what?.[0]?.id, 33, 'a magic one saves the dedication');
 });

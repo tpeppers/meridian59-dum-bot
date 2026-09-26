@@ -102,8 +102,8 @@ test('trolls: a dedication hands over a SPARE, casts at its id, and always hands
     pack_items: [{ name: 'elderberry', amount: 339 }, { name: 'orc tooth', amount: 4 }] });
   const out = fire([owner, ded, depot], { owner: [ID] });
   const steps = out.plan.map(p => p.do);
-  assert.deepEqual(steps, ['give-reagent', 'give-reagent', 'give-weapon', 'cast-enchant-weapon',
-    'give-weapon', 'equip-best']);
+  assert.deepEqual(steps, ['inert-keeper', 'give-reagent', 'give-reagent', 'give-weapon',
+    'cast-enchant-weapon', 'give-weapon', 'equip-best']);
   const cast = out.plan.find(p => p.do === 'cast-enchant-weapon');
   assert.equal(cast.target, 22, 'the spare (id 22), not the hammer in hand (21)');
   const back = out.plan.filter(p => p.do === 'give-weapon');
@@ -113,6 +113,17 @@ test('trolls: a dedication hands over a SPARE, casts at its id, and always hands
   assert.deepEqual([c.args.spell, c.args.target], ['enchant weapon', 22]);
   const r = calls.find(x => x.tool === 'supply' && x.args.what === 'orc tooth');
   assert.equal(r.args.amount, 1);
+  // THE ROUND THAT FAILED LIVE (2026-09-26): the dedicator was revived after the hand-over,
+  // wielded the weapon, and the hand-back came six seconds into a 30-second trance.
+  const seq = calls.map(x => x.tool === 'autopilot' ? `${x.args.action}:${x.args.agent}` : x.tool);
+  const castAt = seq.indexOf('cast');
+  assert.equal(seq[0], 'inert:ded', 'the dedicator is held before anything is handed to it');
+  assert.ok(!seq.slice(0, castAt).includes('revive:ded'), 'and nothing wakes it before the cast');
+  assert.equal(seq[castAt + 1], 'wait', 'the trance is waited out right after the cast');
+  assert.ok(calls[castAt + 1].ms >= 30_000);
+  const backAt = seq.lastIndexOf('supply');
+  assert.ok(backAt > castAt + 1 && seq.slice(backAt).includes('revive:ded'),
+    'the hand-back after the wait is what wakes the dedicator');
 });
 
 test('trolls: no dedicator with mana, or only the weapon in hand, plans nothing and says why', () => {

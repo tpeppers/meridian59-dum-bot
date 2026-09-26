@@ -11,6 +11,10 @@ const need = (step, field) => {
   return step[field];
 };
 
+const keptHeld = step => new Set(Array.isArray(step?.keep_held) ? step.keep_held : []);
+export const ENCHANT_TRANCE_MS = 33_000;
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+
 const resumeKeeper = (agent, why) => ({
   tool: 'autopilot',
   args: { agent, action: 'revive', why: 'DUM maintenance action finished' },
@@ -86,7 +90,10 @@ export function callsForFleetPlan(plan = [], why = null, { yieldTo = [] } = {}) 
       // bounded maintenance, not a new owner, so wake both sides even if it fails.
       // applyFleetPlan continues after an error, making these explicit calls the
       // equivalent of a finally block while keeping the complete program journalled.
-      calls.push(resumeKeeper(from, step.why ?? why), resumeKeeper(to, step.why ?? why));
+      // `keep_held` names a side that must NOT wake yet — a dedicator mid-round (see
+      // `inert-keeper`), whose keeper otherwise wields the weapon it was just handed.
+      for (const agent of [from, to])
+        if (!keptHeld(step).has(agent)) calls.push(resumeKeeper(agent, step.why ?? why));
       continue;
     }
     if (step.do === 'weapon-policy') {
@@ -180,7 +187,18 @@ export function callsForFleetPlan(plan = [], why = null, { yieldTo = [] } = {}) 
       calls.push({ tool: 'supply', args: { from, to, what: String(item),
         amount: Number(step.amount ?? 1), who_travels: 'neither' },
         timeoutMs: 180_000, why: step.why ?? why });
-      calls.push(resumeKeeper(from, step.why ?? why), resumeKeeper(to, step.why ?? why));
+      for (const agent of [from, to])
+        if (!keptHeld(step).has(agent)) calls.push(resumeKeeper(agent, step.why ?? why));
+      continue;
+    }
+    // HOLD A KEEPER STILL ACROSS SEVERAL STEPS. A dedication round is give, cast, give back,
+    // and on 2026-09-26 the first live one failed in the gap: `give-weapon` revived Raphael's
+    // keeper, which wielded the axe it had just been handed (axe outranks his mace), and the
+    // hand-back of a wielded weapon was refused. `supply` leaves a hold it did not take alone,
+    // so an inert keeper stays inert through the trades until the last step revives it.
+    if (step.do === 'inert-keeper') {
+      calls.push({ tool: 'autopilot', args: { agent: need(step, 'agent'), action: 'inert',
+        why: step.why ?? why ?? 'held for a fleet round' }, why: step.why ?? why });
       continue;
     }
     // KRAANAN'S DEDICATION, aimed at a weapon IN THE CASTER'S OWN PACK by object id
@@ -191,7 +209,12 @@ export function callsForFleetPlan(plan = [], why = null, { yieldTo = [] } = {}) 
       const agent = need(step, 'agent'), target = need(step, 'target');
       calls.push({ tool: 'cast', args: { agent, spell: 'enchant weapon', target: Number(target) },
                    timeoutMs: 90_000, why: step.why ?? why });
-      calls.push(resumeKeeper(agent, step.why ?? why));
+      // AND WAIT OUT THE TRANCE (viCast_time 30000, enchwp.kod). `cast` returns within about
+      // four seconds; the first live round handed the weapon back six seconds after casting,
+      // which broke the trance — no reagents spent, no enchantment. Nothing is revived here:
+      // the hand-back that follows wakes both sides once the spell has had its time.
+      calls.push({ tool: 'wait', local: true, ms: Number(step.trance_ms ?? ENCHANT_TRANCE_MS),
+                   why: 'enchant weapon is a 30-second trance; any action before it ends breaks it' });
       continue;
     }
     // WALK THERE. `deploy` sets the assignment and trusts the keeper to act on it, which
@@ -240,6 +263,12 @@ export async function applyFleetPlan(broker, intent, { commit = false, yieldTo =
   const calls = callsForFleetPlan(intent.plan, intent.why, { yieldTo }); // validate all before acting
   const results = [];
   for (const call of calls) {
+    // A LOCAL STEP never reaches the broker: today only `wait`, and a dry run does not wait.
+    if (call.local && call.tool === 'wait') {
+      if (commit) await sleep(call.ms);
+      results.push({ ...call, result: { waited_ms: commit ? call.ms : 0 } });
+      continue;
+    }
     const invoke = commit ? broker.call.bind(broker) : broker.write.bind(broker);
     try {
       const result = commit

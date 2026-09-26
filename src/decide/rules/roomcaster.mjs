@@ -797,6 +797,14 @@ export const roomCasterRules = [
  * the ordinary "not me".
  */
 export function shortOfReagents(obs, row, doctrine) {
+  // THE FLEET STOCKS HIM, SO HE DOES NOT SHOP. Operator, 2026-09-26: the chalice holder's
+  // reagents come from the guild chest on every fleetmate's trip home (m59-harness
+  // `chaliceTownCargo`), and his own trips were walking a 20-max-health caster with two
+  // shillings through the Flatlands to counters he could not pay. With `self_resupply: false`
+  // neither shopping rule ever fires, and `caster-return-to-post` walks him home when he is
+  // out of position instead of deferring to a trip that will not happen.
+  if (cfg(doctrine).self_resupply === false)
+    return { pass: false, why: 'self_resupply is off - the fleet restocks this caster at its post' };
   const stock = castsOnHand(row, lines(doctrine));
   if (!stock.known)
     // UNKNOWN IS NOT ZERO, and here that rule has a price tag: read the other way it sends a

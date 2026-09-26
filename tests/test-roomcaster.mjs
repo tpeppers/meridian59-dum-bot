@@ -140,6 +140,17 @@ test('caster: UNKNOWN IS NOT ZERO — a board row with no pack does not open a s
      'so no trip is dispatched');
 });
 
+test('caster: self_resupply false - the fleet stocks him, so he never shops (operator, 2026-09-26)', () => {
+  const OFF = { ...ARMED, room_caster: { ...ARMED.room_caster, self_resupply: false } };
+  const broke = { pack_items: [{ name: 'emerald', amount: 2 }, { name: 'elderberry', amount: 4 }], memory: {} };
+  const short = shortOfReagents({}, broke, OFF);
+  ok(!short.pass && /fleet restocks/.test(short.why), `not short, and it says why: ${JSON.stringify(short)}`);
+  const d = resupply.decide(caster(broke), OFF);
+  ok(d == null || d.kind === 'pass', `no supply trip: ${JSON.stringify(d)}`);
+  ok(JSON.stringify(validate({ ...DEFAULTS, room_caster: { ...ARMED.room_caster, self_resupply: 'no' } }))
+     .includes('self_resupply'), 'a non-boolean is refused');
+});
+
 test('caster: the emerald reserve is what keeps the trip possible, so it is not spendable', () => {
   const row = { pack_items: [{ name: 'emerald', amount: 3 }] };
   eq(spendableEmeralds(row, ARMED), 1, 'three gems, a reserve of two, one to spend');

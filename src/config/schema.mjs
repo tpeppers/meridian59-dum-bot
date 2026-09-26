@@ -194,6 +194,9 @@ export function validate(c) {
             `must be above restock_below_casts (${below}) — buying up to ${to} casts when the ` +
             `trip opens below ${below} brings the character home still under the floor, so it ` +
             'sets out again immediately and every lap reports success');
+      if (d.self_resupply != null && typeof d.self_resupply !== 'boolean')
+        say('room_caster.self_resupply', 'must be true or false - false means the fleet restocks ' +
+          'this caster and it never walks to a counter itself');
       if (d.rescue != null && typeof d.rescue !== 'boolean')
         say('room_caster.rescue', 'must be true or false');
       if (d.hand_off_item != null) {

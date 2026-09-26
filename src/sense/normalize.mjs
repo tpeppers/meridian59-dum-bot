@@ -103,6 +103,10 @@ export function normalizeFleetRow(r = {}) {
     has_weapon: bool(r.has_weapon),
     wielding: str(r.wielding),
     provides: Array.isArray(r.provides) ? r.provides.map(String) : [],
+    // How well each provided spell is known (0-100), for choosing BETWEEN casters. A whitelist
+    // drops what it does not name, so this has to be named here or the rule never sees it.
+    provides_ability: r.provides_ability && typeof r.provides_ability === 'object'
+      ? { ...r.provides_ability } : {},
     // Cache-only planner progress from the fleet row. DUM does not reproduce
     // PlayerCanLearn or teacher lookup; the harness and compendium already share that
     // calculation, and this strategy consumes their answer as ordinary observation data.

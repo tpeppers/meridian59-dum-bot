@@ -207,13 +207,18 @@ export function callsForFleetPlan(plan = [], why = null, { yieldTo = [] } = {}) 
     // not this landed — applyFleetPlan carries on past a failure, which is the finally block.
     if (step.do === 'cast-enchant-weapon') {
       const agent = need(step, 'agent'), target = need(step, 'target');
-      calls.push({ tool: 'cast', args: { agent, spell: 'enchant weapon', target: Number(target) },
+      // `holdMs` makes the KEEPER hold still for the whole trance (its own default is 15s).
+      // The broker defaults it from the spell's cast time too; sent explicitly so an older
+      // broker that only forwards what it is given still holds long enough.
+      const trance = Number(step.trance_ms ?? ENCHANT_TRANCE_MS);
+      calls.push({ tool: 'cast', args: { agent, spell: 'enchant weapon', target: Number(target),
+                                         holdMs: trance + 7_000 },
                    timeoutMs: 90_000, why: step.why ?? why });
       // AND WAIT OUT THE TRANCE (viCast_time 30000, enchwp.kod). `cast` returns within about
       // four seconds; the first live round handed the weapon back six seconds after casting,
       // which broke the trance — no reagents spent, no enchantment. Nothing is revived here:
       // the hand-back that follows wakes both sides once the spell has had its time.
-      calls.push({ tool: 'wait', local: true, ms: Number(step.trance_ms ?? ENCHANT_TRANCE_MS),
+      calls.push({ tool: 'wait', local: true, ms: trance,
                    why: 'enchant weapon is a 30-second trance; any action before it ends breaks it' });
       continue;
     }

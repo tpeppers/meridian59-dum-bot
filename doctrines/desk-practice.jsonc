@@ -32,9 +32,9 @@
   "name": "desk practice",
   "why": "a desk character's idle time is the cheapest spell practice the fleet has, provided it can never cost a customer a cast",
 
-  // Practice is a WORK decision. Everything else stays with the keeper — this doctrine has no
-  // opinion about where anybody hunts, and the desk's own station is the chalice config's.
-  "claim": { "work": "bot" },
+  // Practice is an ECONOMY decision — what the desk may spend — and deliberately not work: a
+  // posted caster's keeper runs its post only while nobody else holds work or movement.
+  "claim": { "economy": "bot" },
 
   "desk_practice": {
     "on": true,
@@ -54,6 +54,11 @@
     "spells": ["purify", "holy symbol"],
     // The operator's number: casts of the dearest offered service kept back.
     "reserve_casts": 2,
+    // WHICH SERVICES THE RESERVE IS FOR (uncurse, reveal, fol). Omit for all of them. Name a
+    // subset when the pool is small: a 65-mana desk reserving two reveals keeps 60 and can
+    // never practise, so reserving for ["uncurse", "fol"] (2 x 12 = 24) lets it drill and makes
+    // a reveal wait for mana instead.
+    // "reserve_services": ["uncurse", "fol"],
     // One practice cast per 20s. ADVANCEMENT_LIMIT is 10 improvements per random 15-22 minute
     // window across all spells and skills (player.kod:66-68), so faster buys nothing.
     "gap_ms": 20000

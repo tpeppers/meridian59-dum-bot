@@ -52,6 +52,18 @@ test('desk practice: switching it off reaches the keeper', () => {
   assert.equal(rule.decide(obs(), off), null, 'and once it is off, nothing more is sent');
 });
 
+test('desk practice: filed under economy, so a posted caster keeps its work faculty', () => {
+  assert.equal(rule.faculty, 'economy');
+});
+
+test('desk practice: reserve_services reaches the broker and is validated', () => {
+  const w = wantedPractice(doctrine({ reserve_services: ['uncurse', 'fol'] }));
+  assert.deepEqual(w.reserve_services, ['uncurse', 'fol']);
+  const said = (dp) => JSON.stringify(validate({ ...DEFAULTS, desk_practice: dp }).filter(p => /desk_practice/.test(p.where)));
+  assert.equal(said({ on: true, agents: ['desk-1'], spells: SPELLS, reserve_services: ['uncurse', 'fol'] }), '[]');
+  assert.match(said({ on: true, agents: ['desk-1'], spells: SPELLS, reserve_services: ['teleport'] }), /reserve_services/);
+});
+
 test('desk practice: the defaults name nobody and change nothing', () => {
   assert.equal(DEFAULTS.desk_practice.on, false);
   assert.deepEqual(DEFAULTS.desk_practice.agents, []);

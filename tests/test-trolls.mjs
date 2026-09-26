@@ -126,6 +126,20 @@ test('trolls: a dedication hands over a SPARE, casts at its id, and always hands
     'the hand-back after the wait is what wakes the dedicator');
 });
 
+test('trolls: the most able dedicator is chosen over the one with more mana', () => {
+  const owner = row('owner', { room: 2, weapon_magic: mundane(), mode: 'idle',
+    policy: { assignedRoom: 2, roam: false, preferMagicWeapon: true } });
+  const reag = [{ name: 'elderberry', amount: 10 }, { name: 'orc tooth', amount: 5 }];
+  const novice = row('novice', { room: 2, provides: ['enchant weapon'], mana: { value: 40, max: 40 },
+    provides_ability: { 'enchant weapon': 5 }, pack_items: reag });
+  const adept = row('adept', { room: 2, provides: ['enchant weapon'], mana: { value: 20, max: 25 },
+    provides_ability: { 'enchant weapon': 20 }, pack_items: reag });
+  const res = planDedication([{ row: owner, s: settings(doctrine()) }], [owner, novice, adept]);
+  assert.equal(res.plan.find(p => p.do === 'cast-enchant-weapon')?.agent, 'adept', JSON.stringify(res));
+  const c = callsForFleetPlan(res.plan).find(x => x.tool === 'cast');
+  assert.ok(c.args.holdMs > 30_000, 'the keeper is told to hold still past the 30-second trance');
+});
+
 test('trolls: no dedicator with mana, or only the weapon in hand, plans nothing and says why', () => {
   const owner = row('owner', { room: 2, weapon_magic: mundane(), mode: 'idle',
     policy: { assignedRoom: 2, roam: false, preferMagicWeapon: true } });

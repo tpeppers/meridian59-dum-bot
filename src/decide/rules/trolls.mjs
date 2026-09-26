@@ -396,8 +396,12 @@ export function planDedication(needers = [], rows = [], { refused = new Set() } 
     if (!w) continue;
     const here = rows.filter(r => r.in_game && r.room === s.stage_room && r.agent !== row.agent &&
       takeable(r) && !r.piloted && !refused.has(pairKey(row.agent, r.agent)));
+    // THE BEST DEDICATOR FIRST, THEN THE ONE THAT CAN PAY. Ability is the fizzle roll: the first
+    // round that ran its whole trance went to a crew dedicator (enchant weapon 5, more mana) over the stage caster
+    // (20) and spent 3 elderberry and an orc tooth on nothing. A missing reading ranks as 0.
+    const skill = r => Number(r?.provides_ability?.[DEDICATE.spell]) || 0;
     const casters = here.filter(r => knows(r, DEDICATE.spell) && (r.mana?.value ?? 0) >= DEDICATE.mana)
-      .sort((a, b) => Number(hasReagents(b)) - Number(hasReagents(a)) ||
+      .sort((a, b) => skill(b) - skill(a) || Number(hasReagents(b)) - Number(hasReagents(a)) ||
         (b.mana?.value ?? 0) - (a.mana?.value ?? 0));
     const d = casters[0];
     if (!d) continue;

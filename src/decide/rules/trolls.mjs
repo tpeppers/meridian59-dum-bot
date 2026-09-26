@@ -401,7 +401,12 @@ export function planDedication(needers = [], rows = [], { refused = new Set() } 
         (b.mana?.value ?? 0) - (a.mana?.value ?? 0));
     const d = casters[0];
     if (!d) continue;
-    const plan = [];
+    // THE DEDICATOR IS HELD FOR THE WHOLE ROUND and woken only by the hand-back. Awake between
+    // steps, its keeper wielded the weapon it was handed and the hand-back was refused (the
+    // first live round, 2026-09-26) — and any action inside the 30-second trance breaks it.
+    const held = [d.agent];
+    const plan = [{ do: 'inert-keeper', agent: d.agent,
+      why: `${d.agent} dedicates: held still from the hand-over until the weapon is back` }];
     if (!hasReagents(d)) {
       const depot = here.filter(r => r.agent !== d.agent && hasReagents(r))
         .sort((a, b) => carried(b, 'orc tooth') - carried(a, 'orc tooth'))[0];
@@ -410,11 +415,12 @@ export function planDedication(needers = [], rows = [], { refused = new Set() } 
       for (const [item, n] of DEDICATE.reagents) {
         const short = Math.max(0, n - carried(d, item));
         if (short) plan.push({ do: 'give-reagent', from: depot.agent, to: d.agent, item, amount: short,
-          why: `${d.agent} needs ${n} ${item} for one dedication` });
+          keep_held: held, why: `${d.agent} needs ${n} ${item} for one dedication` });
       }
     }
     plan.push(
       { do: 'give-weapon', from: row.agent, to: d.agent, what: [{ id: w.id, amount: 1 }], weapon: w.name,
+        keep_held: held,
         why: `${row.agent}'s ${w.name} is read as mundane; ${d.agent} dedicates it to Kraanan` },
       { do: 'cast-enchant-weapon', agent: d.agent, target: w.id,
         why: `enchant weapon on ${row.agent}'s ${w.name}: trolls resist NONMAGIC 80` },

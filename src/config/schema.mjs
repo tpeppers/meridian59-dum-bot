@@ -456,10 +456,15 @@ export function validate(c) {
         if (!Array.isArray(d.agents) || !d.agents.length || d.agents.some(a => !(typeof a === 'string' && a.trim())))
           say('desk_practice.agents', 'must name the desk character(s) — in doctrines/local/, never a tracked file');
         const list = Array.isArray(d.spells) ? d.spells : null;
+        // A CREATURE TARGET (dazzle on skeletons) names its creatures in `on`; the harness casts it
+        // only from a proven wall. Refused here without `on`, because the harness refuses it too.
+        const creatureOk = (x) => x.target === 'creature' && Array.isArray(x.on) && x.on.length &&
+          x.on.every(n => typeof n === 'string' && n.trim());
         if (!list || !list.length || list.some(x => !(typeof x === 'string' && x.trim()) &&
             !(x && typeof x === 'object' && typeof x.name === 'string' &&
-              (x.target === undefined || x.target === 'self' || x.target === 'none'))))
-          say('desk_practice.spells', 'must be a non-empty list of spell names, or { "name": "...", "target": "self" | "none" }');
+              (x.target === undefined || x.target === 'self' || x.target === 'none' || creatureOk(x)))))
+          say('desk_practice.spells', 'must be a non-empty list of spell names, or { "name": "...", "target": ' +
+            '"self" | "none" }, or { "name": "...", "target": "creature", "on": ["creature name", ...] }');
       }
       const range = { reserve_casts: [0, 20], mana_floor: [0, 1000], gap_ms: [2000, 3_600_000],
                       refused_ms: [10_000, 3_600_000], rest_seconds: [0, 60] };

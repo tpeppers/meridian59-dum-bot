@@ -98,3 +98,17 @@ test('desk practice: the schema refuses what the broker would refuse', () => {
   assert.match(hand, /desk_practice\.mana_reserve/);
   assert.match(hand, /derived by the harness/, 'and says where the reserve actually comes from');
 });
+
+// A CREATURE TARGET: dazzle on skeletons from a wall. The harness requires `on`, so does this.
+test('desk practice: a creature target is accepted with `on` and refused without it', () => {
+  const said = (dp) => JSON.stringify(validate({ ...DEFAULTS, desk_practice: dp }).filter(p => /desk_practice/.test(p.where)));
+  const dazzle = { name: 'dazzle', target: 'creature', on: ['skeleton'] };
+  assert.equal(said({ on: true, agents: ['desk-1'], spells: [dazzle] }), '[]', 'dazzle on skeletons passes');
+  assert.match(said({ on: true, agents: ['desk-1'], spells: [{ name: 'dazzle', target: 'creature' }] }),
+               /desk_practice\.spells/, 'a creature target naming no creature is refused');
+  assert.match(said({ on: true, agents: ['desk-1'], spells: [{ name: 'dazzle', target: 'creature', on: [] }] }),
+               /desk_practice\.spells/);
+  // And the order carries `on` through to the keeper unchanged.
+  const d = { desk_practice: { on: true, agents: ['desk-1'], spells: [dazzle], reserve_casts: 2 } };
+  assert.deepEqual(wantedPractice(d).spells, [dazzle]);
+});

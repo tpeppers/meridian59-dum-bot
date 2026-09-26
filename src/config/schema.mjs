@@ -440,6 +440,36 @@ export function validate(c) {
   }
 
   // ---- the Duke's Feast Hall
+  // DESK PRACTICE. The broker refuses a whole push over one key it does not know, so every
+  // key is checked here, at load, rather than discovered as a keeper that never practised.
+  if (c.desk_practice != null) {
+    const d = c.desk_practice;
+    const KEYS = ['on', 'agents', 'spells', 'reserve_casts', 'mana_floor', 'gap_ms', 'refused_ms',
+                  'rooms', 'rest_seconds'];
+    if (typeof d !== 'object' || Array.isArray(d)) say('desk_practice', 'must be an object');
+    else {
+      for (const k of Object.keys(d))
+        if (!KEYS.includes(k)) say(`desk_practice.${k}`, `is not a desk practice setting (${KEYS.join(', ')})` +
+          (/reserve|mana/.test(k) ? ' — the mana reserve is derived by the harness from the desk menu; ' +
+            'use reserve_casts to change how many casts it keeps, or mana_floor for a floor under it' : ''));
+      if (d.on === true) {
+        if (!Array.isArray(d.agents) || !d.agents.length || d.agents.some(a => !(typeof a === 'string' && a.trim())))
+          say('desk_practice.agents', 'must name the desk character(s) — in doctrines/local/, never a tracked file');
+        const list = Array.isArray(d.spells) ? d.spells : null;
+        if (!list || !list.length || list.some(x => !(typeof x === 'string' && x.trim()) &&
+            !(x && typeof x === 'object' && typeof x.name === 'string' &&
+              (x.target === undefined || x.target === 'self' || x.target === 'none'))))
+          say('desk_practice.spells', 'must be a non-empty list of spell names, or { "name": "...", "target": "self" | "none" }');
+      }
+      const range = { reserve_casts: [0, 20], mana_floor: [0, 1000], gap_ms: [2000, 3_600_000],
+                      refused_ms: [10_000, 3_600_000], rest_seconds: [0, 60] };
+      for (const [k, [lo, hi]] of Object.entries(range))
+        if (d[k] != null && !(Number(d[k]) >= lo && Number(d[k]) <= hi))
+          say(`desk_practice.${k}`, `must be a number in [${lo}, ${hi}]`);
+      if (d.rooms != null && (!Array.isArray(d.rooms) || d.rooms.some(r => !(Number.isInteger(Number(r)) && Number(r) > 0))))
+        say('desk_practice.rooms', 'must be a list of room numbers — where practice is allowed; empty means the desk post');
+    }
+  }
   if (c.feast?.on) {
     const f = c.feast;
     if (!Number.isInteger(f.min_items) || f.min_items < 1)

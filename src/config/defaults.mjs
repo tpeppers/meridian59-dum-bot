@@ -373,6 +373,16 @@ export const DEFAULTS = {
   // the hall is LOCKED outside the event (a visitor is hustled straight back out), and the
   // walk is eleven hops from where this fleet farms, so it is opted into for the event
   // and must be switched off when the Duke closes the doors.
+  // PRACTICE AT THE SERVICE DESK. See src/decide/rules/deskpractice.mjs. Off, and naming
+  // nobody: which character is the desk is this machine's fact, so `agents` is set in a local
+  // doctrine. No mana number on purpose — the harness keeps `reserve_casts` casts of the
+  // dearest service the desk offers and the character knows (60 mana on a desk with reveal).
+  desk_practice: {
+    on: false,
+    agents: [],
+    spells: [],
+    reserve_casts: 2,
+  },
   feast: {
     on: false,
     // With fewer meals than this aboard, a character NEAR TOS tops up. Six is about one

@@ -25,6 +25,7 @@ import { StrategyStore } from '../src/record/strategies.mjs';
 import { FactionGoalStore } from '../src/record/factions.mjs';
 import { DetailStats } from '../src/record/detail-stats.mjs';
 import { StrategyControlServer } from '../src/link/strategy-control.mjs';
+import { acquireRunGuard } from '../src/link/run-guard.mjs';
 import { HumanControls } from '../src/link/human-controls.mjs';
 import { existsSync, readFileSync, mkdirSync, createWriteStream } from 'node:fs';
 import { resolve, dirname } from 'node:path';
@@ -315,6 +316,9 @@ async function commitRun() {
   // The precondition. Throws on a mismatch rather than warning, because the caller of
   // this is a loop and nobody reads a loop's warnings.
   await checkFleet(ctx.broker, config, { commit: true });
+  // ONE DIRECTOR PER FLEET (and per --agent scope). Before the log, the control server or a
+  // single claim: a second director refused here has touched nothing. See run-guard.mjs.
+  await acquireRunGuard({ config, only: ctx.only, force: has('force') });
   // Opened AFTER the fleet check, so a run that refuses does not leave an empty log behind
   // to be mistaken for one that started.
   const logPath = openLog(config.fleet);
@@ -389,6 +393,9 @@ DUM — a Deterministic Unattended Mover for Meridian 59.
   --log <path>              where a committed run writes. Default <log_dir>/dum-<fleet>-<stamp>.log
   --no-log                  print only
   --commit                  actually send. Without it nothing is written, anywhere
+  --force                   start even though another DUM already directs this fleet (or this
+                            --agent set). Refused without it, exit 3: two directors give every
+                            character two sets of orders. Locks: ~/.m59-dum/locks (M59_DUM_LOCK_DIR)
 
 NONE OF THESE ARE REQUIRED. dum.local.json at the repository root supplies this machine's
 answers — doctrine, fleet, control, log_dir — and any flag above overrides it. It is
@@ -421,5 +428,5 @@ try {
   }
 } catch (e) {
   console.error(c.bad(e.message));
-  process.exitCode = 1;
+  process.exitCode = e.exitCode ?? 1;
 }

@@ -292,19 +292,40 @@ export function planSupply(atStage, rows, fighters, { max = 4 } = {}) {
       given.add(w.id);
     }
   }
-  // DOWN: a family weapon for a unit with nothing to dedicate and too few magic spares.
+  // DOWN: a family weapon for a unit with too few magic spares — from the depot, or from a CREW
+  // MATE. Operator, 2026-09-26: everyone at 75+ runs this, "so they may need to coordinate
+  // exchanging enchanted weapons". With the whole crew above the line there is no non-fighter to
+  // be the depot, so a fighter at the stage room lends from its SURPLUS — never from what it keeps
+  // for itself (magic_spares + 1 of its own family, magic first) — which is how an axe trainee's
+  // looted magic hammer reaches the hammer trainee standing beside it.
+  const bestFirst = (a, b) => Number(b.bypasses_nonmagic === true) - Number(a.bypasses_nonmagic === true) ||
+    Number(a.made === true) - Number(b.made === true);
   for (const { row, s: st, ready } of atStage) {
     if (ready || plan.length >= max) continue;
-    if (dedicationTarget(row) || familyMagicSpares(row) >= st.magic_spares) continue;
-    const fromDepot = depot ? weaponsOf(depot).filter(w => !w.wielded && !given.has(w.id) && inFamily(row, w))
-      .sort((a, b) => Number(b.bypasses_nonmagic === true) - Number(a.bypasses_nonmagic === true) ||
-        Number(a.made === true) - Number(b.made === true))[0] : null;
-    if (fromDepot) {
-      plan.push({ do: 'give-weapon', from: depot.agent, to: row.agent, what: [{ id: fromDepot.id, amount: 1 }],
-        weapon: fromDepot.name, why: `${row.agent} has no ${row.weapon_magic?.wielded?.name ?? 'family'} spare; the depot has one` });
-      given.add(fromDepot.id);
+    if (familyMagicSpares(row) >= st.magic_spares) continue;
+    // A unit that already has a mundane spare to dedicate takes only a MAGIC one: that saves a
+    // dedication; another mundane weapon would only queue a second one.
+    const onlyMagic = !!dedicationTarget(row);
+    const fits = w => !w.wielded && !given.has(w.id) && inFamily(row, w) &&
+      (!onlyMagic || w.bypasses_nonmagic === true);
+    const sources = [
+      ...(depot ? [{ agent: depot.agent, pool: weaponsOf(depot), from: 'the depot' }] : []),
+      ...atStage.filter(x => x.row.agent !== row.agent)
+        .map(x => ({ agent: x.row.agent, pool: surplusWeapons(x.row, x.s.magic_spares + 1), from: x.row.agent })),
+    ];
+    let lent = null;
+    for (const src of sources) {
+      const w = src.pool.filter(fits).sort(bestFirst)[0];
+      if (w && (!lent || bestFirst(w, lent.w) < 0)) lent = { src, w };
+    }
+    if (lent) {
+      plan.push({ do: 'give-weapon', from: lent.src.agent, to: row.agent, what: [{ id: lent.w.id, amount: 1 }],
+        weapon: lent.w.name, why: `${row.agent} is short of ${lent.w.bypasses_nonmagic ? 'magic ' : ''}` +
+          `${row.weapon_magic?.wielded?.name ?? 'family'} spares; ${lent.src.from} has one to spare` });
+      given.add(lent.w.id);
       continue;
     }
+    if (onlyMagic) continue;             // it will be dedicated instead
     if (knows(row, CREATE.spell) && (row.mana?.value ?? 0) >= CREATE.mana && weaponsOf(row).length < 4)
       plan.push({ do: 'cast-create-weapon', agent: row.agent,
         why: `${row.agent} has no spare of its family to dedicate; conjure one (the family is a roll — ` +
@@ -312,9 +333,10 @@ export function planSupply(atStage, rows, fighters, { max = 4 } = {}) {
   }
   const up = depot ? plan.filter(p => p.do === 'give-weapon' && p.to === depot.agent).length : 0;
   const down = depot ? plan.filter(p => p.do === 'give-weapon' && p.from === depot.agent).length : 0;
+  const lentN = plan.filter(p => p.do === 'give-weapon' && (!depot || (p.from !== depot.agent && p.to !== depot.agent))).length;
   const cast = plan.filter(p => p.do === 'cast-create-weapon').length;
-  return { plan, summary: `${up} up to the depot, ${down} down from it, ${cast} conjured`,
-    why: plan.length || depot ? null : 'no depot in the stage room' };
+  return { plan, summary: `${up} up to the depot, ${down} down from it, ${lentN} lent between the crew, ${cast} conjured`,
+    why: plan.length ? null : (depot ? 'nothing to hand over' : 'nothing to hand over, and no depot in the stage room') };
 }
 
 /**

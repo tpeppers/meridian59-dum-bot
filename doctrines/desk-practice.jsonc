@@ -1,0 +1,61 @@
+{
+  // PRACTICE WHILE RUNNING A SERVICE DESK.
+  //
+  // A service character — the chalice holder outside Castle Victoria, serving Remove Curse,
+  // Reveal and Forces of Light — spends most of its life at its post waiting for a ticket, and
+  // casting is the only way a spell improves. This doctrine turns that idle time into practice.
+  //
+  // THE RESERVE IS NOT SET HERE, AND CANNOT BE. The harness keeps `reserve_casts` (2) casts of
+  // the dearest service the desk both OFFERS (its chalice menu) and the character KNOWS, priced
+  // from the kod: 2 x reveal = 60 mana on a full desk, 2 x forces of light = 24 if reveal is
+  // switched off. It keeps those casts' REAGENTS back too, on top of the Rescue emeralds. A
+  // mana number typed here would be right for the menu on the day it was written. The schema
+  // refuses one and says so; `mana_floor` exists only as a floor UNDER the derived reserve.
+  //
+  // A TICKET ALWAYS OUTRANKS A DRILL. The keeper serves the desk first and practises only when
+  // nothing is waiting, nothing is swinging, and it is standing at its post — it never moves the
+  // character to practise. A cast that spends no mana was refused in silence (a room already
+  // lit, a heal on somebody whole) and that spell is set aside for five minutes.
+  //
+  // TO USE IT, copy the `desk_practice` block into the fleet's live doctrine in
+  // `doctrines/local/` and name the desk character there. Handles and names identify the
+  // fleet, so they never go in a tracked file (CLAUDE.md rule 4). Then:
+  //
+  //   node bin/dum.mjs plan --doctrine doctrines/local/<yours>.jsonc --agent <desk>
+  //
+  // sends nothing and shows the `desk-practice-policy` decision. `--commit` needs a harness
+  // carrying `practice_spells` on the autopilot tool (m59-harness tools/m59-deskpractice.mjs);
+  // an older broker refuses the unknown field rather than ignoring it.
+
+  "extends": "survive.jsonc",
+
+  "name": "desk practice",
+  "why": "a desk character's idle time is the cheapest spell practice the fleet has, provided it can never cost a customer a cast",
+
+  // Practice is a WORK decision. Everything else stays with the keeper — this doctrine has no
+  // opinion about where anybody hunts, and the desk's own station is the chalice config's.
+  "claim": { "work": "bot" },
+
+  "desk_practice": {
+    "on": true,
+    // WHO IS THE DESK. A placeholder: set the real handle in doctrines/local/.
+    "agents": ["<desk-character>"],
+    // WHAT TO DRILL, tried in order; the first that fits above the reserve is cast. A spell the
+    // character does not know is skipped with a reason, so a list can run ahead of the book.
+    //
+    //   purify       Shal'ille 4, 10 mana, 2 emerald + 2 elderberry. The level that gates the
+    //                school's level 5 (reveal) is the best three at level 4, so this is the
+    //                rung that moves the desk toward the spell it serves most expensively.
+    //   holy symbol  Shal'ille 1, 8 mana, 3 elderberry. Cheap filler when the emeralds are all
+    //                spoken for — which is the normal case, since the desk keeps them back.
+    //
+    // Deliberately NOT forces of light: the holder casts it in the fol room on request, and
+    // lighting its own post spends the reagents on nobody.
+    "spells": ["purify", "holy symbol"],
+    // The operator's number: casts of the dearest offered service kept back.
+    "reserve_casts": 2,
+    // One practice cast per 20s. ADVANCEMENT_LIMIT is 10 improvements per random 15-22 minute
+    // window across all spells and skills (player.kod:66-68), so faster buys nothing.
+    "gap_ms": 20000
+  }
+}

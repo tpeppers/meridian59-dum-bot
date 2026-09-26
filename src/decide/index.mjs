@@ -40,6 +40,7 @@ import { factionCharacterRules, factionActiveFleetRules, factionRequestFleetRule
   loyaltyFleetRules } from './rules/factions.mjs';
 import { factionGameFleetRules } from './rules/faction-games.mjs';
 import { learningFleetRules } from './rules/learning.mjs';
+import { deskPracticeRules } from './rules/deskpractice.mjs';
 
 const isFleet = r => r.scope === 'fleet';
 
@@ -67,6 +68,9 @@ export const characterRules = new RuleSet('character', [
   // The throttle is policy maintenance of the same shape: it sets fight_above_vigor from the
   // doctrine's target vigor and returns null once the keeper holds it.
   ...throttleRules.filter(r => !isFleet(r)),
+  // Same shape again: keep the desk character's practice policy equal to the doctrine, then
+  // null. Ahead of the ladder so it is not starved by it; it never moves anybody.
+  ...deskPracticeRules,
   // The ladder is the directional decision. Everything after it is a refinement of the
   // orders it produced.
   ...ladderRules.filter(r => !isFleet(r)),

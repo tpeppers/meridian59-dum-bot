@@ -106,6 +106,11 @@ export const ORDER_FIELDS = {
   // reads as different on every pass and redeploys the whole station for ever.
   buff_allies:       { policy: 'buffAllies',
                        compare: (a, b) => JSON.stringify(a ?? null) === JSON.stringify(b ?? null) },
+  // PRACTISE SPELLS AT THE DESK between customers (rules/deskpractice.mjs). The harness
+  // DERIVES the mana reserve — two casts of the dearest service this character offers and
+  // knows — so the doctrine names what to drill and never a mana number. An object, compared
+  // without regard to key order so a re-ordered doctrine is not a redeploy.
+  practice_spells:   { policy: 'practiceSpells', compare: (a, b) => sameObject(a, b) },
   // A PROHIBITION, not a ranking: weapon_priority above says what to draw FIRST and its
   // last entry is still an entry. This says what never to draw at all.
   banned_weapons:    { policy: 'bannedWeapons', compare: sameList },

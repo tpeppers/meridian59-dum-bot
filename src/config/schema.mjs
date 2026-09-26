@@ -304,7 +304,7 @@ export function validate(c) {
   // key is checked here, at load, rather than discovered as a keeper that never practised.
   if (c.desk_practice != null) {
     const d = c.desk_practice;
-    const KEYS = ['on', 'agents', 'spells', 'reserve_casts', 'mana_floor', 'gap_ms', 'refused_ms',
+    const KEYS = ['on', 'agents', 'spells', 'reserve_casts', 'reserve_services', 'mana_floor', 'gap_ms', 'refused_ms',
                   'rooms', 'rest_seconds'];
     if (typeof d !== 'object' || Array.isArray(d)) say('desk_practice', 'must be an object');
     else {
@@ -326,6 +326,9 @@ export function validate(c) {
       for (const [k, [lo, hi]] of Object.entries(range))
         if (d[k] != null && !(Number(d[k]) >= lo && Number(d[k]) <= hi))
           say(`desk_practice.${k}`, `must be a number in [${lo}, ${hi}]`);
+      if (d.reserve_services != null && (!Array.isArray(d.reserve_services) ||
+          d.reserve_services.some(x => !['uncurse', 'reveal', 'fol'].includes(x))))
+        say('desk_practice.reserve_services', 'must be a list of desk services: uncurse, reveal, fol');
       if (d.rooms != null && (!Array.isArray(d.rooms) || d.rooms.some(r => !(Number.isInteger(Number(r)) && Number(r) > 0))))
         say('desk_practice.rooms', 'must be a list of room numbers — where practice is allowed; empty means the desk post');
     }

@@ -26,7 +26,7 @@
 // Keys the harness accepts. Anything else is refused by the broker for the WHOLE push, so it is
 // never forwarded — the schema reports it at load instead.
 export const PRACTICE_KEYS = Object.freeze(['spells', 'reserve_casts', 'mana_floor', 'gap_ms',
-  'refused_ms', 'rooms', 'rest_seconds']);
+  'refused_ms', 'rooms', 'rest_seconds', 'reserve_services']);
 
 const cfg = (doctrine) => doctrine?.desk_practice ?? {};
 const lower = (s) => String(s ?? '').trim().toLowerCase();
@@ -56,7 +56,11 @@ export const samePractice = (a, b) => JSON.stringify(canon(a ?? null)) === JSON.
 export const deskPracticeRules = [
   {
     id: 'desk-practice-policy',
-    faculty: 'work',
+    // ECONOMY, NOT WORK, for room_caster's reason (rules/roomcaster.mjs): the keeper does the
+    // casting, and a posted caster's post loop runs only while nobody else holds `work` or
+    // `movement` — so claiming work to push this would switch off the post it practises at.
+    // What DUM decides here is what the desk may SPEND on practice, which is economy.
+    faculty: 'economy',
     why: 'a desk character practises its spells between customers, above the reserve its services need',
     // ENABLED WHENEVER THE SECTION EXISTS, NOT ONLY WHEN IT IS ON: switching a desk off has to
     // reach the keeper too, or `on: false` would leave it drilling on the last orders it got.

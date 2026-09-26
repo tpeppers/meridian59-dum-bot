@@ -49,7 +49,7 @@ test('run guard: nothing there at all starts cleanly', () => {
 test('run guard: the scope is the fleet or the exact agent set, independent of order', () => {
   assert.equal(scopeKey(null), 'fleet');
   assert.equal(scopeKey([]), 'fleet');
-  assert.equal(scopeKey(['t2', 't1']), scopeKey(['t1', 't2']));
+  assert.equal(scopeKey(['unit-b', 'unit-a']), scopeKey(['unit-a', 'unit-b']));
   // A single-character run (a posted caster the fleet doctrine marks not_ours) must not collide
   // with the fleet director, or the guard would refuse a configuration that is correct today.
   assert.notEqual(lockPath({ fleet: 'fleet-a', only: ['caster-1'], dir: 'd' }), lockPath({ fleet: 'fleet-a', only: null, dir: 'd' }));

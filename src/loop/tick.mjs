@@ -299,7 +299,7 @@ export async function tickFleet(ctx, { decide: runRules = true, only = null } = 
     // the claim, so `busy` correctly refused every crate mission.
     await ensureFleetIntentClaim(ctx, intent);
     if (commit && ctx.circuits && intent.kind === 'errand'
-        && ['sellrun-circuit', 'feast-grab'].includes(intent.orders?.errand)) {
+        && BACKGROUND_FLEET_ERRANDS.includes(intent.orders?.errand)) {
       const started = await ctx.circuits.start(intent);
       line.applied = { acted: started, kind: 'background-errand', agent: intent.orders.agent };
       return write();
@@ -438,6 +438,12 @@ export async function tickFleet(ctx, { decide: runRules = true, only = null } = 
 // `to` is overloaded by the plan language: a give's `to` is an agent, while a muster's
 // `to` is a room number. Treating both as people created an empty broker session named
 // "52" during the first live moot. Keep this mapping next to the claim call and test it.
+// FLEET ERRANDS THAT RUN BESIDE THE PASS instead of inside it. An inline errand holds the whole
+// fleet pass until it returns, and a courier's walk to a weapon buyer and back is half an hour:
+// 2026-09-27 the troll courier left at 11:52 and the next ukgoth-trolls pass ran at 12:22, with
+// both enchanters at full mana the whole time. Anything that walks across the world goes here.
+export const BACKGROUND_FLEET_ERRANDS = ['sellrun-circuit', 'feast-grab', 'troll-courier'];
+
 export function fleetPlanAgents(plan = []) {
   return [...new Set(plan.flatMap(p => ['give', 'give-weapon'].includes(p.do) ? [p.from, p.to] : [p.agent])
     .filter(v => typeof v === 'string' && v))];

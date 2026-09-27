@@ -17,6 +17,12 @@ export class CircuitJobs {
       const was = this.ctx.memory?.read()?.sellrun?.[agent] ?? {};
       this.ctx.memory?.patch('sellrun', { [agent]: { ...was, pending: true } });
     }
+    // THE COURIER'S COOLDOWN STARTS AT DISPATCH, not at the end of a half-hour walk. Run in the
+    // background, the pass after this one would otherwise see no cooldown and send a second
+    // courier for the same depot while the first was still on the road. The recorder overwrites
+    // this with the outcome when the walk ends.
+    if (intent.orders.errand === 'troll-courier')
+      this.ctx.memory?.patch('trolls', { courier_last_at: this.now(), courier_by: agent });
     const control = new AbortController();
     const job = { control, promise: null };
     this.jobs.set(agent, job);

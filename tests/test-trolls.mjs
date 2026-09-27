@@ -14,6 +14,8 @@ import { trollFleetRules, trollReadiness, dedicationTarget, planDedication, plan
 import { requirementsMet, shiftFleetRules } from '../src/decide/rules/shift.mjs';
 import { callsForFleetPlan } from '../src/act/fleet-plan.mjs';
 import { throttleRules } from '../src/decide/rules/throttle.mjs';
+import { CircuitJobs } from '../src/loop/circuits.mjs';
+import { BACKGROUND_FLEET_ERRANDS } from '../src/loop/tick.mjs';
 import { STRATEGY_IDS, strategySettings, admits, HUNT_ROOMS, QUARRY_LEVEL, trollOwned }
   from '../src/strategies/catalog.mjs';
 
@@ -546,6 +548,19 @@ test('trolls: magic_spares 0 still hands a lone-weapon unit a spare to dedicate'
   const down = planSupply([{ row: bare, s, ready: false }], [bare, depot], new Set(['h']));
   assert.equal(down.plan.find(p => p.do === 'give-weapon' && p.from === 'depot')?.what?.[0]?.id, 8,
     JSON.stringify(down.plan));
+});
+
+// 2026-09-27: the courier ran inline and held the fleet pass for its half-hour walk (11:52 -> 12:22,
+// both enchanters at full mana). It now runs beside the pass, and its cooldown starts at dispatch so
+// the next pass does not send a second courier for the same depot.
+test('trolls: the courier runs in the background with its cooldown stamped at dispatch', async () => {
+  assert.ok(BACKGROUND_FLEET_ERRANDS.includes('troll-courier'));
+  const memory = {};
+  const ctx = { commit: true, journal: { write() {}, finding() {} },
+    memory: { read: () => memory, patch: (t, p) => { memory[t] = { ...memory[t], ...p }; } } };
+  const jobs = new CircuitJobs(ctx, { now: () => 5_000, execute: () => new Promise(() => {}) });
+  assert.equal(await jobs.start({ orders: { errand: 'troll-courier', agent: 'c' } }), true);
+  assert.equal(memory.trolls?.courier_last_at, 5_000, JSON.stringify(memory));
 });
 
 test('trolls: the courier sells only REAL surplus, after its cooldown, and walks back', () => {

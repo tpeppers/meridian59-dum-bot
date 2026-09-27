@@ -38,8 +38,15 @@ const CREATE = Object.freeze({ spell: 'create weapon', mana: 15 });
 export const WEAPON_BUYERS = Object.freeze({ 374: 'Quintor', 113: "Fehr'loi Qan", 201: 'Colhorr' });
 
 const norm = v => String(v ?? '').trim().toLowerCase();
-const sameList = (a, b) => Array.isArray(a) && Array.isArray(b) &&
-  a.length === b.length && a.every((x, i) => norm(x) === norm(b[i]));
+// A ONE-NAME HUNT COMES BACK AS A STRING. The keeper stores `hunt: "troll"` when the order named
+// one creature, and an array-only comparison called that different from ['troll'] on every pass:
+// every ready troll hunter was re-sent its whole deploy every two minutes (2026-09-27, both of the
+// deployed hunters), which restarts its farm posture each time. A string is a list of one.
+const asList = v => v == null ? null : Array.isArray(v) ? v : [v];
+const sameList = (a, b) => {
+  const x = asList(a), y = asList(b);
+  return !!x && !!y && x.length === y.length && x.every((v, i) => norm(v) === norm(y[i]));
+};
 
 /** How many of a named item a row carries, from the free board. */
 export const carried = (row, name) => (row?.pack_items ?? [])

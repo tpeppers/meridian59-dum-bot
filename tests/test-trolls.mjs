@@ -274,6 +274,26 @@ test('trolls: a unit under the minimum is NOT troll-owned, so its shift keeps pl
   assert.equal(trollOwned(o, d, 'nobody'), false, 'an unknown unit is owned by nothing');
 });
 
+// AN EXCEPTION TAKES A BIG UNIT OFF THE CREW, and every rule has to agree on it: the troll rule
+// selects with strategyRows and the shift rules ask trollOwned, so honouring it in only one of
+// them leaves a body both sides think the other one owns.
+test('trolls: `except` leaves a 75 out of the crew, by agent or by character name', () => {
+  const d = doctrine();
+  d.strategies.settings = { ...(d.strategies.settings ?? {}), [ID]: { except: ['Some Healer', 't2'] } };
+  const byName = row('t3', { character: 'Some Healer', weapon_magic: mundane() });
+  const byAgent = row('t2', { character: 'Other', weapon_magic: mundane() });
+  const crew = row('t1', { character: 'Crewman', weapon_magic: mundane() });
+  const o = obs([byName, byAgent, crew], { t1: [ID], t2: [ID], t3: [ID] });
+  assert.equal(trollOwned(o, d, 't3'), false, 'excepted by character name, case-insensitively');
+  assert.equal(trollOwned(o, d, 't2'), false, 'excepted by agent');
+  assert.equal(trollOwned(o, d, 't1'), true, 'the rest of the crew is untouched');
+  const out = trollFleetRules[0].decide(o, d);
+  const touched = new Set((out.plan ?? []).map(p => p.agent));
+  assert.ok(touched.has('t1') && !touched.has('t2') && !touched.has('t3'),
+    `the troll rule stages only the crew (touched ${[...touched]})`);
+  assert.deepEqual(strategySettings(o, d, 't1', ID).except, ['Some Healer', 't2'], 'the setting validates');
+});
+
 test('trolls: a station may require a magic weapon, and the schema checks the clause', () => {
   const st = { requires: [{ magic_weapon: { wielded: true, spares: 1 } }] };
   assert.equal(requirementsMet(st, row('a')), true);

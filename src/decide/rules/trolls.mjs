@@ -416,13 +416,20 @@ export function planGear(atStage, rows, { max = 4, refused = new Set() } = {}) {
       ((r.worn ?? []).filter(w => norm(w) === norm(i.name)).length) -
       (lent.get(`${r.agent}>${norm(i.name)}`) ?? 0) }))
     .filter(x => x.n > 0);
+  // A SLOT A UNIT HAS EMPTY IS NOT ONE IT CAN LEND FROM. 2026-09-27, the first live pass: a unit
+  // carrying its own shield unworn was listed as shieldless AND as the donor of that same shield,
+  // so it gave it away and was handed somebody else's. Carrying one unworn means: put it on.
+  const emptySlot = (r, re) => Array.isArray(r.worn) && !r.worn.some(n => re.test(n));
+  const wearOwn = new Set();
   for (const { row, s } of atStage) {
     if (plan.length >= max * 2) break;
     if (!Array.isArray(row.worn)) continue;     // unknown gear: ask again next pass
     for (const [re, what] of [[ARMOUR, 'armour'], [SHIELD, 'shield']]) {
       if (row.worn.some(n => re.test(n))) continue;
+      if (spares(row, re).length) { wearOwn.add(row.agent); continue; }
       const donor = rows.filter(r => r.in_game && r.room === s.stage_room && r.agent !== row.agent &&
-          takeable(r) && !r.piloted && Array.isArray(r.worn) && !refused.has(pairKey(r.agent, row.agent)))
+          takeable(r) && !r.piloted && Array.isArray(r.worn) && !emptySlot(r, re) &&
+          !refused.has(pairKey(r.agent, row.agent)))
         .map(r => ({ r, have: spares(r, re) })).find(x => x.have.length);
       if (!donor) continue;
       const item = donor.have[0].name;
@@ -431,11 +438,16 @@ export function planGear(atStage, rows, { max = 4, refused = new Set() } = {}) {
       plan.push({ do: 'give-gear', from: donor.r.agent, to: row.agent, item,
         why: `${row.agent} has no ${what}; ${donor.r.agent} carries a spare ${item}` });
     }
-    if (plan.some(p => p.to === row.agent))
-      plan.push({ do: 'wear-best', agent: row.agent, why: 'put on the armour and shield just handed over' });
+    if (plan.some(p => p.to === row.agent) || wearOwn.has(row.agent))
+      plan.push({ do: 'wear-best', agent: row.agent, why: wearOwn.has(row.agent) && !plan.some(p => p.to === row.agent)
+        ? 'it carries armour or a shield it is not wearing — put it on'
+        : 'put on the armour and shield just handed over' });
   }
   const gave = plan.filter(p => p.do === 'give-gear').length;
-  return { plan, summary: gave ? `${gave} armour/shield handed out` : null };
+  const worn = [...wearOwn].length;
+  return { plan, summary: gave || worn
+    ? [gave ? `${gave} armour/shield handed out` : null, worn ? `${worn} told to wear their own` : null]
+        .filter(Boolean).join(', ') : null };
 }
 
 export function planSupply(atStage, rows, fighters, { max = 4, refused = new Set() } = {}) {

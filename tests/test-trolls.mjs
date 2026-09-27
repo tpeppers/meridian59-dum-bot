@@ -273,6 +273,16 @@ test('trolls: a bare hunter is handed a spare armour and shield and puts them on
   assert.ok(calls.some(c => c.tool === 'wear_best' && c.args.agent === 'bare'));
 });
 
+test('trolls: a unit carrying its own unworn shield wears it, and is not a donor for it', () => {
+  const st = settings(doctrine());
+  const own = row('own', { room: 2, worn: ['leather armor'],
+    pack_items: [{ name: 'leather armor', amount: 1 }, { name: 'small round shield', amount: 1 }] });
+  const bare = row('bare', { room: 2, worn: ['leather armor'], pack_items: [{ name: 'leather armor', amount: 1 }] });
+  const res = planGear([{ row: own, s: st }, { row: bare, s: st }], [own, bare]);
+  assert.ok(!res.plan.some(p => p.do === 'give-gear'), 'the shield is not lent away: ' + JSON.stringify(res.plan));
+  assert.ok(res.plan.some(p => p.do === 'wear-best' && p.agent === 'own'));
+});
+
 test('trolls: the only armour a donor has is the one it wears, so nothing is handed', () => {
   const st = settings(doctrine());
   const bare = row('bare', { room: 2, worn: [] });

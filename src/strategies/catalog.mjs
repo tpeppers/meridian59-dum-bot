@@ -77,9 +77,11 @@ export const STRATEGY_CATALOG = Object.freeze([
       'one second, in the harness). A unit that does not qualify is held at the stage room, ' +
       'where a dedicator enchants its weapons by hand — owner hands over, dedicator casts, ' +
       'hands back — drawing the reagents from a co-located depot when it has none.\n' +
-      'THE GUARDIAN OF ZJIRIA IS NOT QUARRY. Three level-120 stone trolls are PLACED around the ' +
-      'node at game hour 0 (i9.kod:181-199), not generated, and the harness refuses them by ' +
-      'name. They killed 180 characters in this room. Nothing here names them.',
+      'THE GUARDIAN OF ZJIRIA IS QUARRY ONLY FOR A GROUP. Three level-120 stone trolls are PLACED ' +
+      'around the node at game hour 0 (i9.kod:181-199), not generated, and alone they killed 180 ' +
+      'characters in this room. With `guardians` on, units that stand in the room together in ' +
+      'armour and shields, guardian_group or more of them, hunt the Guardian first under a raised ' +
+      'engagement ceiling; nobody else does.',
     settings: Object.freeze([
       Object.freeze({ id: 'room', title: 'Troll room', type: 'integer', min: 1, default: 599,
         description: 'Ukgoth, Holy Land of Trolls. 100% trolls, cap 15, one every 70 s (i9.kod).' }),
@@ -100,6 +102,27 @@ export const STRATEGY_CATALOG = Object.freeze([
         default: 0.45, description: 'Do not lower it for this quarry.' }),
       Object.freeze({ id: 'rest_below', title: 'Rest below', type: 'number', min: 0.3, max: 1,
         default: 0.85, description: 'Rest threshold while stationed.' }),
+      Object.freeze({ id: 'guardians', title: 'Fight the Guardians as a group', type: 'boolean',
+        default: false,
+        description: 'Operator, 2026-09-27: the Guardians of Zjiria are killable by a group in armour ' +
+          'and shields. When on, a Guardian becomes quarry ONLY for units standing in the troll room ' +
+          'together, each armoured, shielded and healthy, and only while there are guardian_group of ' +
+          'them. Everyone else keeps hunting trolls with the ordinary ceiling.' }),
+      Object.freeze({ id: 'guardian_group', title: 'Guardian group size', type: 'integer',
+        min: 3, max: 12, default: 4,
+        description: 'Units needed together before any of them turns on a Guardian (level 120, ' +
+          'difficulty 8, 80% NONMAGIC — a troll that hits harder and lasts longer).' }),
+      Object.freeze({ id: 'guardian_health', title: 'Guardian join health', type: 'number',
+        min: 0.5, max: 1, default: 0.9,
+        description: 'Health fraction to JOIN the group. A member stays while clear of flee_below by 10%.' }),
+      Object.freeze({ id: 'guardian_ceiling', title: 'Guardian engagement ceiling (%)', type: 'integer',
+        min: 150, max: 250, default: 170,
+        description: 'The keeper refuses anything over its ceiling (150% of max health by default: 112 ' +
+          'at 75). 170% is 127, which admits the level-120 Guardian; it is pushed only to the group.' }),
+      Object.freeze({ id: 'guardian_hunt', title: 'Guardian name', type: 'item-list',
+        default: ['guardian of zjiria'],
+        description: 'What the server calls the stone troll in Ukgoth (stntroll.kod NewOwner). Listed ' +
+          'first in the group hunt list so the whole group turns to the Guardian that comes for it.' }),
       Object.freeze({ id: 'dedicate', title: 'Arrange dedications', type: 'boolean', default: true,
         description: 'Plan owner -> dedicator -> owner enchant rounds at the stage room.' }),
       Object.freeze({ id: 'depot_keep', title: 'Depot stock per weapon', type: 'integer',

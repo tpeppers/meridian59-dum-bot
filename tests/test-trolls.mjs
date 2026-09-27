@@ -44,6 +44,81 @@ const obs = (rows, agents) => ({ characters: rows, strategies: { agents } });
 const settings = d => strategySettings(obs([], {}), d, 'x', ID);
 const fire = (rows, agents, d = doctrine()) => trollFleetRules[0].decide(obs(rows, agents), d);
 
+// ---- the Guardians of Zjiria (operator, 2026-09-27): killable by a group in armour and shields
+const guardianDoctrine = (over = {}) => {
+  const d = doctrine();
+  d.strategies.settings = { ...(d.strategies.settings ?? {}),
+    [ID]: { ...(d.strategies.settings?.[ID] ?? {}), guardians: true, ...over } };
+  return d;
+};
+const inRoom = (agent, over = {}) => row(agent, { room: 599,
+  health: { value: 75, max: 75, pct: 1 }, worn: ['leather armor', 'small round shield'], ...over });
+const all = n => Object.fromEntries(Array.from({ length: n }, (_, i) => [`g${i}`, [ID]]));
+const deploysOf = out => (out.plan ?? []).filter(p => p.do === 'deploy');
+
+test('guardians: off by default — nobody hunts one, and the ceiling is the default', () => {
+  const rows = [0, 1, 2, 3].map(i => inRoom(`g${i}`));
+  for (const dep of deploysOf(fire(rows, all(4)))) {
+    assert.deepEqual(dep.hunt, ['troll']);
+    assert.deepEqual(dep.threat_ceiling, { mode: 'percent', value: 150 });
+  }
+});
+
+test('guardians: four armoured, shielded, healthy units in the room hunt the Guardian first', () => {
+  const rows = [0, 1, 2, 3].map(i => inRoom(`g${i}`));
+  const deps = deploysOf(fire(rows, all(4), guardianDoctrine()));
+  assert.equal(deps.length, 4);
+  for (const dep of deps) {
+    assert.deepEqual(dep.hunt, ['guardian of zjiria', 'troll'], 'Guardian first, trolls still');
+    assert.deepEqual(dep.threat_ceiling, { mode: 'percent', value: 170 });
+  }
+  const calls = callsForFleetPlan([deps[0]]);
+  assert.deepEqual(calls[0].args.threat_ceiling, { mode: 'percent', value: 170 }, 'the deploy whitelist carries it');
+});
+
+test('guardians: three is not a group, and nobody fights one alone', () => {
+  const rows = [0, 1, 2].map(i => inRoom(`g${i}`));
+  for (const dep of deploysOf(fire(rows, all(3), guardianDoctrine())))
+    assert.deepEqual(dep.hunt, ['troll']);
+});
+
+test('guardians: no armour or no shield keeps a unit out, and can break the group', () => {
+  const rows = [inRoom('g0'), inRoom('g1'), inRoom('g2'),
+    inRoom('g3', { worn: ['small round shield'] }), inRoom('g4', { worn: ['leather armor'] })];
+  for (const dep of deploysOf(fire(rows, all(5), guardianDoctrine())))
+    assert.deepEqual(dep.hunt, ['troll'], `${dep.agent} would face a Guardian with three`);
+  const unknown = [0, 1, 2, 3].map(i => inRoom(`g${i}`, i === 0 ? { worn: undefined } : {}));
+  for (const dep of deploysOf(fire(unknown, all(4), guardianDoctrine())))
+    assert.deepEqual(dep.hunt, ['troll'], 'unknown gear is not gear');
+});
+
+test('guardians: joining needs 90% health, staying needs only to be clear of the flee line', () => {
+  const hurt = [0, 1, 2, 3].map(i => inRoom(`g${i}`, i === 0 ? { health: { value: 60, max: 75, pct: 0.8 } } : {}));
+  for (const dep of deploysOf(fire(hurt, all(4), guardianDoctrine())))
+    assert.deepEqual(dep.hunt, ['troll'], 'an 80% unit does not JOIN');
+  const member = { assignedRoom: 599, hunt: ['guardian of zjiria', 'troll'], roam: false,
+    preferMagicWeapon: true, fleeBelow: 0.45, restBelow: 0.55, trainingStyle: 'normal',
+    threatCeiling: { mode: 'percent', value: 170 } };
+  const d = guardianDoctrine({ rest_below: 0.55 });
+  const staying = [0, 1, 2, 3].map(i => inRoom(`g${i}`, { policy: member,
+    ...(i === 0 ? { health: { value: 45, max: 75, pct: 0.6 } } : {}) }));
+  assert.equal(fire(staying, all(4), d).kind === 'act'
+    && deploysOf(fire(staying, all(4), d)).length > 0, false, 'a member at 60% stays: nothing re-sent');
+});
+
+test('guardians: when the group breaks, the ceiling goes back to the default', () => {
+  const member = { assignedRoom: 599, hunt: ['guardian of zjiria', 'troll'], roam: false,
+    preferMagicWeapon: true, fleeBelow: 0.45, restBelow: 0.85, trainingStyle: 'normal',
+    threatCeiling: { mode: 'percent', value: 170 } };
+  const rows = [0, 1, 2].map(i => inRoom(`g${i}`, { policy: member }));
+  const deps = deploysOf(fire(rows, all(3), guardianDoctrine()));
+  assert.equal(deps.length, 3);
+  for (const dep of deps) {
+    assert.deepEqual(dep.hunt, ['troll']);
+    assert.deepEqual(dep.threat_ceiling, { mode: 'percent', value: 150 });
+  }
+});
+
 test('trolls: the catalogue admits a level-90 troll from 60 and names no Guardian', () => {
   assert.equal(QUARRY_LEVEL.troll, 90);
   assert.deepEqual([...HUNT_ROOMS[599].generates], ['troll']);

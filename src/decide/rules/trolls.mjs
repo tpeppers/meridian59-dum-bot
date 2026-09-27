@@ -116,17 +116,25 @@ export function surplusWeapons(row, keep) {
   return weaponsOf(row).filter(w => !w.wielded && !kept.has(w.id) && w.made === false);
 }
 
+// TRAINING OFF IN THE TROLL ROOM (2026-09-27). Every practice style but `normal` swaps the
+// weapon in hand, and the weapon in hand is the enchanted one the whole station depends on.
+// A troll hunter was deployed with training_style short_sword/hammer left over from its old shift: in
+// 599 the keeper tried to take the magic long sword off for a hammer bout, then walked out of the
+// room to rest up mana for Create Weapon, and the rule's recall and the keeper's training walked
+// him in and out for as long as it ran. `normal` fights with whatever the tie-break wields.
 const deployOrders = (settings) => ({
   to: settings.room, hunt: settings.hunt, roam: false,
   flee_below: settings.flee_below, rest_below: settings.rest_below,
   prefer_magic_weapon: true, purpose: 'advance', goals: [{ kind: 'hp' }],
+  training_style: 'normal',
 });
 
 const deployed = (row, o) => {
   const p = row.policy ?? {};
   return row.mode === 'farm' && p.assignedRoom === o.to && sameList(p.hunt, o.hunt) &&
     p.roam === false && p.preferMagicWeapon === true &&
-    p.fleeBelow === o.flee_below && p.restBelow === o.rest_below;
+    p.fleeBelow === o.flee_below && p.restBelow === o.rest_below &&
+    (p.trainingStyle ?? 'normal') === o.training_style;
 };
 const staged = (row, room) => {
   const p = row.policy ?? {};

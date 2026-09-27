@@ -78,6 +78,22 @@ test('trolls: a ready unit is deployed with magic on and roaming off, once', () 
   assert.equal(fire([settled], { a: [ID] }).kind, 'pass', 'diffed: already there sends nothing');
 });
 
+// 2026-09-27: a troll hunter deployed with a hammer training style from his old shift, and in 599 the
+// keeper tried to take the magic long sword off for a bout, then walked out to rest up mana for
+// Create Weapon. A deploy turns practice off, and a unit still practising is not "deployed".
+test('trolls: a deploy turns weapon practice off, and a practising unit is re-deployed', () => {
+  const dep = fire([row('a')], { a: [ID] }).plan.find(p => p.do === 'deploy');
+  assert.equal(dep.training_style, 'normal');
+  assert.equal(callsForFleetPlan([dep])[0].args.training_style, 'normal', 'the deploy whitelist carries it');
+  const settled = { assignedRoom: 599, hunt: ['troll'], roam: false, preferMagicWeapon: true,
+    fleeBelow: 0.45, restBelow: 0.85 };
+  const practising = row('a', { policy: { ...settled, trainingStyle: 'short_sword' } });
+  assert.ok(fire([practising], { a: [ID] }).plan.some(p => p.do === 'deploy'),
+    'a unit in 599 still practising with a hammer is sent the order again');
+  const plain = row('a', { policy: { ...settled, trainingStyle: 'normal' } });
+  assert.equal(fire([plain], { a: [ID] }).kind, 'pass');
+});
+
 test('trolls: a mundane unit is staged, not deployed, and gets the tie-break early', () => {
   const out = fire([row('a', { weapon_magic: mundane() })], { a: [ID] });
   assert.equal(out.plan.some(p => p.do === 'deploy'), false);

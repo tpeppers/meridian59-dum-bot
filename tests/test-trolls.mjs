@@ -151,6 +151,11 @@ test('trolls: a ready unit is deployed with magic on and roaming off, once', () 
   const settled = row('a', { policy: { assignedRoom: 599, hunt: ['troll'], roam: false,
     preferMagicWeapon: true, fleeBelow: 0.45, restBelow: 0.85 } });
   assert.equal(fire([settled], { a: [ID] }).kind, 'pass', 'diffed: already there sends nothing');
+  // 2026-09-27: the keeper reports a one-name hunt as a STRING, and an array-only compare re-sent
+  // the whole deploy to every ready hunter every pass.
+  const asKeeperSaysIt = row('a', { policy: { assignedRoom: 599, hunt: 'troll', roam: false,
+    preferMagicWeapon: true, fleeBelow: 0.45, restBelow: 0.85 } });
+  assert.equal(fire([asKeeperSaysIt], { a: [ID] }).kind, 'pass', 'hunt: "troll" is hunt: ["troll"]');
 });
 
 // 2026-09-27: a troll hunter deployed with a hammer training style from his old shift, and in 599 the

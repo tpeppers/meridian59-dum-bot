@@ -128,6 +128,11 @@ export const STRATEGY_CATALOG = Object.freeze([
         default: ['guardian of zjiria'],
         description: 'What the server calls the stone troll in Ukgoth (stntroll.kod NewOwner). Listed ' +
           'first in the group hunt list so the whole group turns to the Guardian that comes for it.' }),
+      Object.freeze({ id: 'dedications_per_pass', title: 'Dedications per pass', type: 'integer',
+        min: 1, max: 6, default: 3,
+        description: 'Rounds planned in one pass, each with its own dedicator (best ability first) and ' +
+          'its own owner. An enchantment lapses in hours and a low-ability cast fizzles, so one round ' +
+          'a pass could not keep a group enchanted. The rounds run one after another.' }),
       Object.freeze({ id: 'dedicate', title: 'Arrange dedications', type: 'boolean', default: true,
         description: 'Plan owner -> dedicator -> owner enchant rounds at the stage room.' }),
       Object.freeze({ id: 'depot_keep', title: 'Depot stock per weapon', type: 'integer',

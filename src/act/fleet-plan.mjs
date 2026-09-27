@@ -183,6 +183,21 @@ export function callsForFleetPlan(plan = [], why = null, { yieldTo = [] } = {}) 
     // A REAGENT BY NAME. `supply` takes a single reagent's whole name and an amount
     // (m59-broker.mjs `supply.what`), and the free board carries names without ids, so this is
     // the one hand-over that is not addressed by object id.
+    if (step.do === 'give-gear') {
+      // BY NAME, one piece: the harness never offers a worn item by name, caps singles at
+      // `amount`, and hands over no gear at all when the giver's use list is unknown.
+      const from = need(step, 'from'), to = need(step, 'to'), item = need(step, 'item');
+      calls.push({ tool: 'supply', args: { from, to, what: String(item), amount: 1,
+        who_travels: 'neither' }, timeoutMs: 180_000, why: step.why ?? why });
+      for (const agent of [from, to]) calls.push(resumeKeeper(agent, step.why ?? why));
+      continue;
+    }
+    if (step.do === 'wear-best') {
+      const agent = need(step, 'agent');
+      calls.push({ tool: 'wear_best', args: { agent }, timeoutMs: 90_000, why: step.why ?? why });
+      calls.push(resumeKeeper(agent, step.why ?? why));
+      continue;
+    }
     if (step.do === 'give-reagent') {
       const from = need(step, 'from'), to = need(step, 'to'), item = need(step, 'item');
       calls.push({ tool: 'supply', args: { from, to, what: String(item),

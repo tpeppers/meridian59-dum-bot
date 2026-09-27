@@ -317,16 +317,18 @@ export const trollFleetRules = [{
     const courier = planCourier(atStage, rows, fighters, s0, fleetObs.memory?.trolls ?? {}, fleetObs.at);
     if (courier.errand) return courier.errand;
 
-    // ---- 3. supply, then 4. one dedication
+    // ---- 3. supply, then 4. the dedications (one per free dedicator, up to dedications_per_pass)
     const refused = refusedPairs(fleetObs.memory?.supply, fleetObs.at);
+    const gear = planGear(atStage, rows, { refused });
     const supply = planSupply(atStage, rows, fighters, { refused });
-    const round = planDedication(atStage.filter(x => !x.ready && x.s.dedicate), rows, { refused });
-    const plan = [...supply.plan, ...round.plan];
+    const round = planDedication(atStage.filter(x => !x.ready && x.s.dedicate), rows,
+      { refused, max: s0?.dedications_per_pass ?? 1 });
+    const plan = [...gear.plan, ...supply.plan, ...round.plan];
     if (!plan.length)
       return { kind: 'pass', why: [summary, courier.why, supply.why, round.why].filter(Boolean).join('; ') };
     return { kind: 'act', plan, notes,
-      why: [supply.plan.length ? supply.summary : null,
-            round.plan.length ? `one dedication (${round.summary})` : null].filter(Boolean).join('; ') };
+      why: [gear.summary, supply.plan.length ? supply.summary : null,
+            round.plan.length ? `dedication (${round.summary})` : null].filter(Boolean).join('; ') };
   },
 }];
 
@@ -396,6 +398,45 @@ export { recordTrollCourier } from './trolls-record.mjs';
  * THE STAGE ROOM'S HAND-OVERS, all by object id. Pure. A few per pass (each is a `supply`, a
  * verified two-sided trade), and no cast but the self-cast Create Weapon fallback.
  */
+/**
+ * ARMOUR AND A SHIELD FOR EVERY HUNTER, from whoever in the stage room carries a spare. Pure.
+ *
+ * The Guardian group admits only units in armour with a shield, and the crew farmed the orcs that
+ * drop both — so the gear is mostly already in somebody's pack, unworn. A spare is a pack count
+ * above what that unit wears of the same name (pack_items counts the worn one too). Handed over by
+ * NAME: the harness never offers a worn item by name and refuses gear when the use list is unknown.
+ * Then the receiver puts it on (wear_best). At most `max` hand-overs a pass.
+ */
+export function planGear(atStage, rows, { max = 4, refused = new Set() } = {}) {
+  const plan = [];
+  const lent = new Map();                      // donor>name -> how many promised this pass
+  const spares = (r, re) => (r.pack_items ?? []).filter(i => re.test(String(i.name ?? '')))
+    .map(i => ({ name: String(i.name), n: (Number(i.amount) || 0) -
+      ((r.worn ?? []).filter(w => norm(w) === norm(i.name)).length) -
+      (lent.get(`${r.agent}>${norm(i.name)}`) ?? 0) }))
+    .filter(x => x.n > 0);
+  for (const { row, s } of atStage) {
+    if (plan.length >= max * 2) break;
+    if (!Array.isArray(row.worn)) continue;     // unknown gear: ask again next pass
+    for (const [re, what] of [[ARMOUR, 'armour'], [SHIELD, 'shield']]) {
+      if (row.worn.some(n => re.test(n))) continue;
+      const donor = rows.filter(r => r.in_game && r.room === s.stage_room && r.agent !== row.agent &&
+          takeable(r) && !r.piloted && Array.isArray(r.worn) && !refused.has(pairKey(r.agent, row.agent)))
+        .map(r => ({ r, have: spares(r, re) })).find(x => x.have.length);
+      if (!donor) continue;
+      const item = donor.have[0].name;
+      const key = `${donor.r.agent}>${norm(item)}`;
+      lent.set(key, (lent.get(key) ?? 0) + 1);
+      plan.push({ do: 'give-gear', from: donor.r.agent, to: row.agent, item,
+        why: `${row.agent} has no ${what}; ${donor.r.agent} carries a spare ${item}` });
+    }
+    if (plan.some(p => p.to === row.agent))
+      plan.push({ do: 'wear-best', agent: row.agent, why: 'put on the armour and shield just handed over' });
+  }
+  const gave = plan.filter(p => p.do === 'give-gear').length;
+  return { plan, summary: gave ? `${gave} armour/shield handed out` : null };
+}
+
 export function planSupply(atStage, rows, fighters, { max = 4, refused = new Set() } = {}) {
   const plan = [];
   if (!atStage.length) return { plan, why: null };
@@ -474,9 +515,16 @@ export function planSupply(atStage, rows, fighters, { max = 4, refused = new Set
  * the weapon goes back whether or not the cast landed. A depot top-up comes first when the
  * dedicator is short of reagents.
  */
-export function planDedication(needers = [], rows = [], { refused = new Set() } = {}) {
+export function planDedication(needers = [], rows = [], { refused = new Set(), max = 1 } = {}) {
   if (!needers.length) return { plan: [], why: null };
+  // SEVERAL ROUNDS A PASS, one per free dedicator (operator, 2026-09-27: "do any changes you
+  // need"). An enchantment lapses in hours and a round lands only on the fizzle roll, so one round
+  // a pass could not keep four hunters enchanted at once. Each round still has its own dedicator
+  // held still for its own trance; the rounds run one after another inside the pass.
+  const rounds = [], summaries = [], usedCasters = new Set();
+  let reagentWhy = null;
   for (const { row, s } of needers) {
+    if (summaries.length >= Math.max(1, Number(max) || 1)) break;
     const w = dedicationTarget(row);
     if (!w) continue;
     const here = rows.filter(r => r.in_game && r.room === s.stage_room && r.agent !== row.agent &&
@@ -485,7 +533,8 @@ export function planDedication(needers = [], rows = [], { refused = new Set() } 
     // round that ran its whole trance went to a crew dedicator (enchant weapon 5, more mana) over the stage caster
     // (20) and spent 3 elderberry and an orc tooth on nothing. A missing reading ranks as 0.
     const skill = r => Number(r?.provides_ability?.[DEDICATE.spell]) || 0;
-    const casters = here.filter(r => knows(r, DEDICATE.spell) && (r.mana?.value ?? 0) >= DEDICATE.mana)
+    const casters = here.filter(r => !usedCasters.has(r.agent) &&
+        knows(r, DEDICATE.spell) && (r.mana?.value ?? 0) >= DEDICATE.mana)
       .sort((a, b) => skill(b) - skill(a) || Number(hasReagents(b)) - Number(hasReagents(a)) ||
         (b.mana?.value ?? 0) - (a.mana?.value ?? 0));
     const d = casters[0];
@@ -499,8 +548,11 @@ export function planDedication(needers = [], rows = [], { refused = new Set() } 
     if (!hasReagents(d)) {
       const depot = here.filter(r => r.agent !== d.agent && hasReagents(r))
         .sort((a, b) => carried(b, 'orc tooth') - carried(a, 'orc tooth'))[0];
-      if (!depot) return { plan: [], why: `${d.agent} could dedicate but nobody in ${s.stage_room} ` +
-        'holds 3 elderberry and 1 orc tooth to hand it' };
+      if (!depot) {
+        reagentWhy = `${d.agent} could dedicate but nobody in ${s.stage_room} ` +
+          'holds 3 elderberry and 1 orc tooth to hand it';
+        continue;
+      }
       for (const [item, n] of DEDICATE.reagents) {
         const short = Math.max(0, n - carried(d, item));
         if (short) plan.push({ do: 'give-reagent', from: depot.agent, to: d.agent, item, amount: short,
@@ -517,8 +569,12 @@ export function planDedication(needers = [], rows = [], { refused = new Set() } 
         why: 'the weapon goes back whether or not the dedication landed' },
       { do: 'equip-best', agent: row.agent, why: 'wield the dedicated weapon (prefer_magic_weapon breaks the tie)' },
     );
-    return { plan, summary: `${row.agent}'s ${w.name} by ${d.agent}`, why: null };
+    usedCasters.add(d.agent);
+    rounds.push(...plan);
+    summaries.push(`${row.agent}'s ${w.name} by ${d.agent}`);
   }
+  if (rounds.length) return { plan: rounds, summary: summaries.join(', '), why: null };
+  if (reagentWhy) return { plan: [], why: reagentWhy };
   const anyTarget = needers.some(({ row }) => dedicationTarget(row));
   return { plan: [], why: anyTarget
     ? 'no dedicator in the stage room with 17 mana who knows enchant weapon'

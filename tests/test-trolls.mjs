@@ -9,7 +9,7 @@
 import assert from 'node:assert/strict';
 import { loadDoctrine } from '../src/config/load.mjs';
 import { validate } from '../src/config/schema.mjs';
-import { trollFleetRules, trollReadiness, dedicationTarget, planDedication }
+import { trollFleetRules, trollReadiness, dedicationTarget, planDedication, planGear }
   from '../src/decide/rules/trolls.mjs';
 import { requirementsMet, shiftFleetRules } from '../src/decide/rules/shift.mjs';
 import { callsForFleetPlan } from '../src/act/fleet-plan.mjs';
@@ -234,6 +234,54 @@ test('trolls: the most able dedicator is chosen over the one with more mana', ()
   assert.equal(res.plan.find(p => p.do === 'cast-enchant-weapon')?.agent, 'adept', JSON.stringify(res));
   const c = callsForFleetPlan(res.plan).find(x => x.tool === 'cast');
   assert.ok(c.args.holdMs > 30_000, 'the keeper is told to hold still past the 30-second trance');
+});
+
+// Several rounds a pass (2026-09-27): one per free dedicator, best first, each owner once.
+test('trolls: two dedicators enchant two owners in one pass, and max caps it', () => {
+  const reag = [{ name: 'elderberry', amount: 10 }, { name: 'orc tooth', amount: 5 }];
+  const own = a => row(a, { room: 2, weapon_magic: mundane(), mode: 'idle',
+    policy: { assignedRoom: 2, roam: false, preferMagicWeapon: true } });
+  const o1 = own('o1'), o2 = own('o2'), o3 = own('o3');
+  const adept = row('adept', { room: 2, provides: ['enchant weapon'], mana: { value: 25, max: 25 },
+    provides_ability: { 'enchant weapon': 20 }, pack_items: reag });
+  const novice = row('novice', { room: 2, provides: ['enchant weapon'], mana: { value: 40, max: 40 },
+    provides_ability: { 'enchant weapon': 5 }, pack_items: reag });
+  const needers = [o1, o2, o3].map(r => ({ row: r, s: settings(doctrine()) }));
+  const rows = [o1, o2, o3, adept, novice];
+  const casts = res => res.plan.filter(p => p.do === 'cast-enchant-weapon').map(p => p.agent);
+  const two = planDedication(needers, rows, { max: 3 });
+  assert.deepEqual(casts(two), ['adept', 'novice'], 'each dedicator once, the most able first');
+  const owners = two.plan.filter(p => p.do === 'give-weapon' && p.to !== p.from && ['adept', 'novice'].includes(p.to)).map(p => p.from);
+  assert.equal(new Set(owners).size, 2, 'two different owners');
+  assert.deepEqual(casts(planDedication(needers, rows, { max: 1 })), ['adept'], 'max 1 is the old behaviour');
+  assert.deepEqual(casts(planDedication(needers, rows)), ['adept'], 'and the default');
+});
+
+// Armour and a shield for every hunter, from spares already in the stage room (2026-09-27).
+test('trolls: a bare hunter is handed a spare armour and shield and puts them on', () => {
+  const st = settings(doctrine());
+  const bare = row('bare', { room: 2, worn: ['Amulet of Shadows'] });
+  const donor = row('donor', { room: 2, worn: ['leather armor', 'small round shield'],
+    pack_items: [{ name: 'leather armor', amount: 2 }, { name: 'small round shield', amount: 3 }] });
+  const res = planGear([{ row: bare, s: st }], [bare, donor]);
+  const gives = res.plan.filter(p => p.do === 'give-gear');
+  assert.deepEqual(gives.map(g => g.item).sort(), ['leather armor', 'small round shield']);
+  assert.ok(gives.every(g => g.from === 'donor' && g.to === 'bare'));
+  assert.equal(res.plan.at(-1).do, 'wear-best');
+  const calls = callsForFleetPlan(res.plan);
+  assert.ok(calls.some(c => c.tool === 'supply' && c.args.what === 'leather armor' && c.args.amount === 1));
+  assert.ok(calls.some(c => c.tool === 'wear_best' && c.args.agent === 'bare'));
+});
+
+test('trolls: the only armour a donor has is the one it wears, so nothing is handed', () => {
+  const st = settings(doctrine());
+  const bare = row('bare', { room: 2, worn: [] });
+  const donor = row('donor', { room: 2, worn: ['leather armor', 'small round shield'],
+    pack_items: [{ name: 'leather armor', amount: 1 }, { name: 'small round shield', amount: 1 }] });
+  assert.equal(planGear([{ row: bare, s: st }], [bare, donor]).plan.length, 0);
+  const unknown = row('u', { room: 2 });                       // worn unknown: ask next pass
+  const rich = row('rich', { room: 2, worn: [], pack_items: [{ name: 'leather armor', amount: 5 }] });
+  assert.equal(planGear([{ row: unknown, s: st }], [unknown, rich]).plan.length, 0);
 });
 
 test('trolls: no dedicator with mana, or only the weapon in hand, plans nothing and says why', () => {

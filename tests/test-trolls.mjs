@@ -696,6 +696,7 @@ test('trolls: a refused pair is skipped until the cooldown runs, and the tick re
 // our troll hunters from having to leave their stations while they're running successfully".
 
 import { courierIn, unloadDue, unloadable, planUnload } from '../src/decide/rules/trolls.mjs';
+import { normalizeFleetRow } from '../src/sense/normalize.mjs';
 
 const courierDoctrine = (over = {}) => {
   const d = doctrine();
@@ -846,6 +847,11 @@ test('courier: the road in is gated on the crew fighting in the troll room and i
 test('courier: its pack is known and under the ceiling, or it takes nothing', () => {
   const s = cs();
   assert.equal(courierIn([courierAt(2)], s)?.agent, 'courier');
+  // 2026-09-27: normalizeFleetRow dropped `pack`, so on a live board the courier's pack was always
+  // unknown, courierIn was always null, and the courier received nothing all evening.
+  const live = normalizeFleetRow({ agent: 'courier', character: 'Courier', in_game: true, room_num: 2,
+    health: '21/21', pack: { percent: 70, exact: true }, policy: { assignedRoom: 2, roam: false } });
+  assert.equal(live.pack?.percent, 70, 'the board\'s pack reading survives normalisation');
   assert.equal(courierIn([courierAt(2, { pack: { percent: 80 } })], s), null);
   assert.equal(unloadable(fullHunter('g0'), s).loot[0]?.name, 'emerald');
 });

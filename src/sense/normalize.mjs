@@ -168,6 +168,12 @@ export function normalizeFleetRow(r = {}) {
     // `reagents` is the create-food pair counted; `has_food` is the keeper's own answer.
     // Absent on an older broker, and null means "not answered", never "empty".
     pack_items: Array.isArray(r.pack_items) ? r.pack_items : null,
+    // HOW FULL THE PACK IS, as the board reports it: `{percent, weight_pct, bulk_pct, binding, ...}`.
+    // It was never carried across, so every rule that asks `r.pack.percent` read undefined:
+    // 2026-09-27 the Ukgoth courier's "known pack under its ceiling" was never true and it received
+    // nothing all evening, while the depot's receiving ceiling read "unknown = room" and it filled
+    // to 96%. Null means the board did not say; the rules treat that as they always meant to.
+    pack: (r.pack && typeof r.pack === 'object') ? r.pack : null,
     // WHICH WEAPONS BYPASS A TROLL'S NONMAGIC 80, as the keeper READ them (look text, lapse
     // sentence) — never inferred from a name, because an enchantment does not rename anything.
     // `{wielded:{name,class,bypasses_nonmagic,made}, magic_spares, unknown, weapons:[{id,...}]}`.

@@ -597,7 +597,10 @@ export function strategySettings(observation, doctrine, agent, id) {
 // ignores them. A unit crossing the line either way changes owner on its next pass.
 export const trollOwned = (observation, doctrine, agent) => {
   if (!strategyEnabled(observation, doctrine, agent, STRATEGY_IDS.UKGOTH_TROLLS)) return false;
-  const row = (observation.characters ?? []).find(r => r.agent === agent);
+  // A PER-CHARACTER observation is the row itself (no `characters`), and the throttle asks from
+  // one: without this fallback it could never see that a unit was on the troll crew.
+  const row = (observation.characters ?? []).find(r => r.agent === agent) ??
+    (observation.agent === agent ? observation : null);
   const mh = Number(row?.max_health);
   if (!Number.isFinite(mh)) return false;
   const s = strategySettings(observation, doctrine, agent, STRATEGY_IDS.UKGOTH_TROLLS);

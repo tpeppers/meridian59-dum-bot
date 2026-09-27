@@ -212,7 +212,7 @@ export const throttleRules = [
       // THE TROLL CREW'S VIGOR BAND BELONGS TO THE TROLL RULE (operator, 2026-09-27: 160+, fed).
       // Two writers of one field is how a gate that nobody chose gets held: this would reset the
       // crew to the fleet's 40 every pass and the troll deploy would put 160 back.
-      if (obs.fleet && trollOwned(obs.fleet, doctrine, obs.agent))
+      if (trollOwned(obs, doctrine, obs.agent))
         return { kind: 'pass', why: `${obs.character ?? obs.agent} is on Ukgoth Trolls, whose vigor band is its own` };
       const floors = throttleFloors(doctrine.throttle);
       const row = obs.keeper ? { ...obs, ...obs.keeper } : obs;

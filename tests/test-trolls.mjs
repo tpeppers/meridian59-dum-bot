@@ -141,10 +141,12 @@ test('trolls: the vigor band rides the deploy, and the throttle leaves the crew 
   assert.equal(args.vigor_ceiling, 200, 'the deploy whitelist carries the ceiling');
   assert.equal(args.no_food_vigor_floor, 60, 'and the empty-larder floor');
   const d = doctrine(); d.throttle = { with_food: 40, no_food: 40, min_meals: 1 };
-  const fleet = obs([row('a', { level: 75, max_health: 75 })], { a: [ID] });
-  const t = throttleRules[0].decide({ agent: 'a', character: 'a', fleet, policy: { fightAboveVigor: 160 } }, d);
+  // A per-character observation, as the tick hands it: the row itself plus the strategy map.
+  const own = { ...row('a', { level: 75, max_health: 75 }), strategies: { agents: { a: [ID] } } };
+  const t = throttleRules[0].decide(own, d);
   assert.equal(t?.kind, 'pass', JSON.stringify(t));
-  const other = throttleRules[0].decide({ agent: 'b', character: 'b', fleet, policy: { fightAboveVigor: 160 } }, d);
+  const other = throttleRules[0].decide({ ...row('b', { level: 75, max_health: 75 }), strategies: { agents: {} },
+    policy: { fightAboveVigor: 160 } }, d);
   assert.equal(other?.kind, 'orders', 'everyone else is still throttled');
 });
 

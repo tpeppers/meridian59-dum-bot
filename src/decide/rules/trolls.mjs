@@ -357,13 +357,17 @@ const hasPackRoom = r => !Number.isFinite(Number(r?.pack?.percent)) ||
  * The stage room's depot: the non-fighter STATIONED at the stage room (its assigned room) with
  * room in its pack, holding the most elderberry.
  */
-export function depotIn(rows, room, fighters = new Set(), courier = null) {
+export function depotIn(rows, room, fighters = new Set(), courier = null, { giving = false } = {}) {
   // THE COURIER IS NEVER THE DEPOT. Both stand in the stage room and neither fights, so without this
   // the courier — empty-packed, fresh from town — would be picked the moment the depot filled, and
   // the weapons meant to re-arm the crew would ride out to be sold.
   return rows.filter(r => r.in_game && r.room === room && !fighters.has(r.agent) && takeable(r) &&
       r.agent !== courier?.agent &&
-      !r.piloted && r.policy?.assignedRoom === room && hasPackRoom(r))
+      // THE CEILING IS FOR RECEIVING ONLY. A depot too full to take a weapon can still GIVE one, and
+      // giving is the only thing that empties it: 2026-09-27 the stage caster filled to 96% with 17
+      // surplus long swords, stopped being the depot at all, and so could neither hand spares down
+      // nor pass its surplus to the courier — a full depot that nothing could ever drain.
+      !r.piloted && r.policy?.assignedRoom === room && (giving || hasPackRoom(r)))
     .sort((a, b) => carried(b, 'elderberry') - carried(a, 'elderberry') ||
       carried(b, 'orc tooth') - carried(a, 'orc tooth'))[0] ?? null;
 }
@@ -544,7 +548,7 @@ export function planCourier(atStage, rows, fighters, s, mem = {}, now = null) {
   // it the depot's surplus instead and its own town trip sells it.
   if (s.courier_agent?.length) return { why: null };
   const room = s.stage_room;
-  const depot = depotIn(rows, room, fighters);
+  const depot = depotIn(rows, room, fighters, null, { giving: true });
   if (!depot) return { why: 'no depot in the stage room' };
   const sell = depotSurplus(depot, s);
   if (sell.length < s.courier_min_items)
@@ -700,6 +704,7 @@ export function planSupply(atStage, rows, fighters, { max = 4, refused = new Set
   if (!atStage.length) return { plan, why: null };
   const s = atStage[0].s;
   const depot = depotIn(rows, s.stage_room, fighters, courierRow(rows, s));
+  const giver = depotIn(rows, s.stage_room, fighters, courierRow(rows, s), { giving: true });
   const given = new Set();
   const ok = (from, to) => !refused.has(pairKey(from, to));
   // DOWN BEFORE UP. A hand-down or a conjure is what gets a unit armed; a hand-up only tidies.
@@ -727,7 +732,7 @@ export function planSupply(atStage, rows, fighters, { max = 4, refused = new Set
     const fits = w => !w.wielded && !given.has(w.id) && inFamily(row, w) &&
       (!onlyMagic || w.bypasses_nonmagic === true);
     const sources = [
-      ...(depot ? [{ agent: depot.agent, pool: weaponsOf(depot), from: 'the depot' }] : []),
+      ...(giver ? [{ agent: giver.agent, pool: weaponsOf(giver), from: 'the depot' }] : []),
       ...atStage.filter(x => x.row.agent !== row.agent)
         .map(x => ({ agent: x.row.agent, pool: surplusWeapons(x.row, x.s.magic_spares + 1), from: x.row.agent })),
     ];
@@ -762,8 +767,8 @@ export function planSupply(atStage, rows, fighters, { max = 4, refused = new Set
     }
   }
   const up = depot ? plan.filter(p => p.do === 'give-weapon' && p.to === depot.agent).length : 0;
-  const down = depot ? plan.filter(p => p.do === 'give-weapon' && p.from === depot.agent).length : 0;
-  const lentN = plan.filter(p => p.do === 'give-weapon' && (!depot || (p.from !== depot.agent && p.to !== depot.agent))).length;
+  const down = giver ? plan.filter(p => p.do === 'give-weapon' && p.from === giver.agent).length : 0;
+  const lentN = plan.filter(p => p.do === 'give-weapon' && p.from !== giver?.agent && p.to !== depot?.agent).length;
   const cast = plan.filter(p => p.do === 'cast-create-weapon').length;
   return { plan, summary: `${up} up to the depot, ${down} down from it, ${lentN} lent between the crew, ${cast} conjured`,
     why: plan.length ? null : (depot ? 'nothing to hand over' : 'nothing to hand over, and no depot in the stage room') };
@@ -790,7 +795,10 @@ export function planUnload(atStage, rows, fighters, s, { max = 6, refused = new 
   }
   const plan = [];
   const ok = from => !refused.has(pairKey(from, courier.agent));
+  // RECEIVING (under its pack ceiling) for what is handed TO it; GIVING (whatever its pack reads)
+  // for its own surplus, which is what drains a full one.
   const depot = depotIn(rows, s.stage_room, fighters, courier);
+  const giver = depotIn(rows, s.stage_room, fighters, courier, { giving: true });
   const lacks = stageLacks(rows, s);
   const sent = new Set(given);
   for (const { row } of atStage) {
@@ -829,11 +837,11 @@ export function planUnload(atStage, rows, fighters, s, { max = 6, refused = new 
         weapon: w.name, why: `the depot holds fewer than ${s.depot_keep} ${name}; the courier bought one in town` });
     }
   }
-  if (depot && ok(depot.agent)) for (const w of depotSurplus(depot, s)) {
+  if (giver && ok(giver.agent)) for (const w of depotSurplus(giver, s)) {
     if (plan.length >= max) break;
     if (sent.has(w.id)) continue;
     sent.add(w.id);
-    plan.push({ do: 'give-weapon', from: depot.agent, to: courier.agent, what: [{ id: w.id, amount: 1 }],
+    plan.push({ do: 'give-weapon', from: giver.agent, to: courier.agent, what: [{ id: w.id, amount: 1 }],
       weapon: w.name, why: `the depot holds more than ${s.depot_keep} ${w.name}; the courier sells the rest` });
   }
   const delivered = plan.filter(p => p.from === courier.agent).length;

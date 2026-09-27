@@ -794,6 +794,29 @@ test('courier: never the depot, and the depot\'s surplus goes to it rather than 
   assert.deepEqual(ids, [302, 303, 304], 'five long swords less the depot stock of two');
 });
 
+// 2026-09-27: the stage caster filled to 96% with 17 surplus long swords and stopped being the depot,
+// so nothing could drain it. A FULL depot still gives: its surplus to the courier, spares down to the
+// crew. It only stops receiving.
+test('courier: a depot over its pack ceiling still gives, and only stops receiving', () => {
+  const s = cs();
+  const c = courierAt(2);
+  const full = row('depot', { room: 2, max_health: 25, policy: { assignedRoom: 2 }, pack: { percent: 96 },
+    pack_items: [{ name: 'elderberry', amount: 80 }],
+    weapon_magic: wm(Array.from({ length: 5 }, (_, i) => W(400 + i, 'long sword', false))) });
+  assert.equal(depotIn([full, c], 2, new Set(), c), null, 'too full to RECEIVE');
+  assert.equal(depotIn([full, c], 2, new Set(), c, { giving: true })?.agent, 'depot', 'but it can still GIVE');
+  const h = hammerer('g0', [W(1, 'hammer', true, { wielded: true }), W(2, 'hammer', true)],
+    { health: { value: 75, max: 75, pct: 1 } });
+  const out = planUnload([{ row: h, s, ready: true }], [h, full, c], new Set(['g0']), s);
+  const ids = out.plan.filter(p => p.from === 'depot' && p.to === 'courier').flatMap(p => p.what.map(w => w.id));
+  assert.deepEqual(ids, [402, 403, 404], 'the full depot drains its surplus to the courier');
+  const lone = row('lone', { room: 2, weapon_magic: wm([W(9, 'long sword', false, { wielded: true })]),
+    policy: { assignedRoom: 2, weaponPriority: ['long sword'] }, mode: 'idle' });
+  const down = planSupply([{ row: lone, s, ready: false }], [lone, full, c], new Set(['lone']));
+  assert.ok(down.plan.some(p => p.do === 'give-weapon' && p.from === 'depot' && p.to === 'lone'),
+    'and hands a spare DOWN: ' + JSON.stringify(down.plan));
+});
+
 test('courier: the road in is gated on the crew fighting in the troll room and its own health', () => {
   const d = courierDoctrine();
   const staged2 = inRoom('g0', { room: 2, mode: 'idle', weapon_magic: mundane(),

@@ -119,6 +119,11 @@ export const STRATEGY_CATALOG = Object.freeze([
         min: 150, max: 250, default: 170,
         description: 'The keeper refuses anything over its ceiling (150% of max health by default: 112 ' +
           'at 75). 170% is 127, which admits the level-120 Guardian; it is pushed only to the group.' }),
+      Object.freeze({ id: 'except', title: 'Leave out', type: 'item-list', default: [],
+        description: 'Agents or characters this strategy never owns, whatever their size. Size ' +
+          'alone decides the crew, so without this a unit at 75 cannot be given other work: the ' +
+          'shift, castle and graveyard rules all step over a troll-owned unit and the troll rule ' +
+          'marches it back to the stage room. Matched like a shift station\'s `except`.' }),
       Object.freeze({ id: 'guardian_hunt', title: 'Guardian name', type: 'item-list',
         default: ['guardian of zjiria'],
         description: 'What the server calls the stone troll in Ukgoth (stntroll.kod NewOwner). Listed ' +
@@ -537,8 +542,22 @@ export function enabledStrategyIds(observation = {}, doctrine = {}, agent = null
     ? assigned : (doctrine.strategies?.defaults ?? [])));
 }
 
+// AN `except` SETTING TAKES A UNIT OFF THE STRATEGY, not merely out of one rule's placement.
+// Answered here, where every caller asks, because the troll rule selects with strategyRows while
+// the shift, castle and graveyard rules ask trollOwned — an exception honoured by one and not the
+// other is two rules each believing somebody else owns the body, and nobody placing it.
+export const strategyExcepts = (observation, doctrine, agent, id) => {
+  const listed = [].concat(doctrine.strategies?.settings?.[id]?.except ?? [],
+                           observation.strategies?.settings?.[agent]?.[id]?.except ?? [])
+    .map(v => String(v ?? '').trim().toLowerCase()).filter(Boolean);
+  if (!listed.length) return false;
+  const row = (observation.characters ?? []).find(r => r.agent === agent);
+  return [agent, row?.character].some(n => n && listed.includes(String(n).trim().toLowerCase()));
+};
+
 export const strategyEnabled = (observation, doctrine, agent, id) =>
-  enabledStrategyIds(observation, doctrine, agent).has(id);
+  enabledStrategyIds(observation, doctrine, agent).has(id) &&
+  !strategyExcepts(observation, doctrine, agent, id);
 
 export function strategySettings(observation, doctrine, agent, id) {
   const doctrineValues = doctrine.strategies?.settings?.[id] ?? {};

@@ -345,28 +345,35 @@ export const trollFleetRules = [{
     }
     const summary = `${working} in the troll room, ${holding} held at the stage room` +
       (busy ? `, ${busy} busy` : '');
-    if (place.length)
-      return { kind: 'act', plan: [...place, ...equips], notes,
-        why: `${place.filter(p => p.do === 'deploy').length} deploy(s), ` +
-          `${place.filter(p => p.do === 'stand-down').length} to the stage room` };
+    // A PLACEMENT NO LONGER ENDS THE PASS. It used to return here, and a crew of a dozen almost
+    // always has one unit to send in or recall, so the stage room's work below — hand-downs, food,
+    // and the dedications — ran on perhaps one pass in five (2026-09-27: 10:22, 10:34 and 10:45 were
+    // each "1 deploy(s)" and nothing else, with Raphael at full mana). The units being placed are
+    // left out of the stage room's work; everyone else standing there is served in the same pass.
+    const placing = new Set(place.map(p => p.agent));
+    const placeWhy = place.length
+      ? `${place.filter(p => p.do === 'deploy').length} deploy(s), ` +
+        `${place.filter(p => p.do === 'stand-down').length} to the stage room` : null;
+    const served = atStage.filter(x => !placing.has(x.row.agent));
 
-    // ---- 2. courier
-    const courier = planCourier(atStage, rows, fighters, s0, fleetObs.memory?.trolls ?? {}, fleetObs.at);
+    // ---- 2. courier (an errand of its own, so only on a pass that places nobody)
+    const courier = place.length ? { why: null }
+      : planCourier(atStage, rows, fighters, s0, fleetObs.memory?.trolls ?? {}, fleetObs.at);
     if (courier.errand) return courier.errand;
 
     // ---- 3. supply, then 4. the dedications (one per free dedicator, up to dedications_per_pass)
     const refused = refusedPairs(fleetObs.memory?.supply, fleetObs.at);
     const gear = s0?.share_gear === false ? { plan: [], summary: null }
-      : planGear(atStage, rows, { refused });
-    const food = planFood(atStage, rows, { refused });
-    const supply = planSupply(atStage, rows, fighters, { refused });
-    const round = planDedication(atStage.filter(x => !x.ready && x.s.dedicate), rows,
+      : planGear(served, rows, { refused });
+    const food = planFood(served, rows, { refused });
+    const supply = planSupply(served, rows, fighters, { refused });
+    const round = planDedication(served.filter(x => !x.ready && x.s.dedicate), rows,
       { refused, max: s0?.dedications_per_pass ?? 1 });
-    const plan = [...equips, ...gear.plan, ...food.plan, ...supply.plan, ...round.plan];
+    const plan = [...place, ...equips, ...gear.plan, ...food.plan, ...supply.plan, ...round.plan];
     if (!plan.length)
       return { kind: 'pass', why: [summary, courier.why, supply.why, round.why].filter(Boolean).join('; ') };
     return { kind: 'act', plan, notes,
-      why: [equips.length ? `${equips.length} to wield the enchanted twin` : null, gear.summary, food.summary, supply.plan.length ? supply.summary : null,
+      why: [placeWhy, equips.length ? `${equips.length} to wield the enchanted twin` : null, gear.summary, food.summary, supply.plan.length ? supply.summary : null,
             round.plan.length ? `dedication (${round.summary})` : null].filter(Boolean).join('; ') };
   },
 }];

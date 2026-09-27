@@ -251,6 +251,21 @@ test('trolls: a pending equip does not hold up the dedications', () => {
   assert.ok(out.plan.some(p => p.do === 'cast-enchant-weapon'), 'the dedication still runs');
 });
 
+// 2026-09-27: every pass that sent one unit in returned before the stage room's work, and a crew
+// of a dozen nearly always has one to send in. Both now happen in the same pass.
+test('trolls: a deploy and a dedication happen in the same pass', () => {
+  const staged = { assignedRoom: 2, roam: false, preferMagicWeapon: true, ...VIG };
+  const ready = row('ready', { room: 2 });
+  const owner = row('owner', { room: 2, weapon_magic: mundane(), policy: staged, mode: 'idle' });
+  const ded = row('ded', { room: 2, provides: ['enchant weapon'], mana: { value: 30, max: 40 },
+    pack_items: [{ name: 'elderberry', amount: 30 }, { name: 'orc tooth', amount: 5 }], weapon_magic: null });
+  const out = fire([ready, owner, ded], { ready: [ID], owner: [ID] });
+  assert.ok(out.plan.some(p => p.do === 'deploy' && p.agent === 'ready'), JSON.stringify(out.plan));
+  assert.ok(out.plan.some(p => p.do === 'cast-enchant-weapon'), 'the dedication runs beside the deploy');
+  assert.ok(!out.plan.some(p => p.do !== 'deploy' && (p.agent === 'ready' || p.from === 'ready' || p.to === 'ready')),
+    'the unit being deployed is left out of the stage room work');
+});
+
 test('trolls: a mundane unit is staged, not deployed, and gets the tie-break early', () => {
   const out = fire([row('a', { weapon_magic: mundane() })], { a: [ID] });
   assert.equal(out.plan.some(p => p.do === 'deploy'), false);

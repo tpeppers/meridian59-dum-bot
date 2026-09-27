@@ -156,7 +156,17 @@ const deployOrders = (settings, guardian = false) => ({
   training_style: 'normal',
   threat_ceiling: guardian ? { mode: 'percent', value: settings.guardian_ceiling } : DEFAULT_CEILING,
   ...vigorOrders(settings),
+  ...packOrders(settings),
 });
+
+// THE SELL TRIGGERS, only while a stage-room courier is named. The keeper starts its own sell run
+// at sell_at_load of its pack or max_carry stacks; with a courier the unload is the normal path and
+// the run is the fallback, so both are raised. Without one nothing is sent and nothing is compared:
+// a crew with no courier keeps selling the way it always has.
+const packOrders = settings => (settings.courier_agent?.length
+  ? { sell_at_load: settings.sell_at_load, max_carry: settings.max_carry } : {});
+const samePack = (p, o) => (o.sell_at_load === undefined || (p.sellAtLoad ?? null) === o.sell_at_load) &&
+  (o.max_carry === undefined || (p.maxCarry ?? null) === o.max_carry);
 
 // THE VIGOR BAND, on deploy AND stand-down: a unit waiting at the stage room is the one about to
 // set out, so it eats up there rather than on the road.
@@ -178,7 +188,7 @@ const deployed = (row, o) => {
     p.roam === false && p.preferMagicWeapon === true &&
     p.fleeBelow === o.flee_below && p.restBelow === o.rest_below &&
     (p.trainingStyle ?? 'normal') === o.training_style && sameCeiling(p, o.threat_ceiling) &&
-    sameVigor(p, o);
+    sameVigor(p, o) && samePack(p, o);
 };
 
 // ---------------------------------------------------------------- the Guardians of Zjiria
@@ -229,8 +239,84 @@ export function guardianGroup(units = []) {
 const staged = (row, room, settings = null) => {
   const p = row.policy ?? {};
   return row.mode === 'idle' && p.assignedRoom === room && p.roam === false &&
-    p.preferMagicWeapon === true && (!settings || sameVigor(p, vigorOrders(settings)));
+    p.preferMagicWeapon === true &&
+    (!settings || (sameVigor(p, vigorOrders(settings)) && samePack(p, packOrders(settings))));
 };
+
+// ---------------------------------------------------------------- the stage-room courier
+//
+// Operator, 2026-09-27: the crew donates spare equipment to whoever in the stage room lacks it,
+// and a courier — not a hunter — takes the rest to town, so the hunters never leave their station
+// while it is paying. The courier stands at the stage room like the depot, never enters the troll
+// room (it is not on the crew, and the troll room is the one room it must not stand in), and sells
+// on its own keeper's town trip, which rides the chalice from the stage room.
+
+const named = (r, names) => (names ?? []).map(norm).filter(Boolean)
+  .some(n => n === norm(r?.agent) || n === norm(r?.character));
+const packFraction = r => {
+  const p = Number(r?.pack?.percent);
+  return Number.isFinite(p) ? p / 100 : null;
+};
+
+/** The named courier's row, wherever it is, or null. */
+export const courierRow = (rows, s) =>
+  (s?.courier_agent?.length ? rows.find(r => named(r, s.courier_agent)) ?? null : null);
+
+/**
+ * The courier when it can take loot this pass: in the stage room, free, and with a pack KNOWN to be
+ * under its ceiling. An unknown pack is no room — a hand-over the server refuses costs a cooldown.
+ */
+export function courierIn(rows, s) {
+  const c = courierRow(rows, s);
+  if (!c || !c.in_game || c.room !== s.stage_room || !takeable(c) || c.piloted) return null;
+  const f = packFraction(c);
+  return f != null && f < s.courier_pack_ceiling ? c : null;
+}
+
+const courierStaged = (row, room) => {
+  const p = row.policy ?? {};
+  return row.mode === 'idle' && p.assignedRoom === room && p.roam === false;
+};
+
+// Spare pieces of worn gear matching `re`: the pack count less what is worn (pack_items counts the
+// worn one too). Normal grade only — magic loot is revealed and kept, never handed round.
+const gearSpares = (r, re) => (r?.pack_items ?? []).filter(i => re.test(String(i.name ?? '')) &&
+    (i.rarity == null || Number(i.rarity) === 0))
+  .map(i => ({ name: String(i.name), n: (Number(i.amount) || 0) -
+    ((r.worn ?? []).filter(w => norm(w) === norm(i.name)).length) }))
+  .filter(x => x.n > 0);
+const GAUNTLETS = /\bgauntlets?\b/i;
+
+/**
+ * What this hunter would hand the courier, before anyone else's needs are counted: the listed loot,
+ * spare armour, shields and gauntlets, and surplus real weapons. Pure; the plan below trims it.
+ */
+export function unloadable(row, s, lacks = () => false) {
+  const loot = (s.unload_items ?? []).map(name => ({ name, n: carried(row, name) })).filter(x => x.n > 0);
+  // A spare the stage room still lacks is not unloadable yet: planGear hands it to the one without.
+  const gear = [ARMOUR, SHIELD, GAUNTLETS].filter(re => !lacks(re)).flatMap(re => gearSpares(row, re));
+  const weapons = surplusWeapons(row, (Number(s.magic_spares) || 0) + 1);
+  return { loot, gear, weapons, any: loot.length + gear.length + weapons.length > 0 };
+}
+
+/**
+ * Should this READY hunter come off station to unload? Only with a full-enough pack, something to
+ * hand over, and a courier standing in the stage room with room — never to wait for one.
+ */
+export function unloadDue(row, s, rows, refused = new Set()) {
+  if (!s?.courier_agent?.length) return false;
+  const f = packFraction(row);
+  if (f == null || f < s.unload_at) return false;
+  const courier = courierIn(rows, s);
+  // A REFUSED HAND-OVER IS NOT A REASON TO WAIT. Held at the stage room for a courier the server
+  // will not trade with for a quarter hour, a hunter would sit there full the whole time.
+  if (!courier || refused.has(pairKey(row.agent, courier.agent))) return false;
+  return unloadable(row, s, stageLacks(rows, s)).any;
+}
+
+// Does anyone in the stage room lack a worn piece matching `re`? (Unknown gear counts as not lacking.)
+const stageLacks = (rows, s) => re => rows.some(r => r.in_game && r.room === s.stage_room &&
+  Array.isArray(r.worn) && !r.worn.some(n => re.test(n)) && re !== GAUNTLETS);
 
 // A TRADE THE SERVER REFUSED IS NOT RETRIED EVERY PASS. `supply` answers `supplied: false`
 // with a reason rather than throwing, so nothing upstream saw it fail, and the same refused
@@ -265,8 +351,12 @@ const hasPackRoom = r => !Number.isFinite(Number(r?.pack?.percent)) ||
  * The stage room's depot: the non-fighter STATIONED at the stage room (its assigned room) with
  * room in its pack, holding the most elderberry.
  */
-export function depotIn(rows, room, fighters = new Set()) {
+export function depotIn(rows, room, fighters = new Set(), courier = null) {
+  // THE COURIER IS NEVER THE DEPOT. Both stand in the stage room and neither fights, so without this
+  // the courier — empty-packed, fresh from town — would be picked the moment the depot filled, and
+  // the weapons meant to re-arm the crew would ride out to be sold.
   return rows.filter(r => r.in_game && r.room === room && !fighters.has(r.agent) && takeable(r) &&
+      r.agent !== courier?.agent &&
       !r.piloted && r.policy?.assignedRoom === room && hasPackRoom(r))
     .sort((a, b) => carried(b, 'elderberry') - carried(a, 'elderberry') ||
       carried(b, 'orc tooth') - carried(a, 'orc tooth'))[0] ?? null;
@@ -298,8 +388,9 @@ export const trollFleetRules = [{
     // keeper kept re-wielding its conjured twin re-queued the same equip every pass and the pass
     // returned before food, gear and the dedications: 2026-09-27, from 08:44 for an hour, every pass
     // was "0 deploy(s), 0 to the stage room" and nothing was dedicated at all.
+    const refusedEarly = refusedPairs(fleetObs.memory?.supply, fleetObs.at);
     const place = [], notes = [], equips = [];
-    let busy = 0, holding = 0, working = 0;
+    let busy = 0, holding = 0, working = 0, unloading = 0;
     const atStage = [], fighters = new Set();
     let s0 = null;
     for (const row of selected) {
@@ -309,6 +400,21 @@ export const trollFleetRules = [{
       if (r.size !== false) fighters.add(row.agent);
       if (!takeable(row) || row.parked || row.piloted || activeFactionWork(fleetObs, row)) {
         busy += 1; continue;
+      }
+      // A FULL PACK IS UNLOADED AT THE STAGE ROOM, NOT SOLD IN TOWN, while a courier stands there
+      // with room. The hunter is still ready — it keeps its weapon and walks straight back — so it
+      // is held here only for the hand-overs, and redeploys the pass after it has nothing left to
+      // give (unloadDue answers false then, whatever the pack reads).
+      const unload = r.ready && unloadDue(row, s, rows, refusedEarly);
+      if (unload) {
+        unloading += 1;
+        if (!staged(row, s.stage_room, s))
+          place.push({ do: 'stand-down', agent: row.agent, assigned_room: s.stage_room, roam: false,
+            ...vigorOrders(s), ...packOrders(s), moved: row.room !== s.stage_room,
+            why: `pack at ${Math.round(packFraction(row) * 100)}%: unload to the courier at stage room ` +
+              `${s.stage_room} rather than walk it to town` });
+        if (row.room === s.stage_room) atStage.push({ row, s, ready: true, unloading: true });
+        continue;
       }
       if (r.ready) {
         const g = guardians.members.has(row.agent);
@@ -335,7 +441,7 @@ export const trollFleetRules = [{
           why: 'it carries an enchanted weapon of its own family and wields a mundane one' });
       if (!staged(row, s.stage_room, s)) {
         place.push({ do: 'stand-down', agent: row.agent, assigned_room: s.stage_room, roam: false,
-          ...vigorOrders(s),
+          ...vigorOrders(s), ...packOrders(s),
           moved: row.room !== s.stage_room,
           why: `not ready for trolls (${r.why}); wait at stage room ${s.stage_room}` });
         place.push({ do: 'magic-policy', agent: row.agent,
@@ -343,8 +449,31 @@ export const trollFleetRules = [{
       }
       if (row.room === s.stage_room) atStage.push({ row, s, ready: false });
     }
+    // THE COURIER'S POST. It waits at the stage room, idle and not roaming; its own keeper's town
+    // trip takes it to market and home again. Taken only when free — a courier on its trip is left
+    // to finish it.
+    //
+    // THE ROAD IN IS GATED. The roads from Barloque and Jasper to the stage room cross the troll
+    // room (it is a cut vertex of the map there), and the courier is a small body: it sets out only while the crew is fighting in there to draw the
+    // trolls, and only near full health (courier_health). Until then its post is wherever it stands,
+    // so the station recall does not walk it in either.
+    const cr = courierRow(rows, s0);
+    if (cr?.in_game && takeable(cr) && !cr.piloted && !cr.parked) {
+      const crewIn = selected.filter(r => r.room === s0.room && fighters.has(r.agent)).length;
+      const hp = healthPct(cr);
+      const roadOpen = cr.room === s0.stage_room ||
+        (crewIn > 0 && hp != null && hp >= s0.courier_health);
+      const post = roadOpen ? s0.stage_room : cr.room;
+      if (post != null && !courierStaged(cr, post))
+        place.push({ do: 'stand-down', agent: cr.agent, assigned_room: post, roam: false,
+          moved: post !== cr.room,
+          why: roadOpen
+            ? `the crew's courier waits at stage room ${s0.stage_room} for their loot`
+            : `the courier holds in ${cr.room}: the road to the stage room crosses ${s0.room}, and ` +
+              (crewIn ? `it is at ${Math.round((hp ?? 0) * 100)}% health` : 'no hunter is fighting there') });
+    }
     const summary = `${working} in the troll room, ${holding} held at the stage room` +
-      (busy ? `, ${busy} busy` : '');
+      (unloading ? `, ${unloading} unloading` : '') + (busy ? `, ${busy} busy` : '');
     // A PLACEMENT NO LONGER ENDS THE PASS. It used to return here, and a crew of a dozen almost
     // always has one unit to send in or recall, so the stage room's work below — hand-downs, food,
     // and the dedications — ran on perhaps one pass in five (2026-09-27: 10:22, 10:34 and 10:45 were
@@ -367,16 +496,31 @@ export const trollFleetRules = [{
       : planGear(served, rows, { refused });
     const food = planFood(served, rows, { refused });
     const supply = planSupply(served, rows, fighters, { refused });
+    // DONATE FIRST, THEN UNLOAD: the gear and weapon hand-overs above serve whoever in the stage
+    // room lacks something, and only what is left goes to the courier.
+    const unload = planUnload(served, rows, fighters, s0, { refused,
+      given: new Set(supply.plan.filter(p => p.do === 'give-weapon').flatMap(p => p.what.map(w => w.id))) });
     const round = planDedication(served.filter(x => !x.ready && x.s.dedicate), rows,
       { refused, max: s0?.dedications_per_pass ?? 1 });
-    const plan = [...place, ...equips, ...gear.plan, ...food.plan, ...supply.plan, ...round.plan];
+    const plan = [...place, ...equips, ...gear.plan, ...food.plan, ...supply.plan, ...unload.plan,
+      ...round.plan];
     if (!plan.length)
-      return { kind: 'pass', why: [summary, courier.why, supply.why, round.why].filter(Boolean).join('; ') };
+      return { kind: 'pass', why: [summary, courier.why, supply.why, unload.why, round.why].filter(Boolean).join('; ') };
     return { kind: 'act', plan, notes,
       why: [placeWhy, equips.length ? `${equips.length} to wield the enchanted twin` : null, gear.summary, food.summary, supply.plan.length ? supply.summary : null,
-            round.plan.length ? `dedication (${round.summary})` : null].filter(Boolean).join('; ') };
+            unload.summary, round.plan.length ? `dedication (${round.summary})` : null].filter(Boolean).join('; ') };
   },
 }];
+
+/** The depot's REAL weapons beyond `depot_keep` of each name: what is for sale. */
+export function depotSurplus(depot, s) {
+  const byName = new Map();
+  for (const w of weaponsOf(depot).filter(w => w.made === false && !w.wielded)) {
+    if (!byName.has(w.name)) byName.set(w.name, []);
+    byName.get(w.name).push(w);
+  }
+  return [...byName.values()].flatMap(ws => ws.slice(s.depot_keep));
+}
 
 /**
  * THE DEPOT'S LOOT, WALKED TO A BUYER. Pure. Returns `{errand}` when one is due, else `{why}`.
@@ -388,15 +532,14 @@ export const trollFleetRules = [{
  */
 export function planCourier(atStage, rows, fighters, s, mem = {}, now = null) {
   if (!s?.courier) return { why: null };
+  // A NAMED STAGE-ROOM COURIER REPLACES THIS ONE. This errand walks a HUNTER to town, which is the
+  // very trip the operator ordered away; with a courier standing in the stage room, planUnload hands
+  // it the depot's surplus instead and its own town trip sells it.
+  if (s.courier_agent?.length) return { why: null };
   const room = s.stage_room;
   const depot = depotIn(rows, room, fighters);
   if (!depot) return { why: 'no depot in the stage room' };
-  const byName = new Map();
-  for (const w of weaponsOf(depot).filter(w => w.made === false && !w.wielded)) {
-    if (!byName.has(w.name)) byName.set(w.name, []);
-    byName.get(w.name).push(w);
-  }
-  const sell = [...byName.values()].flatMap(ws => ws.slice(s.depot_keep));
+  const sell = depotSurplus(depot, s);
   if (sell.length < s.courier_min_items)
     return { why: `the depot holds ${sell.length}/${s.courier_min_items} real weapons to sell` };
   const last = Number(mem.courier_last_at ?? 0);
@@ -549,7 +692,7 @@ export function planSupply(atStage, rows, fighters, { max = 4, refused = new Set
   const plan = [];
   if (!atStage.length) return { plan, why: null };
   const s = atStage[0].s;
-  const depot = depotIn(rows, s.stage_room, fighters);
+  const depot = depotIn(rows, s.stage_room, fighters, courierRow(rows, s));
   const given = new Set();
   const ok = (from, to) => !refused.has(pairKey(from, to));
   // DOWN BEFORE UP. A hand-down or a conjure is what gets a unit armed; a hand-up only tidies.
@@ -617,6 +760,63 @@ export function planSupply(atStage, rows, fighters, { max = 4, refused = new Set
   const cast = plan.filter(p => p.do === 'cast-create-weapon').length;
   return { plan, summary: `${up} up to the depot, ${down} down from it, ${lentN} lent between the crew, ${cast} conjured`,
     why: plan.length ? null : (depot ? 'nothing to hand over' : 'nothing to hand over, and no depot in the stage room') };
+}
+
+/**
+ * THE CREW'S LOOT TO THE COURIER, once every need in the stage room is met. Pure.
+ *
+ * Operator, 2026-09-27: spare equipment goes first to whoever in the stage room lacks it, and only
+ * then is anything sold. planGear and planSupply do the first half this same pass; this is the
+ * second: the listed loot by name, spare armour, shields and gauntlets nobody here lacks, surplus
+ * real weapons when no depot has room, and the depot's own stock beyond depot_keep. The courier's
+ * keeper sells it all on its next town trip.
+ */
+export function planUnload(atStage, rows, fighters, s, { max = 6, refused = new Set(),
+                                                        given = new Set() } = {}) {
+  if (!s?.courier_agent?.length || !atStage.length) return { plan: [], summary: null, why: null };
+  const courier = courierIn(rows, s);
+  if (!courier) {
+    const c = courierRow(rows, s);
+    return { plan: [], summary: null, why: !c || !c.in_game ? 'the courier is not in game'
+      : c.room !== s.stage_room ? `the courier is away (room ${c.room})`
+      : 'the courier has no pack room (or is busy)' };
+  }
+  const plan = [];
+  const ok = from => !refused.has(pairKey(from, courier.agent));
+  const depot = depotIn(rows, s.stage_room, fighters, courier);
+  const lacks = stageLacks(rows, s);
+  const sent = new Set(given);
+  for (const { row } of atStage) {
+    if (plan.length >= max) break;
+    if (row.agent === courier.agent || !fighters.has(row.agent) || !ok(row.agent)) continue;
+    const u = unloadable(row, s, lacks);
+    for (const { name, n } of u.loot) {
+      if (plan.length >= max) break;
+      plan.push({ do: 'give-reagent', from: row.agent, to: courier.agent, item: name, amount: n,
+        why: `${row.agent} unloads ${n} ${name} to the courier rather than walk it to town` });
+    }
+    for (const { name, n } of u.gear)
+      for (let i = 0; i < n && plan.length < max; i++)
+        plan.push({ do: 'give-gear', from: row.agent, to: courier.agent, item: name,
+          why: `nobody in the stage room lacks one; ${row.agent}'s spare ${name} goes to be sold` });
+    // With a depot, surplus weapons go UP to it (planSupply) as stock; only without one are they sold.
+    if (!depot) for (const w of u.weapons) {
+      if (plan.length >= max) break;
+      if (sent.has(w.id)) continue;
+      sent.add(w.id);
+      plan.push({ do: 'give-weapon', from: row.agent, to: courier.agent, what: [{ id: w.id, amount: 1 }],
+        weapon: w.name, why: `no depot has room; ${row.agent}'s surplus ${w.name} goes to be sold` });
+    }
+  }
+  if (depot && ok(depot.agent)) for (const w of depotSurplus(depot, s)) {
+    if (plan.length >= max) break;
+    if (sent.has(w.id)) continue;
+    sent.add(w.id);
+    plan.push({ do: 'give-weapon', from: depot.agent, to: courier.agent, what: [{ id: w.id, amount: 1 }],
+      weapon: w.name, why: `the depot holds more than ${s.depot_keep} ${w.name}; the courier sells the rest` });
+  }
+  return { plan, summary: plan.length ? `${plan.length} hand-over(s) to the courier` : null,
+    why: plan.length ? null : 'nothing for the courier' };
 }
 
 /**

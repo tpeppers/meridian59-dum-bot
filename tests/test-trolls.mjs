@@ -678,3 +678,138 @@ test('trolls: a refused pair is skipped until the cooldown runs, and the tick re
   assert.ok(again.plan.some(p => p.from === 'h' && p.to === 'depot'));
   assert.equal(refusedSupplies({}, 1), null);
 });
+
+// ---- the stage-room courier (operator, 2026-09-27) ------------------------------------------
+// "The troll crew should also donate their spare equipment to anyone in room2 who is lacking before
+// doing traditional sell runs ... use [a courier] for buying / delivering equipment ... to prevent
+// our troll hunters from having to leave their stations while they're running successfully".
+
+import { courierIn, unloadDue, unloadable, planUnload } from '../src/decide/rules/trolls.mjs';
+
+const courierDoctrine = (over = {}) => {
+  const d = doctrine();
+  d.strategies.settings = { ...(d.strategies.settings ?? {}),
+    [ID]: { ...(d.strategies.settings?.[ID] ?? {}), courier_agent: ['courier'], ...over } };
+  return d;
+};
+const cs = (over = {}) => ({ ...settings(courierDoctrine()), ...over });
+const courierAt = (room, over = {}) => row('courier', { room, max_health: 21, level: 21, mode: 'idle',
+  policy: { assignedRoom: 2, roam: false }, pack: { percent: 20 },
+  health: { value: 21, max: 21, pct: 1 }, weapon_magic: wm([]), ...over });
+// A hunter deployed in the troll room exactly as the rule would leave it, with the courier's triggers.
+const onStation = { assignedRoom: 599, hunt: 'troll', roam: false, preferMagicWeapon: true,
+  fleeBelow: 0.45, restBelow: 0.85, trainingStyle: 'normal', ...VIG, sellAtLoad: 0.97, maxCarry: 60 };
+const fullHunter = (agent, over = {}) => inRoom(agent, { mode: 'farm', policy: onStation,
+  pack: { percent: 88 }, pack_items: [{ name: 'emerald', amount: 300, rarity: 0 }], ...over });
+const standDownOf = (out, agent) => (out.plan ?? []).find(p => p.do === 'stand-down' && p.agent === agent);
+
+test('courier: without one named, the crew keeps its own sell triggers — nothing is sent', () => {
+  const dep = deploysOf(fire([inRoom('g0')], all(1)))[0];
+  assert.equal(dep.sell_at_load, undefined);
+  assert.equal(dep.max_carry, undefined);
+});
+
+test('courier: named, every deploy raises the keeper\'s own sell run to the fallback', () => {
+  const dep = deploysOf(fire([inRoom('g0'), courierAt(2)], all(1), courierDoctrine()))[0];
+  assert.equal(dep.sell_at_load, 0.97);
+  assert.equal(dep.max_carry, 60);
+  const args = callsForFleetPlan([dep])[0].args;
+  assert.equal(args.sell_at_load, 0.97, 'the deploy whitelist carries it');
+  assert.equal(args.max_carry, 60);
+  const sd = callsForFleetPlan([{ do: 'stand-down', agent: 'g0', assigned_room: 2, roam: false,
+    sell_at_load: 0.97, max_carry: 60 }])[0].args;
+  assert.equal(sd.sell_at_load, 0.97, 'and so does the stand-down');
+  assert.equal(sd.max_carry, 60);
+});
+
+test('courier: a full hunter comes to the stage room to unload, not to town', () => {
+  const out = fire([fullHunter('g0'), courierAt(2)], all(1), courierDoctrine());
+  const sd = standDownOf(out, 'g0');
+  assert.ok(sd, JSON.stringify(out.plan));
+  assert.equal(sd.assigned_room, 2);
+  assert.equal(sd.moved, true);
+  assert.match(sd.why, /unload/);
+  assert.ok(!deploysOf(out).some(p => p.agent === 'g0'));
+});
+
+test('courier: no hunter is pulled off station to wait — away, full, or refused means stay', () => {
+  const d = courierDoctrine();
+  assert.ok(!standDownOf(fire([fullHunter('g0'), courierAt(714)], all(1), d), 'g0'), 'courier in town');
+  assert.ok(!standDownOf(fire([fullHunter('g0'), courierAt(2, { pack: { percent: 85 } })], all(1), d), 'g0'),
+    'courier full');
+  assert.ok(!standDownOf(fire([fullHunter('g0'), courierAt(2, { pack: undefined })], all(1), d), 'g0'),
+    'an unknown courier pack is no room');
+  const refused = new Set(['g0>courier']);
+  assert.equal(unloadDue(fullHunter('g0'), cs(), [courierAt(2)], refused), false, 'a refused pair');
+});
+
+test('courier: a pack full of nothing the courier takes is not a reason to leave', () => {
+  const h = fullHunter('g0', { pack_items: [{ name: 'orc tooth', amount: 400 }, { name: 'meat pie', amount: 30 }] });
+  assert.equal(unloadDue(h, cs(), [courierAt(2)]), false);
+  assert.ok(!standDownOf(fire([h, courierAt(2)], all(1), courierDoctrine()), 'g0'));
+});
+
+test('courier: at the stage room the loot goes to the courier, and the hunter redeploys after', () => {
+  const s = cs();
+  const at = fullHunter('g0', { room: 2, mode: 'idle', policy: { assignedRoom: 2, roam: false,
+    preferMagicWeapon: true, ...VIG, sellAtLoad: 0.97, maxCarry: 60 } });
+  const out = planUnload([{ row: at, s, ready: true }], [at, courierAt(2)], new Set(['g0']), s);
+  const give = out.plan.find(p => p.do === 'give-reagent');
+  assert.deepEqual([give?.from, give?.to, give?.item, give?.amount], ['g0', 'courier', 'emerald', 300]);
+  const empty = { ...at, pack: { percent: 30 }, pack_items: [] };
+  assert.equal(unloadDue(empty, s, [courierAt(2)]), false, 'nothing left: back to the troll room');
+});
+
+test('courier: spare armour and shields go to whoever here lacks one first, the courier after', () => {
+  const s = cs();
+  const giver = fullHunter('g0', { room: 2, worn: ['leather armor', 'small round shield'],
+    pack_items: [{ name: 'small round shield', amount: 2, rarity: 0 }] });
+  const bare = inRoom('g1', { room: 2, worn: ['leather armor'] });
+  const c = courierAt(2);
+  const held = planUnload([{ row: giver, s, ready: true }, { row: bare, s, ready: true }],
+    [giver, bare, c], new Set(['g0', 'g1']), s);
+  assert.ok(!held.plan.some(p => p.do === 'give-gear'), 'g1 has no shield, so the spare stays in the room');
+  const gear = planGear([{ row: giver, s }, { row: bare, s }], [giver, bare, c]);
+  assert.ok(gear.plan.some(p => p.do === 'give-gear' && p.to === 'g1'), 'and planGear hands it to g1');
+  const sold = planUnload([{ row: giver, s, ready: true }], [giver, c], new Set(['g0']), s);
+  assert.ok(sold.plan.some(p => p.do === 'give-gear' && p.to === 'courier' && p.item === 'small round shield'),
+    JSON.stringify(sold.plan));
+});
+
+test('courier: never the depot, and the depot\'s surplus goes to it rather than a hunter\'s walk', () => {
+  const s = cs();
+  const c = courierAt(2, { policy: { assignedRoom: 2, roam: false } });
+  assert.equal(depotIn([c], 2, new Set(), c), null, 'the only non-fighter here is the courier');
+  const depot = row('depot', { room: 2, max_health: 25, policy: { assignedRoom: 2 }, pack: { percent: 50 },
+    pack_items: [{ name: 'elderberry', amount: 80 }],
+    weapon_magic: wm(Array.from({ length: 5 }, (_, i) => W(300 + i, 'long sword', false))) });
+  const h = hammerer('g0', [W(1, 'hammer', true, { wielded: true }), W(2, 'hammer', true)],
+    { health: { value: 75, max: 75, pct: 1 } });
+  assert.equal(planCourier([{ row: h, s, ready: true }], [h, depot, c], new Set(['g0']), s, {}, 1).errand,
+    undefined, 'no hunter walks the depot to town');
+  const out = planUnload([{ row: h, s, ready: true }], [h, depot, c], new Set(['g0']), s);
+  const ids = out.plan.filter(p => p.from === 'depot' && p.to === 'courier').flatMap(p => p.what.map(w => w.id));
+  assert.deepEqual(ids, [302, 303, 304], 'five long swords less the depot stock of two');
+});
+
+test('courier: the road in is gated on the crew fighting in the troll room and its own health', () => {
+  const d = courierDoctrine();
+  const staged2 = inRoom('g0', { room: 2, mode: 'idle', weapon_magic: mundane(),
+    policy: { assignedRoom: 2, roam: false, preferMagicWeapon: true, ...VIG, sellAtLoad: 0.97, maxCarry: 60 } });
+  const away = courierAt(370, { policy: { assignedRoom: 370, roam: false } });
+  assert.ok(!standDownOf(fire([staged2, away], all(1), d), 'courier'), 'nobody in the troll room: it holds');
+  const open = standDownOf(fire([inRoom('g0'), away], all(1), d), 'courier');
+  assert.deepEqual([open?.assigned_room, open?.moved], [2, true], JSON.stringify(open));
+  // Posted at the stage room but standing elsewhere, hurt: the post moves to where it stands, so the
+  // station recall does not walk it through the troll room either.
+  const hurt = standDownOf(fire([inRoom('g0'), courierAt(370, { health: { value: 10, max: 21, pct: 0.48 } })],
+    all(1), d), 'courier');
+  assert.deepEqual([hurt?.assigned_room, hurt?.moved], [370, false], 'hurt: its post is where it stands');
+});
+
+test('courier: its pack is known and under the ceiling, or it takes nothing', () => {
+  const s = cs();
+  assert.equal(courierIn([courierAt(2)], s)?.agent, 'courier');
+  assert.equal(courierIn([courierAt(2, { pack: { percent: 80 } })], s), null);
+  assert.equal(unloadable(fullHunter('g0'), s).loot[0]?.name, 'emerald');
+});

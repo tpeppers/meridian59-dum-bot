@@ -172,6 +172,8 @@ export function callsForFleetPlan(plan = [], why = null, { yieldTo = [] } = {}) 
         threat_ceiling: step.threat_ceiling,
         vigor_ceiling: step.vigor_ceiling,
         no_food_vigor_floor: step.no_food_vigor_floor,
+        // The troll crew's sell triggers, raised while a stage-room courier takes their loot.
+        sell_at_load: step.sell_at_load,
       }, yieldSet, yieldedFields), why: step.why ?? why });
       continue;
     }
@@ -258,7 +260,8 @@ export function callsForFleetPlan(plan = [], why = null, { yieldTo = [] } = {}) 
       const agent = need(step, 'agent'), assigned_room = need(step, 'assigned_room');
       calls.push({ tool: 'autopilot', args: dropYielded({ agent, action: 'start', mode: 'idle',
         assigned_room, roam: step.roam, fight_above_vigor: step.fight_above_vigor,
-        vigor_ceiling: step.vigor_ceiling, no_food_vigor_floor: step.no_food_vigor_floor },
+        vigor_ceiling: step.vigor_ceiling, no_food_vigor_floor: step.no_food_vigor_floor,
+        sell_at_load: step.sell_at_load, max_carry: step.max_carry },
         yieldSet, yieldedFields), why: step.why ?? why });
       if (step.moved) calls.push({ tool: 'travel', args: { agent, to: assigned_room, background: true },
         timeoutMs: 300_000, why: step.why ?? why });

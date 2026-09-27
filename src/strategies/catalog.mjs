@@ -168,6 +168,40 @@ export const STRATEGY_CATALOG = Object.freeze([
       Object.freeze({ id: 'courier_health', title: 'Courier health floor', type: 'number',
         min: 0.5, max: 1, default: 0.9,
         description: 'The road starts in Ukgoth; the courier sets out near full or not at all.' }),
+      // THE HUNTERS STAY ON STATION (operator, 2026-09-27): "donate their spare equipment to anyone
+      // in room2 who is lacking before doing traditional sell runs ... use [a courier] for buying /
+      // delivering equipment ... to prevent our troll hunters from having to leave their stations
+      // while they're running successfully". A keeper's own sell run is the troll room -> Barloque
+      // -> back, thirty minutes and more off station; the stage room is one hop.
+      Object.freeze({ id: 'courier_agent', title: 'Stage-room courier', type: 'item-list', default: [],
+        description: 'The unit (agent or character) that stands at the stage room, takes the crew\'s ' +
+          'loot and sells it on its own town trip. Named, it replaces the fighter courier: nobody ' +
+          'on the crew walks loot to town, and a hunter with a full pack unloads at the stage room ' +
+          'instead. Empty keeps the old behaviour.' }),
+      Object.freeze({ id: 'unload_at', title: 'Unload at pack fullness', type: 'number',
+        min: 0.3, max: 0.95, default: 0.8,
+        description: 'A deployed hunter whose pack reaches this fraction is sent to the stage room to ' +
+          'hand its loot to the courier — only while the courier is there with room, so a hunter is ' +
+          'never pulled off station to wait for one.' }),
+      Object.freeze({ id: 'unload_items', title: 'Loot the courier takes', type: 'item-list',
+        default: ['emerald', 'sapphire', 'ruby', 'diamond', 'blue dragon scale',
+          'red mushroom', 'blue mushroom', 'purple mushroom', 'scroll'],
+        description: 'Handed over whole, by name. An allow-list on purpose: anything unnamed stays in ' +
+          'the hunter\'s pack, so food, orc teeth, elderberry and magic loot are never swept up. ' +
+          'Spare armour and shields go too, once nobody in the stage room lacks one, and surplus ' +
+          'real weapons when there is no depot with room.' }),
+      Object.freeze({ id: 'courier_pack_ceiling', title: 'Courier takes loot below', type: 'number',
+        min: 0.3, max: 0.95, default: 0.8,
+        description: 'Pack fullness at which the courier stops taking loot; its own keeper sells at ' +
+          'its sell_at_load, riding the chalice from the stage room.' }),
+      Object.freeze({ id: 'sell_at_load', title: 'Crew sell-run trigger', type: 'number',
+        min: 0.5, max: 1, default: 0.97,
+        description: 'Carried on every deploy and stand-down. High, so the keeper\'s own sell run is ' +
+          'the fallback and the stage-room unload is the normal path.' }),
+      Object.freeze({ id: 'max_carry', title: 'Crew stack limit', type: 'integer',
+        min: 14, max: 200, default: 60,
+        description: 'The keeper\'s other sell trigger counts STACKS. 14 sent the stage caster on trips ' +
+          'with a half-empty pack until it was raised to 60.' }),
     ]),
   }),
   Object.freeze({

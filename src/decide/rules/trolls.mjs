@@ -122,20 +122,79 @@ export function surplusWeapons(row, keep) {
 // 599 the keeper tried to take the magic long sword off for a hammer bout, then walked out of the
 // room to rest up mana for Create Weapon, and the rule's recall and the keeper's training walked
 // him in and out for as long as it ran. `normal` fights with whatever the tie-break wields.
-const deployOrders = (settings) => ({
-  to: settings.room, hunt: settings.hunt, roam: false,
+// THE CEILING IS PART OF EVERY DEPLOY, NOT ONLY THE GUARDIAN ONE. A Guardian order raises it; the
+// ordinary order has to put it back, or a unit that left the group keeps a band that admits a
+// level-120 stone troll on its own. 150% is the keeper's default (threatCeiling).
+export const DEFAULT_CEILING = Object.freeze({ mode: 'percent', value: 150 });
+
+const deployOrders = (settings, guardian = false) => ({
+  to: settings.room,
+  // Guardian FIRST: the keeper's quarry choice reads the list in order, so the whole group
+  // turns to the Guardian that comes for it rather than splitting between it and the trolls.
+  hunt: guardian ? [...settings.guardian_hunt, ...settings.hunt] : settings.hunt,
+  roam: false,
   flee_below: settings.flee_below, rest_below: settings.rest_below,
   prefer_magic_weapon: true, purpose: 'advance', goals: [{ kind: 'hp' }],
   training_style: 'normal',
+  threat_ceiling: guardian ? { mode: 'percent', value: settings.guardian_ceiling } : DEFAULT_CEILING,
 });
+
+const sameCeiling = (p, o) => {
+  const have = p.threatCeiling ?? DEFAULT_CEILING;
+  return (have.mode ?? 'percent') === o.mode && Number(have.value) === Number(o.value);
+};
 
 const deployed = (row, o) => {
   const p = row.policy ?? {};
   return row.mode === 'farm' && p.assignedRoom === o.to && sameList(p.hunt, o.hunt) &&
     p.roam === false && p.preferMagicWeapon === true &&
     p.fleeBelow === o.flee_below && p.restBelow === o.rest_below &&
-    (p.trainingStyle ?? 'normal') === o.training_style;
+    (p.trainingStyle ?? 'normal') === o.training_style && sameCeiling(p, o.threat_ceiling);
 };
+
+// ---------------------------------------------------------------- the Guardians of Zjiria
+//
+// Three level-120 stone trolls PLACED in Ukgoth (i9.kod), same 80% NONMAGIC resistance as a troll
+// and faster. Alone they killed ~200 of this fleet's characters. The operator, 2026-09-27: "The
+// guardians should be killable if they group up enough and have good armor/shields." So a
+// Guardian is quarry only for a GROUP: at least `guardian_group` ready units standing in the troll
+// room together, each in armour and carrying a shield, each healthy. Below that nobody hunts one.
+//
+// Joining needs `guardian_health`; staying needs only to be clear of the flee line by a margin, so
+// one blow does not dissolve the group and re-form it on the next pass.
+const ARMOUR = /\barmou?r\b|\bmail\b|\bplate\b/i;
+const SHIELD = /\bshield\b/i;
+export const gearedForGuardians = row => Array.isArray(row?.worn) &&
+  row.worn.some(n => ARMOUR.test(n)) && row.worn.some(n => SHIELD.test(n));
+const healthPct = row => {
+  const h = row?.health;
+  if (h && Number.isFinite(Number(h.pct))) return Number(h.pct);
+  if (h && Number(h.max) > 0) return Number(h.value) / Number(h.max);
+  return null;
+};
+const huntsGuardians = (row, s) => (row?.policy?.hunt ?? []).some(h =>
+  (s.guardian_hunt ?? []).some(g => String(g).toLowerCase() === String(h).toLowerCase()));
+
+/** Who fights Guardians this pass, and why not when nobody does. Pure. */
+export function guardianGroup(units = []) {
+  const on = units.filter(u => u.s?.guardians === true);
+  if (!on.length) return { members: new Set(), why: null };
+  const s = on[0].s;
+  const eligible = on.filter(({ row, s: us, ready, free }) => {
+    if (!ready || !free || row.room !== us.room || !gearedForGuardians(row)) return false;
+    const hp = healthPct(row);
+    if (hp == null) return false;
+    return huntsGuardians(row, us) ? hp >= us.flee_below + 0.1 : hp >= us.guardian_health;
+  });
+  if (eligible.length >= s.guardian_group)
+    return { members: new Set(eligible.map(u => u.row.agent)),
+             why: `${eligible.length} armoured, shielded and healthy in ${s.room}` };
+  const inRoom = on.filter(u => u.ready && u.row.room === u.s.room);
+  const geared = inRoom.filter(u => gearedForGuardians(u.row));
+  return { members: new Set(),
+           why: `${eligible.length}/${s.guardian_group} fit to group (${inRoom.length} ready in ` +
+                `${s.room}, ${geared.length} of them in armour and a shield)` };
+}
 const staged = (row, room) => {
   const p = row.policy ?? {};
   return row.mode === 'idle' && p.assignedRoom === room && p.roam === false &&
@@ -196,13 +255,20 @@ export const trollFleetRules = [{
     if (!selected.length) return { kind: 'pass', why: 'Ukgoth Trolls is off for every live unit' };
     const rows = fleetObs.characters ?? [];
 
+    // ---- 0. the Guardian group, decided before anybody is placed
+    const settingsOf = new Map(selected.map(row =>
+      [row.agent, strategySettings(fleetObs, doctrine, row.agent, STRATEGY_IDS.UKGOTH_TROLLS)]));
+    const guardians = guardianGroup(selected.map(row => ({ row, s: settingsOf.get(row.agent),
+      ready: trollReadiness(row, settingsOf.get(row.agent)).ready,
+      free: takeable(row) && !row.parked && !row.piloted && !activeFactionWork(fleetObs, row) })));
+
     // ---- 1. placement
     const place = [], notes = [];
     let busy = 0, holding = 0, working = 0;
     const atStage = [], fighters = new Set();
     let s0 = null;
     for (const row of selected) {
-      const s = strategySettings(fleetObs, doctrine, row.agent, STRATEGY_IDS.UKGOTH_TROLLS);
+      const s = settingsOf.get(row.agent);
       s0 ??= s;
       const r = trollReadiness(row, s);
       if (r.size !== false) fighters.add(row.agent);
@@ -210,10 +276,14 @@ export const trollFleetRules = [{
         busy += 1; continue;
       }
       if (r.ready) {
-        const o = deployOrders(s);
+        const g = guardians.members.has(row.agent);
+        const o = deployOrders(s, g);
         if (deployed(row, o)) working += 1;
         else place.push({ do: 'deploy', agent: row.agent, ...o,
-          why: `${r.why}: hunt ${o.hunt.join(', ')} in ${o.to}, roaming off, preferring magic` });
+          why: g ? `Guardian group of ${guardians.members.size} (${guardians.why}): hunt ` +
+                   `${o.hunt.join(', ')} in ${o.to}, ceiling ${o.threat_ceiling.value}%`
+                 : `${r.why}: hunt ${o.hunt.join(', ')} in ${o.to}, roaming off, preferring magic` +
+                   (guardians.why ? ` (no Guardians: ${guardians.why})` : '') });
         // A READY UNIT PASSING THROUGH THE STAGE ROOM still hands up and may still courier.
         if (row.room === s.stage_room) atStage.push({ row, s, ready: true });
         continue;

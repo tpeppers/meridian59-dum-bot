@@ -174,6 +174,9 @@ export function normalizeFleetRow(r = {}) {
     // Null means an older harness did not answer, which the troll gate refuses rather than
     // reading as "nothing is magic" or "everything is".
     weapon_magic: (r.weapon_magic && typeof r.weapon_magic === 'object') ? r.weapon_magic : null,
+    // WHAT IS WORN besides the weapon (armour, shield, helm...), names as the server gives them.
+    // Null means an older harness did not answer — the Guardian gate refuses rather than guessing.
+    worn: Array.isArray(r.worn) ? r.worn.map(String) : null,
     reagents: (r.reagents && typeof r.reagents === 'object')
       ? { elderberry: num(r.reagents.elderberry), herbs: num(r.reagents.herbs) } : null,
     has_food: bool(r.has_food),

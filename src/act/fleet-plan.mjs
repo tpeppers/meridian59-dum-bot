@@ -169,6 +169,7 @@ export function callsForFleetPlan(plan = [], why = null, { yieldTo = [] } = {}) 
         goals: step.goals,
         max_bots_per_safe_spot: step.max_bots_per_safe_spot,
         prefer_magic_weapon: step.prefer_magic_weapon,
+        threat_ceiling: step.threat_ceiling,
       }, yieldSet, yieldedFields), why: step.why ?? why });
       continue;
     }

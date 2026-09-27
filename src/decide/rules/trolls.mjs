@@ -89,6 +89,11 @@ export const isBannedFor = (row, name) => {
 
 const inFamily = (row, w) => {
   if (isBannedFor(row, w.name)) return false;
+  // AN ENCHANTED WEAPON IS EVERYONE'S FAMILY (operator, 2026-09-27: troll fights are "always
+  // enchanted & only enchanted"). The keeper now ranks magic ahead of its priority (weaponRanking,
+  // magicSwap), so any magic weapon a unit does not ban is one equip from ready, a spare worth
+  // keeping, and a fair loan. Mundane weapons still go by rank: which base to dedicate.
+  if (w.bypasses_nonmagic === true) return true;
   const rank = rankFor(row), held = row?.weapon_magic?.wielded?.name;
   if (!held) return true;
   return rank(w.name) <= rank(held);
@@ -405,7 +410,11 @@ export const trollFleetRules = [{
     // was "0 deploy(s), 0 to the stage room" and nothing was dedicated at all.
     const refusedEarly = refusedPairs(fleetObs.memory?.supply, fleetObs.at);
     const place = [], notes = [], equips = [];
-    let busy = 0, holding = 0, working = 0, unloading = 0;
+    let busy = 0, holding = 0, working = 0, unloading = 0, farming = 0;
+    // Food the stage room could hand a hungry unit this pass (planFood's donors keep 300 each).
+    const stageRoom = settingsOf.get(selected[0]?.agent)?.stage_room;
+    const stageSpare = rows.filter(r => r.in_game && r.room === stageRoom && takeable(r) && !r.piloted)
+      .reduce((n, r) => n + Math.max(0, crewLarder(r) - 300), 0);
     const atStage = [], fighters = new Set();
     let s0 = null;
     for (const row of selected) {
@@ -415,6 +424,21 @@ export const trollFleetRules = [{
       if (r.size !== false) fighters.add(row.agent);
       if (!takeable(row) || row.parked || row.piloted || activeFactionWork(fleetObs, row)) {
         busy += 1; continue;
+      }
+      // HUNGRY AND NOTHING TO EAT: FARM FOOD, DO NOT WAIT (operator, 2026-09-27: "Upstairs castle
+      // Victoria can be farmed by 80vigor bots for inky caps if they can't yet troll hunt"). A unit
+      // under the vigor floor whose own larder — and what the stage room can spare it — cannot eat it
+      // back up is useless in the troll room (the keeper will not start a fight under the floor) and
+      // was waiting in the stage room for tens of minutes. It farms inky_room at a floor it can
+      // actually fight at, and comes back the pass its larder can lift it.
+      if (inkyDue(row, s, stageSpare)) {
+        const o = inkyOrders(s);
+        farming += 1;
+        if (!deployed(row, o))
+          place.push({ do: 'deploy', agent: row.agent, ...o,
+            why: `vigor ${vigorOf(row)} under the ${s.vigor_floor} floor with ${crewLarder(row)} of food ` +
+              `aboard and ${stageSpare} spare in the stage room: farm ${o.hunt.join(', ')} in ${o.to} for inky caps` });
+        continue;
       }
       // A FULL PACK IS UNLOADED AT THE STAGE ROOM, NOT SOLD IN TOWN, while a courier stands there
       // with room. The hunter is still ready — it keeps its weapon and walks straight back — so it
@@ -491,7 +515,8 @@ export const trollFleetRules = [{
               (crewIn ? `it is at ${Math.round((hp ?? 0) * 100)}% health` : 'no hunter is fighting there') });
     }
     const summary = `${working} in the troll room, ${holding} held at the stage room` +
-      (unloading ? `, ${unloading} unloading` : '') + (busy ? `, ${busy} busy` : '');
+      (unloading ? `, ${unloading} unloading` : '') + (farming ? `, ${farming} farming food` : '') +
+      (busy ? `, ${busy} busy` : '');
     // A PLACEMENT NO LONGER ENDS THE PASS. It used to return here, and a crew of a dozen almost
     // always has one unit to send in or recall, so the stage room's work below — hand-downs, food,
     // and the dedications — ran on perhaps one pass in five (2026-09-27: 10:22, 10:34 and 10:45 were
@@ -665,7 +690,28 @@ export function planGear(atStage, rows, { max = 4, refused = new Set() } = {}) {
 // bought it. Nutrition is the vigor a bite returns (food.kod): inky-cap 50, meat pie 30, bread 20.
 export const CREW_FOODS = Object.freeze([['Inky-cap mushroom', 50], ['meat pie', 30], ['loaf of bread', 20]]);
 export const crewLarder = row => CREW_FOODS.reduce((n, [name, v]) => n + carried(row, name) * v, 0);
-const vigorOf = row => Number(row?.vigor?.value ?? row?.vigor);
+// NaN, never 0, when the board did not say: Number(null) is 0, which read an unread unit as starving.
+const vigorOf = row => { const v = row?.vigor?.value ?? row?.vigor; return v == null ? NaN : Number(v); };
+
+/**
+ * Should this unit farm food rather than wait? Under the vigor floor, and neither its own larder nor
+ * the stage room's spare can eat it back up. A unit with an UNKNOWN vigor is never sent.
+ */
+export function inkyDue(row, s, stageSpare = 0) {
+  if (!s?.inky_room) return false;
+  const vigor = vigorOf(row);
+  if (!Number.isFinite(vigor) || vigor >= (s.vigor_floor ?? 160)) return false;
+  const gap = (s.vigor_floor ?? 160) - vigor;
+  return crewLarder(row) < gap && stageSpare < gap;
+}
+
+/** The farming posture: the unit's troll orders, re-aimed at inky_room with a floor under 80. */
+export const inkyOrders = s => ({
+  ...deployOrders(s, false),
+  to: s.inky_room, hunt: s.inky_hunt,
+  threat_ceiling: DEFAULT_CEILING,
+  fight_above_vigor: s.inky_fight_above_vigor ?? 40,
+});
 
 /**
  * Top up the hungry from the fed, inside the stage room. Pure. A unit under its vigor floor with

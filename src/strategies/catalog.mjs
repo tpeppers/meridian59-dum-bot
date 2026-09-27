@@ -139,6 +139,18 @@ export const STRATEGY_CATALOG = Object.freeze([
         min: 0, max: 80, default: 60,
         description: 'The floor when the larder is empty, so a hunter out of food still fights off the ' +
           'rest cap rather than waiting for ever under an unreachable 160.' }),
+      // A HUNGRY HUNTER FARMS FOOD INSTEAD OF WAITING (operator, 2026-09-27: "Upstairs castle
+      // Victoria can be farmed by 80vigor bots for inky caps if they can't yet troll hunt").
+      Object.freeze({ id: 'inky_room', title: 'Inky-cap farming room', type: 'integer', min: 0, default: 39,
+        description: 'Where a crew unit under the vigor floor, with not enough food aboard or spare in ' +
+          'the stage room to eat back up to it, farms until its larder can. 0 turns it off.' }),
+      Object.freeze({ id: 'inky_hunt', title: 'Inky-cap farming quarry', type: 'item-list',
+        default: ['zombie', 'battered skeleton'],
+        description: 'What it hunts there — the room\'s own table, so the spawn cap is not blocked.' }),
+      Object.freeze({ id: 'inky_fight_above_vigor', title: 'Farming vigor floor', type: 'integer',
+        min: 0, max: 80, default: 40,
+        description: 'The fight-start floor while farming. It has to sit under the 80 resting cap, or a ' +
+          'hunter sent to farm because it is hungry would refuse every fight for being hungry.' }),
       Object.freeze({ id: 'share_gear', title: 'Share armour and shields', type: 'boolean', default: true,
         description: 'Hand a spare armour or shield from anyone in the stage room to a hunter without ' +
           'one, then wear_best. Needs a harness whose supply-by-name never offers a worn item.' }),

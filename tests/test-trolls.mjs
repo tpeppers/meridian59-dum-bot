@@ -519,10 +519,13 @@ const hammerer = (agent, weapons, over = {}) => row(agent, { room: 2, mode: 'idl
   policy: { assignedRoom: 2, roam: false, preferMagicWeapon: true, weaponPriority: ['hammer', 'axe'] },
   weapon_magic: wm(weapons), ...over });
 
-test('trolls: a magic AXE is no spare to a hammer trainee (the tie-break never wields it)', () => {
+// REVERSED 2026-09-27 by the operator: troll fights are "always enchanted & only enchanted", and the
+// keeper now ranks magic ahead of its priority, so an unbanned magic axe IS a hammer trainee's spare.
+test('trolls: a magic AXE is a spare to a hammer trainee, unless the trainee bans axes', () => {
   const r = hammerer('h', [W(1, 'hammer', true, { wielded: true }), W(2, 'axe', true)]);
-  assert.equal(familyMagicSpares(r), 0);
-  assert.equal(trollReadiness(r, settings(doctrine())).ready, false);
+  assert.equal(familyMagicSpares(r), 1);
+  const banned = { ...r, policy: { ...r.policy, bannedWeapons: ['axe'] } };
+  assert.equal(familyMagicSpares(banned), 0, 'a banned magic weapon is still nobody\'s spare');
   const ok2 = hammerer('h', [W(1, 'hammer', true, { wielded: true }), W(3, 'hammer', true)]);
   assert.equal(trollReadiness(ok2, settings(doctrine())).ready, true);
 });
@@ -933,4 +936,25 @@ test('courier: it tops a depot under its elderberry floor up to the target, and 
     'a depot too full to receive is skipped');
   const off = cs({ depot_elderberry: 0 });
   assert.ok(!planUnload([], [c, low], new Set(), off).plan.some(p => p.item === 'elderberry'), '0 is off');
+});
+
+// ---- hungry crew farm food (operator, 2026-09-27: "Upstairs castle Victoria can be farmed by
+// 80vigor bots for inky caps if they can't yet troll hunt")
+import { inkyDue, inkyOrders } from '../src/decide/rules/trolls.mjs';
+test('trolls: a hungry unit with nothing to eat farms inky caps, and comes back when it can eat', () => {
+  const s = settings(doctrine());
+  const hungry = row('h', { room: 2, vigor: { value: 80, max: 200 }, pack_items: [], mode: 'idle',
+    weapon_magic: mundane(), policy: { assignedRoom: 2, roam: false, preferMagicWeapon: true } });
+  assert.equal(inkyDue(hungry, s, 0), true, 'vigor 80, no food, nothing spare in the stage room');
+  const out = fire([hungry], { h: [ID] });
+  const dep = out.plan.find(p => p.do === 'deploy' && p.agent === 'h');
+  assert.equal(dep?.to, s.inky_room, JSON.stringify(out.plan));
+  assert.ok(dep.fight_above_vigor < 80, 'a floor it can actually fight at, under the resting cap');
+  const fed = { ...hungry, pack_items: [{ name: 'Inky-cap mushroom', amount: 2 }] };
+  assert.equal(inkyDue(fed, s, 0), false, 'two inky caps lift it 80 -> 180: eat, do not farm');
+  assert.equal(inkyDue(hungry, s, 200), false, 'the stage room can spare enough: pooling feeds it');
+  assert.equal(inkyDue({ ...hungry, vigor: { value: 170, max: 200 } }, s, 0), false, 'over the floor');
+  assert.equal(inkyDue({ ...hungry, vigor: null }, s, 0), false, 'an unknown vigor is never sent');
+  assert.equal(inkyDue(hungry, { ...s, inky_room: 0 }, 0), false, '0 turns it off');
+  assert.ok(inkyOrders(s).hunt.length > 0);
 });

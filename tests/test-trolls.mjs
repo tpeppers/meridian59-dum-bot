@@ -890,3 +890,13 @@ test('courier: its bought hammers go to a depot short of depot_keep, and no furt
   assert.equal(planUnload([], [buyer, depot], new Set(), s, { refused }).plan
     .filter(p => p.from === 'courier').length, 0, 'a refused pair waits out its cooldown');
 });
+
+test('courier: with the road gate off it walks in whoever is fighting and however hurt', () => {
+  const d = courierDoctrine({ courier_road_gate: false });
+  const staged2 = inRoom('g0', { room: 2, mode: 'idle', weapon_magic: mundane(),
+    policy: { assignedRoom: 2, roam: false, preferMagicWeapon: true, ...VIG, sellAtLoad: 0.97, maxCarry: 60 } });
+  const hurtAway = courierAt(370, { policy: { ...POSTED, assignedRoom: 370 },
+    health: { value: 10, max: 21, pct: 0.48 } });
+  const sd = standDownOf(fire([staged2, hurtAway], all(1), d), 'courier');
+  assert.deepEqual([sd?.assigned_room, sd?.moved], [2, true], JSON.stringify(sd));
+});

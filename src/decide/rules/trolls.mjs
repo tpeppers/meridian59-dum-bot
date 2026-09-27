@@ -472,7 +472,9 @@ export const trollFleetRules = [{
     if (cr?.in_game && takeable(cr) && !cr.piloted && !cr.parked) {
       const crewIn = selected.filter(r => r.room === s0.room && fighters.has(r.agent)).length;
       const hp = healthPct(cr);
-      const roadOpen = cr.room === s0.stage_room ||
+      // Off for a courier whose death costs nothing (operator, 2026-09-27: "Let [the courier] make
+      // any dangerous walks, his deaths cost us little because he's under 30hp with newbie aura").
+      const roadOpen = cr.room === s0.stage_room || s0.courier_road_gate === false ||
         (crewIn > 0 && hp != null && hp >= s0.courier_health);
       const post = roadOpen ? s0.stage_room : cr.room;
       if (post != null && !courierStaged(cr, post, s0))

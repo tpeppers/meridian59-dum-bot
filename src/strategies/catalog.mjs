@@ -180,6 +180,11 @@ export const STRATEGY_CATALOG = Object.freeze([
           'loot and sells it on its own town trip. Named, it replaces the depot run: nobody ' +
           'on the crew walks loot to town, and a hunter with a full pack unloads at the stage room ' +
           'instead. Empty keeps the old behaviour.' }),
+      Object.freeze({ id: 'courier_road_gate', title: 'Gate the road in for the courier', type: 'boolean',
+        default: true,
+        description: 'The road from town to the stage room crosses the troll room. On, the courier ' +
+          'sets out only while a hunter is fighting there and it is at courier_health. Off for a ' +
+          'courier whose death costs nothing: under 30 max health the server applies no death penalty.' }),
       Object.freeze({ id: 'unload_at', title: 'Unload at pack fullness', type: 'number',
         min: 0.3, max: 0.95, default: 0.8,
         description: 'A deployed hunter whose pack reaches this fraction is sent to the stage room to ' +

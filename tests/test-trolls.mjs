@@ -203,6 +203,17 @@ test('trolls: a deploy turns weapon practice off, and a practising unit is re-de
   assert.equal(fire([plain], { a: [ID] }).kind, 'pass');
 });
 
+test('trolls: a unit holding an enchanted spare of its family is told to wield it', () => {
+  const wm = { wielded: { name: 'hammer', class: 'mundane', bypasses_nonmagic: false, made: false },
+    magic_spares: 1, unknown: 0,
+    weapons: [{ id: 31, name: 'hammer', class: 'mundane', bypasses_nonmagic: false, made: false, wielded: true },
+              { id: 32, name: 'hammer', class: 'enchanted', bypasses_nonmagic: true, made: false, wielded: false }] };
+  const out = fire([row('a', { weapon_magic: wm })], { a: [ID] });
+  assert.ok(out.plan.some(p => p.do === 'equip-best' && p.agent === 'a'), JSON.stringify(out.plan));
+  const none = fire([row('b', { weapon_magic: mundane() })], { b: [ID] });
+  assert.ok(!none.plan.some(p => p.do === 'equip-best'), 'no magic spare, no equip');
+});
+
 test('trolls: a mundane unit is staged, not deployed, and gets the tie-break early', () => {
   const out = fire([row('a', { weapon_magic: mundane() })], { a: [ID] });
   assert.equal(out.plan.some(p => p.do === 'deploy'), false);

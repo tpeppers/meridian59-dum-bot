@@ -310,6 +310,14 @@ export const trollFleetRules = [{
       }
       if (r.size === false) { notes.push({ agent: row.agent, why: r.why }); continue; }
       holding += 1;
+      // A MAGIC SPARE OF ITS OWN FAMILY IN THE PACK AND A MUNDANE WEAPON IN HAND is one equip from
+      // ready. The keeper makes that swap only in its farm pass, which a unit idling at the stage
+      // room never runs — 2026-09-27, a hunter sat at the stage room "not ready" with an enchanted
+      // scimitar in its pack. Ask for the equip, once per pass; the ranking's magic tie-break does
+      // the rest.
+      if (row.weapon_magic?.wielded?.bypasses_nonmagic !== true && familyMagicSpares(row) > 0)
+        place.push({ do: 'equip-best', agent: row.agent,
+          why: 'it carries an enchanted weapon of its own family and wields a mundane one' });
       if (!staged(row, s.stage_room, s)) {
         place.push({ do: 'stand-down', agent: row.agent, assigned_room: s.stage_room, roam: false,
           ...vigorOrders(s),

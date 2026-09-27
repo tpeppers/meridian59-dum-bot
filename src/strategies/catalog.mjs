@@ -209,6 +209,11 @@ export const STRATEGY_CATALOG = Object.freeze([
           'the hunter\'s pack, so food, orc teeth, elderberry and magic loot are never swept up. ' +
           'Spare armour and shields go too, once nobody in the stage room lacks one, and surplus ' +
           'real weapons when there is no depot with room.' }),
+      Object.freeze({ id: 'courier_sell_at', title: 'Courier sets out to sell at', type: 'number',
+        min: 0.3, max: 0.95, default: 0.7,
+        description: 'The own sell trigger of the courier keeper. BELOW the loot ceiling on purpose: equal, the ' +
+          'courier stalled just under both, too full for a hand-over and not full enough to leave. A ' +
+          'value at or above the ceiling is clamped to just under it.' }),
       Object.freeze({ id: 'courier_pack_ceiling', title: 'Courier takes loot below', type: 'number',
         min: 0.3, max: 0.95, default: 0.8,
         description: 'Pack fullness at which the courier stops taking loot; its own keeper sells at ' +

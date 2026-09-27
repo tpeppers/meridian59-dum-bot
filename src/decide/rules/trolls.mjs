@@ -283,11 +283,14 @@ export function courierIn(rows, s) {
   return f != null && f < s.courier_pack_ceiling ? c : null;
 }
 
-// THE COURIER SELLS EXACTLY WHEN IT STOPS TAKING. It accepts loot below courier_pack_ceiling and
-// its keeper's own town trip starts at sell_at_load, so the two are one number: with the keeper's
-// default (0.88) above a 0.8 ceiling, a courier between them neither took loot nor left to sell,
-// and the crew fell back to its own runs. max_carry for the same reason as the crew's.
-const courierOrders = s => ({ sell_at_load: s.courier_pack_ceiling, max_carry: s.max_carry });
+// THE COURIER STARTS SELLING BEFORE IT STOPS TAKING. It accepts loot below courier_pack_ceiling and
+// its keeper's own town trip starts at sell_at_load. With the keeper's default (0.88) above a 0.8
+// ceiling it neither took loot nor left; and with the two EQUAL it stalled an hour at "80%" (0.79x):
+// under the trip trigger, and too close to the ceiling for any hand-over to fit (2026-09-27). So the
+// trip trigger is its own setting, below the ceiling (clamped there if a doctrine sets it higher).
+const courierOrders = s => ({
+  sell_at_load: Math.min(s.courier_sell_at, Math.max(0.3, s.courier_pack_ceiling - 0.05)),
+  max_carry: s.max_carry });
 const courierStaged = (row, room, s) => {
   const p = row.policy ?? {}, o = courierOrders(s);
   return row.mode === 'idle' && p.assignedRoom === room && p.roam === false &&

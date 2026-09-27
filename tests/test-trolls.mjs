@@ -709,7 +709,7 @@ const courierDoctrine = (over = {}) => {
 };
 const cs = (over = {}) => ({ ...settings(courierDoctrine()), ...over });
 // Posted the way the rule posts it: sells at its loot ceiling (0.8) with the crew's stack limit.
-const POSTED = { assignedRoom: 2, roam: false, sellAtLoad: 0.8, maxCarry: 60 };
+const POSTED = { assignedRoom: 2, roam: false, sellAtLoad: 0.7, maxCarry: 60 };
 const courierAt = (room, over = {}) => row('courier', { room, max_health: 21, level: 21, mode: 'idle',
   policy: POSTED, pack: { percent: 20 },
   health: { value: 21, max: 21, pct: 1 }, weapon_magic: wm([]), ...over });
@@ -881,12 +881,15 @@ test('courier: mid-trip it is left alone — a shop room is not its new post', (
   assert.ok(!standDownOf(out, 'courier'), JSON.stringify(out.plan));
 });
 
-test('courier: it sells exactly when it stops taking — no band between the two', () => {
+test('courier: it sets out to sell BEFORE it stops taking — no stall at the ceiling', () => {
   const fresh = courierAt(2, { policy: { assignedRoom: 2, roam: false } });
   const sd = standDownOf(fire([inRoom('g0'), fresh], all(1), courierDoctrine()), 'courier');
-  assert.equal(sd?.sell_at_load, cs().courier_pack_ceiling);
+  assert.equal(sd?.sell_at_load, 0.7);
+  assert.ok(sd.sell_at_load < cs().courier_pack_ceiling, 'below the loot ceiling');
+  const high = standDownOf(fire([inRoom('g0'), fresh], all(1), courierDoctrine({ courier_sell_at: 0.9 })), 'courier');
+  assert.ok(high?.sell_at_load < cs().courier_pack_ceiling, 'a doctrine above the ceiling is clamped under it');
   assert.equal(sd?.max_carry, 60);
-  assert.equal(callsForFleetPlan([sd])[0].args.sell_at_load, cs().courier_pack_ceiling);
+  assert.equal(callsForFleetPlan([sd])[0].args.sell_at_load, 0.7);
 });
 
 test('courier: its bought hammers go to a depot short of depot_keep, and no further', () => {

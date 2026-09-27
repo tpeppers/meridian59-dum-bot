@@ -207,6 +207,17 @@ test('trolls: a deploy turns weapon practice off, and a practising unit is re-de
   assert.equal(fire([plain], { a: [ID] }).kind, 'pass');
 });
 
+// 2026-09-27: a dedicated hammer shattered, still read enchanted, and was ordered wielded 17 passes.
+test('trolls: a SHATTERED enchanted spare is not a spare, and nobody is told to wield it', () => {
+  const wm = { wielded: { name: 'hammer', class: 'mundane', bypasses_nonmagic: false, made: false },
+    magic_spares: 0, unknown: 0,
+    weapons: [{ id: 31, name: 'hammer', class: 'mundane', bypasses_nonmagic: false, made: false, wielded: true },
+              { id: 32, name: 'hammer', class: 'enchanted', bypasses_nonmagic: true, made: false, wielded: false, broken: true }] };
+  const out = fire([row('a', { weapon_magic: wm })], { a: [ID] });
+  assert.ok(!(out.plan ?? []).some(p => p.do === 'equip-best'), JSON.stringify(out.plan));
+  assert.equal(dedicationTarget(row('a', { weapon_magic: wm })), null, 'nor dedicated again');
+});
+
 test('trolls: a unit holding an enchanted spare of its family is told to wield it', () => {
   const wm = { wielded: { name: 'hammer', class: 'mundane', bypasses_nonmagic: false, made: false },
     magic_spares: 1, unknown: 0,

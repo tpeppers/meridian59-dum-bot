@@ -55,7 +55,12 @@ export const carried = (row, name) => (row?.pack_items ?? [])
 
 const hasReagents = row => DEDICATE.reagents.every(([n, k]) => carried(row, n) >= k);
 const knows = (row, spell) => (row?.provides ?? []).some(s => norm(s) === spell);
-const weaponsOf = row => (row?.weapon_magic?.weapons ?? []).filter(w => w.id != null && w.id >= 0);
+// A SHATTERED WEAPON IS NOT A WEAPON. It keeps its enchantment text, so the harness marks it
+// `broken` (from the look's condition sentence or the server's refusal) and it is left out of every
+// count here: 2026-09-27 a dedicated hammer "shattered by a powerful blow" was ordered wielded as the
+// enchanted twin seventeen passes running.
+const weaponsOf = row => (row?.weapon_magic?.weapons ?? [])
+  .filter(w => w.id != null && w.id >= 0 && w.broken !== true);
 
 /**
  * THE UNIT'S OWN RANKING, the keeper's rule restated: the index of the first priority fragment

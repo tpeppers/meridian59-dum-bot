@@ -170,6 +170,8 @@ export function callsForFleetPlan(plan = [], why = null, { yieldTo = [] } = {}) 
         max_bots_per_safe_spot: step.max_bots_per_safe_spot,
         prefer_magic_weapon: step.prefer_magic_weapon,
         threat_ceiling: step.threat_ceiling,
+        vigor_ceiling: step.vigor_ceiling,
+        no_food_vigor_floor: step.no_food_vigor_floor,
       }, yieldSet, yieldedFields), why: step.why ?? why });
       continue;
     }
@@ -254,8 +256,10 @@ export function callsForFleetPlan(plan = [], why = null, { yieldTo = [] } = {}) 
     }
     if (step.do === 'stand-down') {
       const agent = need(step, 'agent'), assigned_room = need(step, 'assigned_room');
-      calls.push({ tool: 'autopilot', args: { agent, action: 'start', mode: 'idle',
-        assigned_room, roam: step.roam }, why: step.why ?? why });
+      calls.push({ tool: 'autopilot', args: dropYielded({ agent, action: 'start', mode: 'idle',
+        assigned_room, roam: step.roam, fight_above_vigor: step.fight_above_vigor,
+        vigor_ceiling: step.vigor_ceiling, no_food_vigor_floor: step.no_food_vigor_floor },
+        yieldSet, yieldedFields), why: step.why ?? why });
       if (step.moved) calls.push({ tool: 'travel', args: { agent, to: assigned_room, background: true },
         timeoutMs: 300_000, why: step.why ?? why });
       continue;

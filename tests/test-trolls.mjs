@@ -13,6 +13,7 @@ import { trollFleetRules, trollReadiness, dedicationTarget, planDedication, plan
   from '../src/decide/rules/trolls.mjs';
 import { requirementsMet, shiftFleetRules } from '../src/decide/rules/shift.mjs';
 import { callsForFleetPlan } from '../src/act/fleet-plan.mjs';
+import { throttleRules } from '../src/decide/rules/throttle.mjs';
 import { STRATEGY_IDS, strategySettings, admits, HUNT_ROOMS, QUARRY_LEVEL, trollOwned }
   from '../src/strategies/catalog.mjs';
 
@@ -40,6 +41,8 @@ const mundane = () => ({
 const row = (agent, over = {}) => ({ agent, in_game: true, max_health: 75, level: 75, room: 38,
   mode: 'farm', policy: {}, commitment: null, parked: null, piloted: null, provides: [],
   pack_items: [], mana: { value: 0, max: 40 }, weapon_magic: magic(), ...over });
+// The troll crew's vigor band as a settled keeper reports it (operator, 2026-09-27: 160+).
+const VIG = { fightAboveVigor: 160, vigorCeiling: 200, noFoodVigorFloor: 60 };
 const obs = (rows, agents) => ({ characters: rows, strategies: { agents } });
 const settings = d => strategySettings(obs([], {}), d, 'x', ID);
 const fire = (rows, agents, d = doctrine()) => trollFleetRules[0].decide(obs(rows, agents), d);
@@ -98,7 +101,7 @@ test('guardians: joining needs 90% health, staying needs only to be clear of the
     assert.deepEqual(dep.hunt, ['troll'], 'an 80% unit does not JOIN');
   const member = { assignedRoom: 599, hunt: ['guardian of zjiria', 'troll'], roam: false,
     preferMagicWeapon: true, fleeBelow: 0.45, restBelow: 0.55, trainingStyle: 'normal',
-    threatCeiling: { mode: 'percent', value: 170 } };
+    threatCeiling: { mode: 'percent', value: 170 }, ...VIG };
   const d = guardianDoctrine({ rest_below: 0.55 });
   const staying = [0, 1, 2, 3].map(i => inRoom(`g${i}`, { policy: member,
     ...(i === 0 ? { health: { value: 45, max: 75, pct: 0.6 } } : {}) }));
@@ -106,10 +109,18 @@ test('guardians: joining needs 90% health, staying needs only to be clear of the
     && deploysOf(fire(staying, all(4), d)).length > 0, false, 'a member at 60% stays: nothing re-sent');
 });
 
+test('guardians: a unit whose keeper reports hunt as a string does not crash the rule', () => {
+  const rows = [0, 1, 2, 3].map(i => inRoom(`g${i}`, { policy: { assignedRoom: 599, hunt: 'troll', roam: false,
+    preferMagicWeapon: true, fleeBelow: 0.45, restBelow: 0.85 } }));
+  const out = fire(rows, all(4), guardianDoctrine());
+  assert.notEqual(out.kind, 'error');
+  assert.ok(deploysOf(out).every(d => d.hunt[0] === 'guardian of zjiria'), JSON.stringify(out).slice(0, 300));
+});
+
 test('guardians: when the group breaks, the ceiling goes back to the default', () => {
   const member = { assignedRoom: 599, hunt: ['guardian of zjiria', 'troll'], roam: false,
     preferMagicWeapon: true, fleeBelow: 0.45, restBelow: 0.85, trainingStyle: 'normal',
-    threatCeiling: { mode: 'percent', value: 170 } };
+    threatCeiling: { mode: 'percent', value: 170 }, ...VIG };
   const rows = [0, 1, 2].map(i => inRoom(`g${i}`, { policy: member }));
   const deps = deploysOf(fire(rows, all(3), guardianDoctrine()));
   assert.equal(deps.length, 3);
@@ -117,6 +128,24 @@ test('guardians: when the group breaks, the ceiling goes back to the default', (
     assert.deepEqual(dep.hunt, ['troll']);
     assert.deepEqual(dep.threat_ceiling, { mode: 'percent', value: 150 });
   }
+});
+
+// Operator, 2026-09-27: troll hunters keep 160+ vigor, fed. The band rides every deploy and
+// stand-down, and the fleet throttle steps over the crew instead of resetting it to 40.
+test('trolls: the vigor band rides the deploy, and the throttle leaves the crew alone', () => {
+  const dep = fire([row('a')], { a: [ID] }).plan.find(p => p.do === 'deploy');
+  assert.equal(dep.fight_above_vigor, 160);
+  assert.equal(dep.vigor_ceiling, 200);
+  assert.equal(dep.no_food_vigor_floor, 60);
+  const args = callsForFleetPlan([dep])[0].args;
+  assert.equal(args.vigor_ceiling, 200, 'the deploy whitelist carries the ceiling');
+  assert.equal(args.no_food_vigor_floor, 60, 'and the empty-larder floor');
+  const d = doctrine(); d.throttle = { with_food: 40, no_food: 40, min_meals: 1 };
+  const fleet = obs([row('a', { level: 75, max_health: 75 })], { a: [ID] });
+  const t = throttleRules[0].decide({ agent: 'a', character: 'a', fleet, policy: { fightAboveVigor: 160 } }, d);
+  assert.equal(t?.kind, 'pass', JSON.stringify(t));
+  const other = throttleRules[0].decide({ agent: 'b', character: 'b', fleet, policy: { fightAboveVigor: 160 } }, d);
+  assert.equal(other?.kind, 'orders', 'everyone else is still throttled');
 });
 
 test('trolls: the catalogue admits a level-90 troll from 60 and names no Guardian', () => {
@@ -149,12 +178,12 @@ test('trolls: a ready unit is deployed with magic on and roaming off, once', () 
   const calls = callsForFleetPlan([dep]);
   assert.equal(calls[0].args.prefer_magic_weapon, true, 'the deploy whitelist carries it');
   const settled = row('a', { policy: { assignedRoom: 599, hunt: ['troll'], roam: false,
-    preferMagicWeapon: true, fleeBelow: 0.45, restBelow: 0.85 } });
+    preferMagicWeapon: true, fleeBelow: 0.45, restBelow: 0.85, ...VIG } });
   assert.equal(fire([settled], { a: [ID] }).kind, 'pass', 'diffed: already there sends nothing');
   // 2026-09-27: the keeper reports a one-name hunt as a STRING, and an array-only compare re-sent
   // the whole deploy to every ready hunter every pass.
   const asKeeperSaysIt = row('a', { policy: { assignedRoom: 599, hunt: 'troll', roam: false,
-    preferMagicWeapon: true, fleeBelow: 0.45, restBelow: 0.85 } });
+    preferMagicWeapon: true, fleeBelow: 0.45, restBelow: 0.85, ...VIG } });
   assert.equal(fire([asKeeperSaysIt], { a: [ID] }).kind, 'pass', 'hunt: "troll" is hunt: ["troll"]');
 });
 
@@ -166,7 +195,7 @@ test('trolls: a deploy turns weapon practice off, and a practising unit is re-de
   assert.equal(dep.training_style, 'normal');
   assert.equal(callsForFleetPlan([dep])[0].args.training_style, 'normal', 'the deploy whitelist carries it');
   const settled = { assignedRoom: 599, hunt: ['troll'], roam: false, preferMagicWeapon: true,
-    fleeBelow: 0.45, restBelow: 0.85 };
+    fleeBelow: 0.45, restBelow: 0.85, ...VIG };
   const practising = row('a', { policy: { ...settled, trainingStyle: 'short_sword' } });
   assert.ok(fire([practising], { a: [ID] }).plan.some(p => p.do === 'deploy'),
     'a unit in 599 still practising with a hammer is sent the order again');
@@ -191,7 +220,7 @@ test('trolls: a unit without the strategy is not touched, and a busy one is step
 
 test('trolls: a dedication hands over a SPARE, casts at its id, and always hands it back', () => {
   const owner = row('owner', { room: 2, weapon_magic: mundane(),
-    policy: { assignedRoom: 2, roam: false, preferMagicWeapon: true }, mode: 'idle' });
+    policy: { assignedRoom: 2, roam: false, preferMagicWeapon: true, ...VIG }, mode: 'idle' });
   const ded = row('ded', { room: 2, provides: ['enchant weapon'], mana: { value: 30, max: 40 },
     pack_items: [], weapon_magic: null });
   const depot = row('depot', { room: 2, max_health: 20, weapon_magic: null,

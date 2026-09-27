@@ -19,6 +19,7 @@
 // keeper-parity's yielded keys, so the order actually sends.
 
 import { mealsAboard, canCook } from './feast.mjs';
+import { trollOwned } from '../../strategies/catalog.mjs';
 
 const clamp01 = v => Math.max(0, Math.min(1, Number(v)));
 // The top of the vigor bar. Named because "turbo" means exactly "the ceiling is this,
@@ -208,6 +209,11 @@ export const throttleRules = [
       // nothing and reads clearly in the journal.
       if (throttleExempts(doctrine.throttle, obs))
         return { kind: 'pass', why: `${obs.character ?? obs.agent} is exempt from the throttle` };
+      // THE TROLL CREW'S VIGOR BAND BELONGS TO THE TROLL RULE (operator, 2026-09-27: 160+, fed).
+      // Two writers of one field is how a gate that nobody chose gets held: this would reset the
+      // crew to the fleet's 40 every pass and the troll deploy would put 160 back.
+      if (obs.fleet && trollOwned(obs.fleet, doctrine, obs.agent))
+        return { kind: 'pass', why: `${obs.character ?? obs.agent} is on Ukgoth Trolls, whose vigor band is its own` };
       const floors = throttleFloors(doctrine.throttle);
       const row = obs.keeper ? { ...obs, ...obs.keeper } : obs;
       const vigorNow = vigorValue(row);

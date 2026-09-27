@@ -128,6 +128,17 @@ export const STRATEGY_CATALOG = Object.freeze([
         default: ['guardian of zjiria'],
         description: 'What the server calls the stone troll in Ukgoth (stntroll.kod NewOwner). Listed ' +
           'first in the group hunt list so the whole group turns to the Guardian that comes for it.' }),
+      Object.freeze({ id: 'vigor_floor', title: 'Vigor floor', type: 'integer', min: 0, max: 200, default: 160,
+        description: 'Operator, 2026-09-27: troll hunters keep 160+ vigor, fed off inky-caps, meat pies ' +
+          'and bread. The keeper will not START a fight below this and eats back up to vigor_ceiling ' +
+          'once under it. Vigor is the regeneration rate: 1.0 hp/s at 200 against 0.29 at 80, the ' +
+          'rest cap. Carried on every deploy and stand-down; the throttle steps over the crew.' }),
+      Object.freeze({ id: 'vigor_ceiling', title: 'Vigor ceiling', type: 'integer', min: 0, max: 200, default: 200,
+        description: 'What the keeper eats up to once it is under the floor.' }),
+      Object.freeze({ id: 'no_food_vigor_floor', title: 'Floor with nothing to eat', type: 'integer',
+        min: 0, max: 80, default: 60,
+        description: 'The floor when the larder is empty, so a hunter out of food still fights off the ' +
+          'rest cap rather than waiting for ever under an unreachable 160.' }),
       Object.freeze({ id: 'share_gear', title: 'Share armour and shields', type: 'boolean', default: true,
         description: 'Hand a spare armour or shield from anyone in the stage room to a hunter without ' +
           'one, then wear_best. Needs a harness whose supply-by-name never offers a worn item.' }),

@@ -144,7 +144,17 @@ const deployOrders = (settings, guardian = false) => ({
   prefer_magic_weapon: true, purpose: 'advance', goals: [{ kind: 'hp' }],
   training_style: 'normal',
   threat_ceiling: guardian ? { mode: 'percent', value: settings.guardian_ceiling } : DEFAULT_CEILING,
+  ...vigorOrders(settings),
 });
+
+// THE VIGOR BAND, on deploy AND stand-down: a unit waiting at the stage room is the one about to
+// set out, so it eats up there rather than on the road.
+const vigorOrders = settings => ({
+  fight_above_vigor: settings.vigor_floor, vigor_ceiling: settings.vigor_ceiling,
+  no_food_vigor_floor: settings.no_food_vigor_floor,
+});
+const sameVigor = (p, o) => (p.fightAboveVigor ?? null) === o.fight_above_vigor &&
+  (p.vigorCeiling ?? null) === o.vigor_ceiling && (p.noFoodVigorFloor ?? null) === o.no_food_vigor_floor;
 
 const sameCeiling = (p, o) => {
   const have = p.threatCeiling ?? DEFAULT_CEILING;
@@ -156,7 +166,8 @@ const deployed = (row, o) => {
   return row.mode === 'farm' && p.assignedRoom === o.to && sameList(p.hunt, o.hunt) &&
     p.roam === false && p.preferMagicWeapon === true &&
     p.fleeBelow === o.flee_below && p.restBelow === o.rest_below &&
-    (p.trainingStyle ?? 'normal') === o.training_style && sameCeiling(p, o.threat_ceiling);
+    (p.trainingStyle ?? 'normal') === o.training_style && sameCeiling(p, o.threat_ceiling) &&
+    sameVigor(p, o);
 };
 
 // ---------------------------------------------------------------- the Guardians of Zjiria
@@ -179,7 +190,9 @@ const healthPct = row => {
   if (h && Number(h.max) > 0) return Number(h.value) / Number(h.max);
   return null;
 };
-const huntsGuardians = (row, s) => (row?.policy?.hunt ?? []).some(h =>
+// asList: the keeper reports a one-creature hunt as a STRING — `.some` on it threw and took the
+// whole rule down every pass from 06:54 on 2026-09-27, stopping every deploy and dedication.
+const huntsGuardians = (row, s) => (asList(row?.policy?.hunt) ?? []).some(h =>
   (s.guardian_hunt ?? []).some(g => String(g).toLowerCase() === String(h).toLowerCase()));
 
 /** Who fights Guardians this pass, and why not when nobody does. Pure. */
@@ -202,10 +215,10 @@ export function guardianGroup(units = []) {
            why: `${eligible.length}/${s.guardian_group} fit to group (${inRoom.length} ready in ` +
                 `${s.room}, ${geared.length} of them in armour and a shield)` };
 }
-const staged = (row, room) => {
+const staged = (row, room, settings = null) => {
   const p = row.policy ?? {};
   return row.mode === 'idle' && p.assignedRoom === room && p.roam === false &&
-    p.preferMagicWeapon === true;
+    p.preferMagicWeapon === true && (!settings || sameVigor(p, vigorOrders(settings)));
 };
 
 // A TRADE THE SERVER REFUSED IS NOT RETRIED EVERY PASS. `supply` answers `supplied: false`
@@ -297,8 +310,9 @@ export const trollFleetRules = [{
       }
       if (r.size === false) { notes.push({ agent: row.agent, why: r.why }); continue; }
       holding += 1;
-      if (!staged(row, s.stage_room)) {
+      if (!staged(row, s.stage_room, s)) {
         place.push({ do: 'stand-down', agent: row.agent, assigned_room: s.stage_room, roam: false,
+          ...vigorOrders(s),
           moved: row.room !== s.stage_room,
           why: `not ready for trolls (${r.why}); wait at stage room ${s.stage_room}` });
         place.push({ do: 'magic-policy', agent: row.agent,

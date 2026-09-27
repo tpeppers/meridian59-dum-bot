@@ -780,7 +780,7 @@ export function planSupply(atStage, rows, fighters, { max = 4, refused = new Set
  */
 export function planUnload(atStage, rows, fighters, s, { max = 6, refused = new Set(),
                                                         given = new Set() } = {}) {
-  if (!s?.courier_agent?.length || !atStage.length) return { plan: [], summary: null, why: null };
+  if (!s?.courier_agent?.length) return { plan: [], summary: null, why: null };
   const courier = courierIn(rows, s);
   if (!courier) {
     const c = courierRow(rows, s);
@@ -815,6 +815,20 @@ export function planUnload(atStage, rows, fighters, s, { max = 6, refused = new 
         weapon: w.name, why: `no depot has room; ${row.agent}'s surplus ${w.name} goes to be sold` });
     }
   }
+  // THE COURIER'S PURCHASES, DOWN TO A SHORT DEPOT. Real weapons it bought at the smith, by name,
+  // while the depot holds fewer than depot_keep of that name — the same number the depot sells
+  // down to below, so stock settles at depot_keep and never ping-pongs.
+  const bases = w => w.made === false && !w.wielded;
+  if (depot && !refused.has(pairKey(courier.agent, depot.agent))) for (const name of s.courier_buy ?? []) {
+    const short = s.depot_keep - weaponsOf(depot).filter(w => bases(w) && norm(w.name) === norm(name)).length;
+    const mine = weaponsOf(courier).filter(w => bases(w) && norm(w.name) === norm(name) && !sent.has(w.id));
+    for (const w of mine.slice(0, Math.max(0, short))) {
+      if (plan.length >= max) break;
+      sent.add(w.id);
+      plan.push({ do: 'give-weapon', from: courier.agent, to: depot.agent, what: [{ id: w.id, amount: 1 }],
+        weapon: w.name, why: `the depot holds fewer than ${s.depot_keep} ${name}; the courier bought one in town` });
+    }
+  }
   if (depot && ok(depot.agent)) for (const w of depotSurplus(depot, s)) {
     if (plan.length >= max) break;
     if (sent.has(w.id)) continue;
@@ -822,7 +836,10 @@ export function planUnload(atStage, rows, fighters, s, { max = 6, refused = new 
     plan.push({ do: 'give-weapon', from: depot.agent, to: courier.agent, what: [{ id: w.id, amount: 1 }],
       weapon: w.name, why: `the depot holds more than ${s.depot_keep} ${w.name}; the courier sells the rest` });
   }
-  return { plan, summary: plan.length ? `${plan.length} hand-over(s) to the courier` : null,
+  const delivered = plan.filter(p => p.from === courier.agent).length;
+  const taken = plan.length - delivered;
+  return { plan, summary: plan.length ? [taken ? `${taken} hand-over(s) to the courier` : null,
+      delivered ? `${delivered} bought weapon(s) to the depot` : null].filter(Boolean).join(', ') : null,
     why: plan.length ? null : 'nothing for the courier' };
 }
 

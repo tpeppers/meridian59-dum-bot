@@ -196,6 +196,16 @@ export const STRATEGY_CATALOG = Object.freeze([
         min: 0.3, max: 0.95, default: 0.8,
         description: 'Pack fullness at which the courier stops taking loot; its own keeper sells at ' +
           'its sell_at_load, riding the chalice from the stage room.' }),
+      // WEAPON BUYING (operator, 2026-09-27: "Weapon buying probably isn't needed immediately but we
+      // should add it anyway"). A conjured base expires and its enchantment with it; a real one
+      // does not. The BUYING is the courier's keeper, at the smith on its own town trip, driven by
+      // its loadout's carry floors (a floor on a non-reagent never opens a supply trip, only buys
+      // at a counter it is already standing at). This rule does the DELIVERING.
+      Object.freeze({ id: 'courier_buy', title: 'Weapons the courier delivers', type: 'item-list',
+        default: ['hammer', 'axe'],
+        description: 'Real weapons the courier carries (bought to its loadout floor) and hands to the ' +
+          'depot while the depot holds fewer than depot_keep of that name. Handing them over leaves ' +
+          'the courier under its floor, so it buys again on its next trip; nothing stockpiles.' }),
       Object.freeze({ id: 'sell_at_load', title: 'Crew sell-run trigger', type: 'number',
         min: 0.5, max: 1, default: 0.97,
         description: 'Carried on every deploy and stand-down. High, so the keeper\'s own sell run is ' +

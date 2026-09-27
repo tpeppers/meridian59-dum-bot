@@ -845,3 +845,25 @@ test('courier: it sells exactly when it stops taking — no band between the two
   assert.equal(sd?.max_carry, 60);
   assert.equal(callsForFleetPlan([sd])[0].args.sell_at_load, cs().courier_pack_ceiling);
 });
+
+test('courier: its bought hammers go to a depot short of depot_keep, and no further', () => {
+  const s = cs();
+  const buyer = courierAt(2, { weapon_magic: wm([W(401, 'hammer', false), W(402, 'hammer', false),
+    W(403, 'hammer', false), W(404, 'axe', false)]) });
+  const depot = row('depot', { room: 2, max_health: 25, policy: { assignedRoom: 2 }, pack: { percent: 50 },
+    pack_items: [{ name: 'elderberry', amount: 80 }],
+    weapon_magic: wm([W(300, 'hammer', false), W(301, 'axe', false), W(302, 'axe', false)]) });
+  // No hunter in the stage room: the delivery still happens.
+  const out = planUnload([], [buyer, depot], new Set(), s);
+  const down = out.plan.filter(p => p.from === 'courier' && p.to === 'depot');
+  assert.deepEqual(down.map(p => p.what[0].id), [401],
+    'depot_keep is 2: one hammer short, and its two axes are enough');
+  assert.match(out.summary, /bought weapon/);
+  const full = { ...depot, weapon_magic: wm([W(300, 'hammer', false), W(305, 'hammer', false),
+    W(301, 'axe', false), W(302, 'axe', false)]) };
+  assert.equal(planUnload([], [buyer, full], new Set(), s).plan.filter(p => p.from === 'courier').length, 0,
+    'a stocked depot takes nothing: the courier keeps its floor and sells nothing it bought');
+  const refused = new Set(['courier>depot']);
+  assert.equal(planUnload([], [buyer, depot], new Set(), s, { refused }).plan
+    .filter(p => p.from === 'courier').length, 0, 'a refused pair waits out its cooldown');
+});

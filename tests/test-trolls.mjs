@@ -693,8 +693,10 @@ const courierDoctrine = (over = {}) => {
   return d;
 };
 const cs = (over = {}) => ({ ...settings(courierDoctrine()), ...over });
+// Posted the way the rule posts it: sells at its loot ceiling (0.8) with the crew's stack limit.
+const POSTED = { assignedRoom: 2, roam: false, sellAtLoad: 0.8, maxCarry: 60 };
 const courierAt = (room, over = {}) => row('courier', { room, max_health: 21, level: 21, mode: 'idle',
-  policy: { assignedRoom: 2, roam: false }, pack: { percent: 20 },
+  policy: POSTED, pack: { percent: 20 },
   health: { value: 21, max: 21, pct: 1 }, weapon_magic: wm([]), ...over });
 // A hunter deployed in the troll room exactly as the rule would leave it, with the courier's triggers.
 const onStation = { assignedRoom: 599, hunt: 'troll', roam: false, preferMagicWeapon: true,
@@ -778,7 +780,7 @@ test('courier: spare armour and shields go to whoever here lacks one first, the 
 
 test('courier: never the depot, and the depot\'s surplus goes to it rather than a hunter\'s walk', () => {
   const s = cs();
-  const c = courierAt(2, { policy: { assignedRoom: 2, roam: false } });
+  const c = courierAt(2);
   assert.equal(depotIn([c], 2, new Set(), c), null, 'the only non-fighter here is the courier');
   const depot = row('depot', { room: 2, max_health: 25, policy: { assignedRoom: 2 }, pack: { percent: 50 },
     pack_items: [{ name: 'elderberry', amount: 80 }],
@@ -796,7 +798,7 @@ test('courier: the road in is gated on the crew fighting in the troll room and i
   const d = courierDoctrine();
   const staged2 = inRoom('g0', { room: 2, mode: 'idle', weapon_magic: mundane(),
     policy: { assignedRoom: 2, roam: false, preferMagicWeapon: true, ...VIG, sellAtLoad: 0.97, maxCarry: 60 } });
-  const away = courierAt(370, { policy: { assignedRoom: 370, roam: false } });
+  const away = courierAt(370, { policy: { ...POSTED, assignedRoom: 370 } });
   assert.ok(!standDownOf(fire([staged2, away], all(1), d), 'courier'), 'nobody in the troll room: it holds');
   const open = standDownOf(fire([inRoom('g0'), away], all(1), d), 'courier');
   assert.deepEqual([open?.assigned_room, open?.moved], [2, true], JSON.stringify(open));
@@ -812,4 +814,34 @@ test('courier: its pack is known and under the ceiling, or it takes nothing', ()
   assert.equal(courierIn([courierAt(2)], s)?.agent, 'courier');
   assert.equal(courierIn([courierAt(2, { pack: { percent: 80 } })], s), null);
   assert.equal(unloadable(fullHunter('g0'), s).loot[0]?.name, 'emerald');
+});
+
+test('courier: a deploy read back as policy is a deployed hunter — no re-send every pass', () => {
+  const d = courierDoctrine();
+  const dep = deploysOf(fire([inRoom('g0'), courierAt(2)], all(1), d))[0];
+  const a = callsForFleetPlan([dep])[0].args;
+  // The keeper's policy as the autopilot tool writes it from exactly those arguments.
+  const policy = { assignedRoom: a.assigned_room, hunt: a.hunt, roam: a.roam,
+    preferMagicWeapon: a.prefer_magic_weapon, fleeBelow: a.flee_below, restBelow: a.rest_below,
+    trainingStyle: a.training_style, threatCeiling: a.threat_ceiling, fightAboveVigor: a.fight_above_vigor,
+    vigorCeiling: a.vigor_ceiling, noFoodVigorFloor: a.no_food_vigor_floor,
+    sellAtLoad: a.sell_at_load, maxCarry: a.max_carry };
+  assert.equal(policy.maxCarry, 60, 'the deploy call carries max_carry');
+  const again = fire([inRoom('g0', { mode: 'farm', policy }), courierAt(2)], all(1), d);
+  assert.ok(!deploysOf(again).some(p => p.agent === 'g0'), JSON.stringify(again.plan));
+});
+
+test('courier: mid-trip it is left alone — a shop room is not its new post', () => {
+  const trip = courierAt(113, { commitment: { kind: 'errand', label: 'selling and restocking' },
+    policy: POSTED });
+  const out = fire([inRoom('g0'), trip], all(1), courierDoctrine());
+  assert.ok(!standDownOf(out, 'courier'), JSON.stringify(out.plan));
+});
+
+test('courier: it sells exactly when it stops taking — no band between the two', () => {
+  const fresh = courierAt(2, { policy: { assignedRoom: 2, roam: false } });
+  const sd = standDownOf(fire([inRoom('g0'), fresh], all(1), courierDoctrine()), 'courier');
+  assert.equal(sd?.sell_at_load, cs().courier_pack_ceiling);
+  assert.equal(sd?.max_carry, 60);
+  assert.equal(callsForFleetPlan([sd])[0].args.sell_at_load, cs().courier_pack_ceiling);
 });

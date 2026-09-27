@@ -273,9 +273,15 @@ export function courierIn(rows, s) {
   return f != null && f < s.courier_pack_ceiling ? c : null;
 }
 
-const courierStaged = (row, room) => {
-  const p = row.policy ?? {};
-  return row.mode === 'idle' && p.assignedRoom === room && p.roam === false;
+// THE COURIER SELLS EXACTLY WHEN IT STOPS TAKING. It accepts loot below courier_pack_ceiling and
+// its keeper's own town trip starts at sell_at_load, so the two are one number: with the keeper's
+// default (0.88) above a 0.8 ceiling, a courier between them neither took loot nor left to sell,
+// and the crew fell back to its own runs. max_carry for the same reason as the crew's.
+const courierOrders = s => ({ sell_at_load: s.courier_pack_ceiling, max_carry: s.max_carry });
+const courierStaged = (row, room, s) => {
+  const p = row.policy ?? {}, o = courierOrders(s);
+  return row.mode === 'idle' && p.assignedRoom === room && p.roam === false &&
+    (p.sellAtLoad ?? null) === o.sell_at_load && (p.maxCarry ?? null) === o.max_carry;
 };
 
 // Spare pieces of worn gear matching `re`: the pack count less what is worn (pack_items counts the
@@ -450,8 +456,9 @@ export const trollFleetRules = [{
       if (row.room === s.stage_room) atStage.push({ row, s, ready: false });
     }
     // THE COURIER'S POST. It waits at the stage room, idle and not roaming; its own keeper's town
-    // trip takes it to market and home again. Taken only when free — a courier on its trip is left
-    // to finish it.
+    // trip takes it to market and home again. Taken only when free: the keeper publishes its town
+    // trip as an errand commitment ("selling and restocking") for the whole trip, travel legs and
+    // counters alike, so `takeable` steps over a courier mid-trip rather than freezing it at a shop.
     //
     // THE ROAD IN IS GATED. The roads from Barloque and Jasper to the stage room cross the troll
     // room (it is a cut vertex of the map there), and the courier is a small body: it sets out only while the crew is fighting in there to draw the
@@ -464,9 +471,9 @@ export const trollFleetRules = [{
       const roadOpen = cr.room === s0.stage_room ||
         (crewIn > 0 && hp != null && hp >= s0.courier_health);
       const post = roadOpen ? s0.stage_room : cr.room;
-      if (post != null && !courierStaged(cr, post))
+      if (post != null && !courierStaged(cr, post, s0))
         place.push({ do: 'stand-down', agent: cr.agent, assigned_room: post, roam: false,
-          moved: post !== cr.room,
+          ...courierOrders(s0), moved: post !== cr.room,
           why: roadOpen
             ? `the crew's courier waits at stage room ${s0.stage_room} for their loot`
             : `the courier holds in ${cr.room}: the road to the stage room crosses ${s0.room}, and ` +

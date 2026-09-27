@@ -10,14 +10,14 @@ const test = globalThis.__dumTest;
 
 const live = () => ({
   name: 'prod bands', fleet: 'prod',
-  not_ours: ['Marco Polo'],
+  not_ours: ['AlphaOne'],
   yield_to: [], cadence: { fleet_ms: 9000 }, shift: { stations: [{ room: 544 }] },
   claim: { lease_ms: 120000 }, record: { dir: 'var' }, link: { strategy_control_url: 'http://127.0.0.1:8917' },
   strategies: { enabled: true },
 });
 
 test('a changed not_ours is applied, and an unchanged key is not', () => {
-  const now = live(), next = { ...live(), not_ours: ['Marco Polo', 'BravoTwo'] };
+  const now = live(), next = { ...live(), not_ours: ['AlphaOne', 'BravoTwo'] };
   const plan = planReload(now, next);
   assert.ok(plan.applied.includes('not_ours'), JSON.stringify(plan));
   assert.ok(plan.unchanged.includes('shift'), 'a key that did not move must not be reported as applied');
@@ -60,8 +60,8 @@ test('a changed station allowlist is applied alongside shift, not left unclassif
 
 test('planReload is pure — asking must not change the running bot', () => {
   const now = live();
-  planReload(now, { ...live(), not_ours: ['Marco Polo', 'BravoTwo'] });
-  assert.deepEqual(now.not_ours, ['Marco Polo'], 'a preview that mutates is not a preview');
+  planReload(now, { ...live(), not_ours: ['AlphaOne', 'BravoTwo'] });
+  assert.deepEqual(now.not_ours, ['AlphaOne'], 'a preview that mutates is not a preview');
 });
 
 test('THE LIVE CONFIG IS MUTATED IN PLACE, NOT REPLACED', () => {
@@ -72,8 +72,8 @@ test('THE LIVE CONFIG IS MUTATED IN PLACE, NOT REPLACED', () => {
   // reference a caller captured before the reload must see the new value after it.
   const now = live();
   const captured = now;                       // what run.mjs is holding
-  applyReload(now, { ...live(), not_ours: ['Marco Polo', 'BravoTwo'], cadence: { fleet_ms: 3000 } });
-  assert.deepEqual(captured.not_ours, ['Marco Polo', 'BravoTwo'], 'the captured reference must see it');
+  applyReload(now, { ...live(), not_ours: ['AlphaOne', 'BravoTwo'], cadence: { fleet_ms: 3000 } });
+  assert.deepEqual(captured.not_ours, ['AlphaOne', 'BravoTwo'], 'the captured reference must see it');
   assert.equal(captured.cadence.fleet_ms, 3000);
   assert.equal(captured, now, 'the object identity must not change');
 });

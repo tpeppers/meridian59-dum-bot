@@ -9,7 +9,7 @@
 import assert from 'node:assert/strict';
 import { loadDoctrine } from '../src/config/load.mjs';
 import { validate } from '../src/config/schema.mjs';
-import { trollFleetRules, trollReadiness, dedicationTarget, planDedication, planGear }
+import { trollFleetRules, trollReadiness, dedicationTarget, planDedication, planGear, planFood }
   from '../src/decide/rules/trolls.mjs';
 import { requirementsMet, shiftFleetRules } from '../src/decide/rules/shift.mjs';
 import { callsForFleetPlan } from '../src/act/fleet-plan.mjs';
@@ -331,6 +331,22 @@ test('trolls: magic-grade armour is never handed out as a spare', () => {
   const donor = row('donor', { room: 2, worn: [],
     pack_items: [{ name: 'scale armor', amount: 1, rarity: 1 }, { name: 'gold round shield', amount: 1, rarity: 100 }] });
   assert.equal(planGear([{ row: bare, s: st }], [bare, donor]).plan.filter(p => p.do === 'give-gear').length, 0);
+});
+
+// Operator, 2026-09-27: hunters keep 160+ vigor fed off inky-caps, meat pies and bread.
+test('trolls: a hungry hunter under its floor is fed from a well-stocked neighbour, inky-caps first', () => {
+  const st = settings(doctrine());
+  const hungry = row('hungry', { room: 2, vigor: { value: 80, max: 200 }, pack_items: [{ name: 'loaf of bread', amount: 1 }] });
+  const fed = row('fed', { room: 2, vigor: { value: 200, max: 200 },
+    pack_items: [{ name: 'Inky-cap mushroom', amount: 20 }, { name: 'loaf of bread', amount: 10 }] });
+  const res = planFood([{ row: hungry, s: st }], [hungry, fed]);
+  const g = res.plan.filter(p => p.to === 'hungry');
+  assert.equal(g[0]?.item, 'Inky-cap mushroom');
+  assert.equal(g.reduce((n, p) => n + p.amount * (p.item === 'Inky-cap mushroom' ? 50 : 20), 0) >= 280, true, JSON.stringify(g));
+  const full = row('full', { room: 2, vigor: { value: 170, max: 200 }, pack_items: [] });
+  assert.equal(planFood([{ row: full, s: st }], [full, fed]).plan.length, 0, 'above the floor: nothing');
+  const poorDonor = row('poor', { room: 2, pack_items: [{ name: 'loaf of bread', amount: 10 }] });
+  assert.equal(planFood([{ row: hungry, s: st }], [hungry, poorDonor]).plan.length, 0, 'a donor keeps its own 300');
 });
 
 test('trolls: the only armour a donor has is the one it wears, so nothing is handed', () => {

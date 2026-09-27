@@ -343,14 +343,15 @@ export const trollFleetRules = [{
     const refused = refusedPairs(fleetObs.memory?.supply, fleetObs.at);
     const gear = s0?.share_gear === false ? { plan: [], summary: null }
       : planGear(atStage, rows, { refused });
+    const food = planFood(atStage, rows, { refused });
     const supply = planSupply(atStage, rows, fighters, { refused });
     const round = planDedication(atStage.filter(x => !x.ready && x.s.dedicate), rows,
       { refused, max: s0?.dedications_per_pass ?? 1 });
-    const plan = [...gear.plan, ...supply.plan, ...round.plan];
+    const plan = [...gear.plan, ...food.plan, ...supply.plan, ...round.plan];
     if (!plan.length)
       return { kind: 'pass', why: [summary, courier.why, supply.why, round.why].filter(Boolean).join('; ') };
     return { kind: 'act', plan, notes,
-      why: [gear.summary, supply.plan.length ? supply.summary : null,
+      why: [gear.summary, food.summary, supply.plan.length ? supply.summary : null,
             round.plan.length ? `dedication (${round.summary})` : null].filter(Boolean).join('; ') };
   },
 }];
@@ -473,6 +474,53 @@ export function planGear(atStage, rows, { max = 4, refused = new Set() } = {}) {
   return { plan, summary: gave || worn
     ? [gave ? `${gave} armour/shield handed out` : null, worn ? `${worn} told to wear their own` : null]
         .filter(Boolean).join(', ') : null };
+}
+
+// THE CREW'S FOOD, pooled at the stage room (operator, 2026-09-27: "troll hunters should be keeping
+// 160+ vigor being fed off inky-cap mushrooms, meat pies, and bread"). The keeper eats up to the
+// ceiling once under the floor, but only from its own pack, and the food sits with whoever looted or
+// bought it. Nutrition is the vigor a bite returns (food.kod): inky-cap 50, meat pie 30, bread 20.
+export const CREW_FOODS = Object.freeze([['Inky-cap mushroom', 50], ['meat pie', 30], ['loaf of bread', 20]]);
+export const crewLarder = row => CREW_FOODS.reduce((n, [name, v]) => n + carried(row, name) * v, 0);
+const vigorOf = row => Number(row?.vigor?.value ?? row?.vigor);
+
+/**
+ * Top up the hungry from the fed, inside the stage room. Pure. A unit under its vigor floor with
+ * less than `low` vigor of crew food is brought to about `target`; a donor keeps `keep`.
+ */
+export function planFood(atStage, rows, { low = 200, target = 300, keep = 300, max = 4,
+                                          refused = new Set() } = {}) {
+  const plan = [];
+  const vigorGiven = new Map();                    // donor -> vigor promised this pass
+  const itemsGiven = new Map();                    // donor>food -> how many promised this pass
+  const left = r => crewLarder(r) - keep - (vigorGiven.get(r.agent) ?? 0);
+  for (const { row, s } of atStage) {
+    if (plan.length >= max) break;
+    const vigor = vigorOf(row);
+    if (!Number.isFinite(vigor) || vigor >= (s.vigor_floor ?? 160)) continue;
+    if (crewLarder(row) >= low) continue;
+    let need = target - crewLarder(row);
+    const donors = rows.filter(r => r.in_game && r.room === s.stage_room && r.agent !== row.agent &&
+        takeable(r) && !r.piloted && !refused.has(pairKey(r.agent, row.agent)) && left(r) > 0)
+      .sort((x, y) => left(y) - left(x));
+    for (const d of donors) {
+      for (const [name, v] of CREW_FOODS) {
+        if (need <= 0 || plan.length >= max) break;
+        const key = `${d.agent}>${name}`;
+        const have = carried(d, name) - (itemsGiven.get(key) ?? 0);
+        const n = Math.min(have, Math.ceil(need / v), Math.floor(left(d) / v));
+        if (n <= 0) continue;
+        plan.push({ do: 'give-reagent', from: d.agent, to: row.agent, item: name, amount: n,
+          why: `${row.agent} is at ${vigor} vigor with ${crewLarder(row)} of food; ${d.agent} can spare ${n} ${name}` });
+        need -= n * v;
+        itemsGiven.set(key, (itemsGiven.get(key) ?? 0) + n);
+        vigorGiven.set(d.agent, (vigorGiven.get(d.agent) ?? 0) + n * v);
+      }
+      if (need <= 0) break;
+    }
+  }
+  const fed = new Set(plan.map(p => p.to)).size;
+  return { plan, summary: fed ? `food for ${fed}` : null };
 }
 
 export function planSupply(atStage, rows, fighters, { max = 4, refused = new Set() } = {}) {

@@ -319,7 +319,8 @@ export const trollFleetRules = [{
 
     // ---- 3. supply, then 4. the dedications (one per free dedicator, up to dedications_per_pass)
     const refused = refusedPairs(fleetObs.memory?.supply, fleetObs.at);
-    const gear = planGear(atStage, rows, { refused });
+    const gear = s0?.share_gear === false ? { plan: [], summary: null }
+      : planGear(atStage, rows, { refused });
     const supply = planSupply(atStage, rows, fighters, { refused });
     const round = planDedication(atStage.filter(x => !x.ready && x.s.dedicate), rows,
       { refused, max: s0?.dedications_per_pass ?? 1 });

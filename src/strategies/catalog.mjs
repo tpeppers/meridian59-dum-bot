@@ -128,6 +128,9 @@ export const STRATEGY_CATALOG = Object.freeze([
         default: ['guardian of zjiria'],
         description: 'What the server calls the stone troll in Ukgoth (stntroll.kod NewOwner). Listed ' +
           'first in the group hunt list so the whole group turns to the Guardian that comes for it.' }),
+      Object.freeze({ id: 'share_gear', title: 'Share armour and shields', type: 'boolean', default: true,
+        description: 'Hand a spare armour or shield from anyone in the stage room to a hunter without ' +
+          'one, then wear_best. Needs a harness whose supply-by-name never offers a worn item.' }),
       Object.freeze({ id: 'dedications_per_pass', title: 'Dedications per pass', type: 'integer',
         min: 1, max: 6, default: 3,
         description: 'Rounds planned in one pass, each with its own dedicator (best ability first) and ' +

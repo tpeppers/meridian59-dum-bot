@@ -12,7 +12,7 @@
 //
 //   1. placement   deploy the ready, stage the rest at the stage room. Cheap, and it is what keeps
 //                  a mundane unit out of Ukgoth, so it is never deferred behind anything.
-//   2. courier     when the depot has piled up enough REAL loot and the cooldown has run: one
+//   2. depot run   when the depot has piled up enough REAL loot and the cooldown has run: one
 //                  healthy unit carries it to a weapon buyer and back. An ERRAND, so it takes the
 //                  pass; it is rare by construction (memory topic `trolls`).
 //   3. supply      at the stage room: surplus loot handed UP to the depot; a family weapon handed
@@ -159,7 +159,7 @@ const deployOrders = (settings, guardian = false) => ({
   ...packOrders(settings),
 });
 
-// THE SELL TRIGGERS, only while a stage-room courier is named. The keeper starts its own sell run
+// THE SELL TRIGGERS, only while a courier is named. The keeper starts its own sell run
 // at sell_at_load of its pack or max_carry stacks; with a courier the unload is the normal path and
 // the run is the fallback, so both are raised. Without one nothing is sent and nothing is compared:
 // a crew with no courier keeps selling the way it always has.
@@ -243,7 +243,7 @@ const staged = (row, room, settings = null) => {
     (!settings || (sameVigor(p, vigorOrders(settings)) && samePack(p, packOrders(settings))));
 };
 
-// ---------------------------------------------------------------- the stage-room courier
+// ---------------------------------------------------------------- the courier
 //
 // Operator, 2026-09-27: the crew donates spare equipment to whoever in the stage room lacks it,
 // and a courier — not a hunter — takes the rest to town, so the hunters never leave their station
@@ -431,7 +431,7 @@ export const trollFleetRules = [{
                    `${o.hunt.join(', ')} in ${o.to}, ceiling ${o.threat_ceiling.value}%`
                  : `${r.why}: hunt ${o.hunt.join(', ')} in ${o.to}, roaming off, preferring magic` +
                    (guardians.why ? ` (no Guardians: ${guardians.why})` : '') });
-        // A READY UNIT PASSING THROUGH THE STAGE ROOM still hands up and may still courier.
+        // A READY UNIT PASSING THROUGH THE STAGE ROOM still hands up and may still make the depot run.
         if (row.room === s.stage_room) atStage.push({ row, s, ready: true });
         continue;
       }
@@ -492,7 +492,7 @@ export const trollFleetRules = [{
         `${place.filter(p => p.do === 'stand-down').length} to the stage room` : null;
     const served = atStage.filter(x => !placing.has(x.row.agent));
 
-    // ---- 2. courier (an errand of its own, so only on a pass that places nobody)
+    // ---- 2. the depot run (an errand of its own, so only on a pass that places nobody)
     const courier = place.length ? { why: null }
       : planCourier(atStage, rows, fighters, s0, fleetObs.memory?.trolls ?? {}, fleetObs.at);
     if (courier.errand) return courier.errand;
@@ -534,12 +534,12 @@ export function depotSurplus(depot, s) {
  *
  * Only REAL weapons go (a conjured one is refused by every merchant, item.kod:1110-1126), and the
  * depot keeps `depot_keep` of each name as stock for the units that need a family weapon. The
- * courier is the healthiest takeable fighter standing in the stage room; its road is through 599,
+ * runner is the healthiest takeable fighter standing in the stage room; its road is through 599,
  * so it must be near full health.
  */
 export function planCourier(atStage, rows, fighters, s, mem = {}, now = null) {
   if (!s?.courier) return { why: null };
-  // A NAMED STAGE-ROOM COURIER REPLACES THIS ONE. This errand walks a HUNTER to town, which is the
+  // A NAMED COURIER REPLACES THE DEPOT RUN. This errand walks a HUNTER to town, which is the
   // very trip the operator ordered away; with a courier standing in the stage room, planUnload hands
   // it the depot's surplus instead and its own town trip sells it.
   if (s.courier_agent?.length) return { why: null };
@@ -552,7 +552,7 @@ export function planCourier(atStage, rows, fighters, s, mem = {}, now = null) {
   const last = Number(mem.courier_last_at ?? 0);
   const cool = s.courier_every_min * 60_000;
   if (now != null && last && now - last < cool)
-    return { why: `courier cooldown: next run in ${Math.ceil((cool - (now - last)) / 60_000)} min` };
+    return { why: `depot-run cooldown: next run in ${Math.ceil((cool - (now - last)) / 60_000)} min` };
   const buyer = WEAPON_BUYERS[s.courier_room];
   if (!buyer) return { why: `room ${s.courier_room} has no known weapon buyer` };
   const courier = atStage.map(x => x.row)
@@ -581,7 +581,7 @@ export function planCourier(atStage, rows, fighters, s, mem = {}, now = null) {
           timeout_ms: 900_000, estimate_ms: 400_000, why: 'back to the stage room, sold or not' },
       ],
     },
-    why: `the depot holds ${sell.length} real weapons beyond its stock; ${agent} ` +
+    why: `depot run: the depot holds ${sell.length} real weapons beyond its stock; ${agent} ` +
       `(${Math.round((courier.health?.pct ?? 0) * 100)}% health) carries ${ids.length} to ${buyer} in ${s.courier_room}`,
     evidence: { depot: depot.agent, ids, buyer },
   } };

@@ -553,7 +553,7 @@ test('trolls: magic_spares 0 still hands a lone-weapon unit a spare to dedicate'
 // 2026-09-27: the courier ran inline and held the fleet pass for its half-hour walk (11:52 -> 12:22,
 // both enchanters at full mana). It now runs beside the pass, and its cooldown starts at dispatch so
 // the next pass does not send a second courier for the same depot.
-test('trolls: the courier runs in the background with its cooldown stamped at dispatch', async () => {
+test('trolls: the depot run goes in the background with its cooldown stamped at dispatch', async () => {
   assert.ok(BACKGROUND_FLEET_ERRANDS.includes('troll-courier'));
   const memory = {};
   const ctx = { commit: true, journal: { write() {}, finding() {} },
@@ -563,7 +563,7 @@ test('trolls: the courier runs in the background with its cooldown stamped at di
   assert.equal(memory.trolls?.courier_last_at, 5_000, JSON.stringify(memory));
 });
 
-test('trolls: the courier sells only REAL surplus, after its cooldown, and walks back', () => {
+test('trolls: the depot run sells only REAL surplus, after its cooldown, and walks back', () => {
   const s = settings(doctrine());
   const depot = row('depot', { room: 2, max_health: 20, policy: { assignedRoom: 2 }, pack_items: [{ name: 'elderberry', amount: 300 }],
     weapon_magic: wm([...Array.from({ length: 9 }, (_, i) => W(100 + i, 'long sword', false)),

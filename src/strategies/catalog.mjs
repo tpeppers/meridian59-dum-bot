@@ -152,30 +152,32 @@ export const STRATEGY_CATALOG = Object.freeze([
       Object.freeze({ id: 'depot_keep', title: 'Depot stock per weapon', type: 'integer',
         min: 0, max: 10, default: 2,
         description: 'Real weapons of each name the stage-room depot keeps to re-arm units whose ' +
-          'family has no spare. Everything above this is for the courier to sell.' }),
-      Object.freeze({ id: 'courier', title: 'Courier loot to a buyer', type: 'boolean', default: true,
+          'family has no spare. Everything above this is for the courier, or the depot run, to sell.' }),
+      Object.freeze({ id: 'courier', title: 'Depot run to a buyer', type: 'boolean', default: true,
         description: 'Walk the surplus REAL weapons in the depot to a weapon buyer and back. Trolls ' +
           'drop real long swords (highhumt.kod, 7 per roll, about one kill in five); a conjured ' +
-          'weapon is refused by every merchant (item.kod:1110-1126) and is never carried.' }),
-      Object.freeze({ id: 'courier_room', title: 'Buyer room', type: 'integer', min: 1, default: 374,
+          'weapon is refused by every merchant (item.kod:1110-1126) and is never carried. Off while a ' +
+          'courier is named: the courier takes the depot surplus instead.' }),
+      Object.freeze({ id: 'courier_room', title: 'Depot-run buyer room', type: 'integer', min: 1, default: 374,
         description: '374 Quintor in Jasper (seven hops, through 599). 113 the Barloque smith and ' +
           '201 Colhorr in Marion also buy weapons.' }),
-      Object.freeze({ id: 'courier_min_items', title: 'Courier minimum load', type: 'integer',
+      Object.freeze({ id: 'courier_min_items', title: 'Depot-run minimum load', type: 'integer',
         min: 1, max: 20, default: 6,
         description: 'Real weapons above the depot stock before a run is worth the road.' }),
-      Object.freeze({ id: 'courier_every_min', title: 'Courier cooldown (minutes)', type: 'integer',
+      Object.freeze({ id: 'courier_every_min', title: 'Depot-run cooldown (minutes)', type: 'integer',
         min: 10, max: 1440, default: 60, description: 'At most one run per this many minutes.' }),
-      Object.freeze({ id: 'courier_health', title: 'Courier health floor', type: 'number',
+      Object.freeze({ id: 'courier_health', title: 'Road health floor', type: 'number',
         min: 0.5, max: 1, default: 0.9,
-        description: 'The road starts in Ukgoth; the courier sets out near full or not at all.' }),
+        description: 'The road between the stage room and town crosses Ukgoth. The depot runner, and ' +
+          'the courier coming back to its post, set out near full health or not at all.' }),
       // THE HUNTERS STAY ON STATION (operator, 2026-09-27): "donate their spare equipment to anyone
       // in room2 who is lacking before doing traditional sell runs ... use [a courier] for buying /
       // delivering equipment ... to prevent our troll hunters from having to leave their stations
       // while they're running successfully". A keeper's own sell run is the troll room -> Barloque
       // -> back, thirty minutes and more off station; the stage room is one hop.
-      Object.freeze({ id: 'courier_agent', title: 'Stage-room courier', type: 'item-list', default: [],
+      Object.freeze({ id: 'courier_agent', title: 'Courier', type: 'item-list', default: [],
         description: 'The unit (agent or character) that stands at the stage room, takes the crew\'s ' +
-          'loot and sells it on its own town trip. Named, it replaces the fighter courier: nobody ' +
+          'loot and sells it on its own town trip. Named, it replaces the depot run: nobody ' +
           'on the crew walks loot to town, and a hunter with a full pack unloads at the stage room ' +
           'instead. Empty keeps the old behaviour.' }),
       Object.freeze({ id: 'unload_at', title: 'Unload at pack fullness', type: 'number',

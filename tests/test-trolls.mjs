@@ -216,6 +216,24 @@ test('trolls: a unit holding an enchanted spare of its family is told to wield i
   assert.ok(!none.plan.some(p => p.do === 'equip-best'), 'no magic spare, no equip');
 });
 
+// 2026-09-27: one unit's keeper kept re-wielding its conjured twin, the equip was re-queued every
+// pass, and because it rode with the placements the pass returned before any dedication for an hour.
+test('trolls: a pending equip does not hold up the dedications', () => {
+  const wm = { wielded: { name: 'hammer', class: 'mundane', bypasses_nonmagic: false, made: true },
+    magic_spares: 1, unknown: 0,
+    weapons: [{ id: 41, name: 'hammer', class: 'mundane', bypasses_nonmagic: false, made: true, wielded: true },
+              { id: 42, name: 'hammer', class: 'enchanted', bypasses_nonmagic: true, made: false, wielded: false }] };
+  const staged = { assignedRoom: 2, roam: false, preferMagicWeapon: true, ...VIG };
+  const swapper = row('swapper', { room: 2, weapon_magic: wm, policy: staged, mode: 'idle' });
+  const owner = row('owner', { room: 2, weapon_magic: mundane(), policy: staged, mode: 'idle' });
+  const ded = row('ded', { room: 2, provides: ['enchant weapon'], mana: { value: 30, max: 40 },
+    pack_items: [{ name: 'elderberry', amount: 30 }, { name: 'orc tooth', amount: 5 }], weapon_magic: null });
+  const out = fire([swapper, owner, ded], { swapper: [ID], owner: [ID] });
+  assert.equal(out.kind, 'act');
+  assert.ok(out.plan.some(p => p.do === 'equip-best' && p.agent === 'swapper'), JSON.stringify(out.plan));
+  assert.ok(out.plan.some(p => p.do === 'cast-enchant-weapon'), 'the dedication still runs');
+});
+
 test('trolls: a mundane unit is staged, not deployed, and gets the tie-break early', () => {
   const out = fire([row('a', { weapon_magic: mundane() })], { a: [ID] });
   assert.equal(out.plan.some(p => p.do === 'deploy'), false);

@@ -283,7 +283,11 @@ export const trollFleetRules = [{
       free: takeable(row) && !row.parked && !row.piloted && !activeFactionWork(fleetObs, row) })));
 
     // ---- 1. placement
-    const place = [], notes = [];
+    // AN EQUIP NEVER HOLDS UP THE REST OF THE PASS. It used to ride in `place`, so a unit whose
+    // keeper kept re-wielding its conjured twin re-queued the same equip every pass and the pass
+    // returned before food, gear and the dedications: 2026-09-27, from 08:44 for an hour, every pass
+    // was "0 deploy(s), 0 to the stage room" and nothing was dedicated at all.
+    const place = [], notes = [], equips = [];
     let busy = 0, holding = 0, working = 0;
     const atStage = [], fighters = new Set();
     let s0 = null;
@@ -316,7 +320,7 @@ export const trollFleetRules = [{
       // scimitar in its pack. Ask for the equip, once per pass; the ranking's magic tie-break does
       // the rest.
       if (row.weapon_magic?.wielded?.bypasses_nonmagic !== true && familyMagicSpares(row) > 0)
-        place.push({ do: 'equip-best', agent: row.agent,
+        equips.push({ do: 'equip-best', agent: row.agent,
           why: 'it carries an enchanted weapon of its own family and wields a mundane one' });
       if (!staged(row, s.stage_room, s)) {
         place.push({ do: 'stand-down', agent: row.agent, assigned_room: s.stage_room, roam: false,
@@ -331,7 +335,7 @@ export const trollFleetRules = [{
     const summary = `${working} in the troll room, ${holding} held at the stage room` +
       (busy ? `, ${busy} busy` : '');
     if (place.length)
-      return { kind: 'act', plan: place, notes,
+      return { kind: 'act', plan: [...place, ...equips], notes,
         why: `${place.filter(p => p.do === 'deploy').length} deploy(s), ` +
           `${place.filter(p => p.do === 'stand-down').length} to the stage room` };
 
@@ -347,11 +351,11 @@ export const trollFleetRules = [{
     const supply = planSupply(atStage, rows, fighters, { refused });
     const round = planDedication(atStage.filter(x => !x.ready && x.s.dedicate), rows,
       { refused, max: s0?.dedications_per_pass ?? 1 });
-    const plan = [...gear.plan, ...food.plan, ...supply.plan, ...round.plan];
+    const plan = [...equips, ...gear.plan, ...food.plan, ...supply.plan, ...round.plan];
     if (!plan.length)
       return { kind: 'pass', why: [summary, courier.why, supply.why, round.why].filter(Boolean).join('; ') };
     return { kind: 'act', plan, notes,
-      why: [gear.summary, food.summary, supply.plan.length ? supply.summary : null,
+      why: [equips.length ? `${equips.length} to wield the enchanted twin` : null, gear.summary, food.summary, supply.plan.length ? supply.summary : null,
             round.plan.length ? `dedication (${round.summary})` : null].filter(Boolean).join('; ') };
   },
 }];

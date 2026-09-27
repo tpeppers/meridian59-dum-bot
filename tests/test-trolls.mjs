@@ -283,6 +283,14 @@ test('trolls: a unit carrying its own unworn shield wears it, and is not a donor
   assert.ok(res.plan.some(p => p.do === 'wear-best' && p.agent === 'own'));
 });
 
+test('trolls: magic-grade armour is never handed out as a spare', () => {
+  const st = settings(doctrine());
+  const bare = row('bare', { room: 2, worn: [] });
+  const donor = row('donor', { room: 2, worn: [],
+    pack_items: [{ name: 'scale armor', amount: 1, rarity: 1 }, { name: 'gold round shield', amount: 1, rarity: 100 }] });
+  assert.equal(planGear([{ row: bare, s: st }], [bare, donor]).plan.filter(p => p.do === 'give-gear').length, 0);
+});
+
 test('trolls: the only armour a donor has is the one it wears, so nothing is handed', () => {
   const st = settings(doctrine());
   const bare = row('bare', { room: 2, worn: [] });

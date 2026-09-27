@@ -411,7 +411,10 @@ export { recordTrollCourier } from './trolls-record.mjs';
 export function planGear(atStage, rows, { max = 4, refused = new Set() } = {}) {
   const plan = [];
   const lent = new Map();                      // donor>name -> how many promised this pass
-  const spares = (r, re) => (r.pack_items ?? []).filter(i => re.test(String(i.name ?? '')))
+  // Only normal-grade gear: magic loot (uncommon/rare/legendary, unidentified, cursed) is revealed
+  // and kept, never worn (operator, 2026-09-27), so it is never a spare to hand out either.
+  const spares = (r, re) => (r.pack_items ?? []).filter(i => re.test(String(i.name ?? '')) &&
+      (i.rarity == null || Number(i.rarity) === 0))
     .map(i => ({ name: String(i.name), n: (Number(i.amount) || 0) -
       ((r.worn ?? []).filter(w => norm(w) === norm(i.name)).length) -
       (lent.get(`${r.agent}>${norm(i.name)}`) ?? 0) }))

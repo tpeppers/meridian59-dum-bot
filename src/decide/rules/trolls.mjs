@@ -559,7 +559,11 @@ export function planSupply(atStage, rows, fighters, { max = 4, refused = new Set
     Number(a.made === true) - Number(b.made === true);
   for (const { row, s: st, ready } of atStage) {
     if (ready || plan.length >= max) continue;
-    if (familyMagicSpares(row) >= st.magic_spares) continue;
+    // AT LEAST ONE, whatever `magic_spares` says. This unit is NOT READY — a mundane weapon in hand —
+    // so with no magic spare it needs one handed down or dedicated. `magic_spares: 0` (a single
+    // enchanted weapon is enough to hunt) made this `0 >= 0` for every unit, and 2026-09-27 seven
+    // units waited at the stage room with one weapon each while the depot held six long swords.
+    if (familyMagicSpares(row) >= Math.max(1, Number(st.magic_spares) || 0)) continue;
     // A unit that already has a mundane spare to dedicate takes only a MAGIC one: that saves a
     // dedication; another mundane weapon would only queue a second one.
     const onlyMagic = !!dedicationTarget(row);

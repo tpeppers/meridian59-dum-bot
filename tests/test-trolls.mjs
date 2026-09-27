@@ -521,6 +521,18 @@ test('trolls: the depot hands DOWN a family weapon, and Create Weapon is the fal
   assert.ok(conj.plan.some(p => p.do === 'cast-create-weapon' && p.agent === 'h'));
 });
 
+// 2026-09-27: with magic_spares 0 (one enchanted weapon is enough to hunt) the hand-down read
+// `0 >= 0` for every unit, and seven units waited with one weapon each beside a depot of swords.
+test('trolls: magic_spares 0 still hands a lone-weapon unit a spare to dedicate', () => {
+  const s = { ...settings(doctrine()), magic_spares: 0 };
+  const bare = hammerer('h', [W(1, 'hammer', false, { wielded: true })]);
+  const depot = row('depot', { room: 2, max_health: 20, policy: { assignedRoom: 2 }, pack_items: [{ name: 'elderberry', amount: 300 }],
+    weapon_magic: wm([W(8, 'hammer', false)]) });
+  const down = planSupply([{ row: bare, s, ready: false }], [bare, depot], new Set(['h']));
+  assert.equal(down.plan.find(p => p.do === 'give-weapon' && p.from === 'depot')?.what?.[0]?.id, 8,
+    JSON.stringify(down.plan));
+});
+
 test('trolls: the courier sells only REAL surplus, after its cooldown, and walks back', () => {
   const s = settings(doctrine());
   const depot = row('depot', { room: 2, max_health: 20, policy: { assignedRoom: 2 }, pack_items: [{ name: 'elderberry', amount: 300 }],

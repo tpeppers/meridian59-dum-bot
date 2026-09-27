@@ -72,7 +72,18 @@ export function rankFor(row) {
 }
 
 /** A weapon the keeper's tie-break would actually wield for this unit: its rank or better. */
+// A BANNED WEAPON IS NEVER IN THE FAMILY, whatever its rank. The keeper refuses to wield one
+// (isBannedWeapon, substring, case-insensitive), so an enchanted one in the pack is not "one equip
+// from ready" and a dedication spent on one is wasted. 2026-09-27: a hunter whose ban list names
+// scimitar was handed an enchanted scimitar, told to wield it every pass, wielded it once by hand,
+// and was back on a conjured axe inside 599 within the quarter hour.
+export const isBannedFor = (row, name) => {
+  const banned = row?.policy?.bannedWeapons;
+  return Array.isArray(banned) && banned.some(b => norm(b) && norm(name).includes(norm(b)));
+};
+
 const inFamily = (row, w) => {
+  if (isBannedFor(row, w.name)) return false;
   const rank = rankFor(row), held = row?.weapon_magic?.wielded?.name;
   if (!held) return true;
   return rank(w.name) <= rank(held);

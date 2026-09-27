@@ -216,6 +216,23 @@ test('trolls: a unit holding an enchanted spare of its family is told to wield i
   assert.ok(!none.plan.some(p => p.do === 'equip-best'), 'no magic spare, no equip');
 });
 
+// 2026-09-27: an enchanted scimitar sat in the pack of a unit whose ban list names scimitar. The
+// keeper will never wield it, so it is not "one equip from ready", it is surplus for the depot.
+test('trolls: an enchanted weapon the unit has banned is not of its family', () => {
+  const wm = { wielded: { name: 'axe', class: 'mundane', bypasses_nonmagic: false, made: true },
+    magic_spares: 1, unknown: 0,
+    weapons: [{ id: 51, name: 'axe', class: 'mundane', bypasses_nonmagic: false, made: true, wielded: true },
+              { id: 52, name: 'scimitar', class: 'enchanted', bypasses_nonmagic: true, made: false, wielded: false }] };
+  const policy = { assignedRoom: 2, roam: false, preferMagicWeapon: true, ...VIG,
+    weaponPriority: ['hammer', 'axe', 'scimitar'], bannedWeapons: ['scimitar'] };
+  const out = fire([row('a', { room: 2, weapon_magic: wm, policy, mode: 'idle' })], { a: [ID] });
+  assert.ok(!(out.plan ?? []).some(p => p.do === 'equip-best' && p.agent === 'a'), JSON.stringify(out.plan));
+  const unbanned = fire([row('b', { room: 2, weapon_magic: { ...wm, wielded: { ...wm.wielded, name: 'short sword' },
+      weapons: [{ ...wm.weapons[0], name: 'short sword' }, wm.weapons[1]] },
+    policy: { ...policy, weaponPriority: ['scimitar', 'short sword'], bannedWeapons: [] }, mode: 'idle' })], { b: [ID] });
+  assert.ok(unbanned.plan.some(p => p.do === 'equip-best' && p.agent === 'b'), 'the same spare, unbanned, is wielded');
+});
+
 // 2026-09-27: one unit's keeper kept re-wielding its conjured twin, the equip was re-queued every
 // pass, and because it rode with the placements the pass returned before any dedication for an hour.
 test('trolls: a pending equip does not hold up the dedications', () => {

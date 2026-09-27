@@ -881,7 +881,7 @@ test('courier: its bought hammers go to a depot short of depot_keep, and no furt
   const down = out.plan.filter(p => p.from === 'courier' && p.to === 'depot');
   assert.deepEqual(down.map(p => p.what[0].id), [401],
     'depot_keep is 2: one hammer short, and its two axes are enough');
-  assert.match(out.summary, /bought weapon/);
+  assert.match(out.summary, /deliver/);
   const full = { ...depot, weapon_magic: wm([W(300, 'hammer', false), W(305, 'hammer', false),
     W(301, 'axe', false), W(302, 'axe', false)]) };
   assert.equal(planUnload([], [buyer, full], new Set(), s).plan.filter(p => p.from === 'courier').length, 0,
@@ -899,4 +899,21 @@ test('courier: with the road gate off it walks in whoever is fighting and howeve
     health: { value: 10, max: 21, pct: 0.48 } });
   const sd = standDownOf(fire([staged2, hurtAway], all(1), d), 'courier');
   assert.deepEqual([sd?.assigned_room, sd?.moved], [2, true], JSON.stringify(sd));
+});
+
+test('courier: it tops a depot under its elderberry floor up to the target, and no more', () => {
+  const s = cs();
+  const c = courierAt(2, { pack_items: [{ name: 'elderberry', amount: 150 }] });
+  const low = row('depot', { room: 2, max_health: 25, policy: { assignedRoom: 2 }, pack: { percent: 50 },
+    pack_items: [{ name: 'elderberry', amount: 16 }], weapon_magic: wm([]) });
+  const give = planUnload([], [c, low], new Set(), s).plan.find(p => p.item === 'elderberry');
+  assert.deepEqual([give?.from, give?.to, give?.amount], ['courier', 'depot', 144], 'to 160');
+  const stocked = { ...low, pack_items: [{ name: 'elderberry', amount: 120 }] };
+  assert.ok(!planUnload([], [c, stocked], new Set(), s).plan.some(p => p.item === 'elderberry'),
+    'above the floor: nothing');
+  const full = { ...low, pack: { percent: 90 } };
+  assert.ok(!planUnload([], [c, full], new Set(), s).plan.some(p => p.item === 'elderberry'),
+    'a depot too full to receive is skipped');
+  const off = cs({ depot_elderberry: 0 });
+  assert.ok(!planUnload([], [c, low], new Set(), off).plan.some(p => p.item === 'elderberry'), '0 is off');
 });

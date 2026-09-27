@@ -839,6 +839,17 @@ export function planUnload(atStage, rows, fighters, s, { max = 6, refused = new 
         weapon: w.name, why: `the depot holds fewer than ${s.depot_keep} ${name}; the courier bought one in town` });
     }
   }
+  // ELDERBERRIES FOR THE DEDICATIONS, down to a depot under depot_elderberry, topped up to the target.
+  // The receiving depot, so a depot too full to take them is skipped rather than refused every pass.
+  if (depot && s.depot_elderberry > 0 && plan.length < max &&
+      !refused.has(pairKey(courier.agent, depot.agent))) {
+    const have = carried(depot, 'elderberry');
+    const n = Math.min(carried(courier, 'elderberry'), Math.max(0, s.depot_elderberry_target - have));
+    if (have < s.depot_elderberry && n > 0)
+      plan.push({ do: 'give-reagent', from: courier.agent, to: depot.agent, item: 'elderberry', amount: n,
+        why: `the depot holds ${have} elderberry, under ${s.depot_elderberry}; the courier tops it to ` +
+          `${have + n} (3 a dedication)` });
+  }
   if (giver && ok(giver.agent)) for (const w of depotSurplus(giver, s)) {
     if (plan.length >= max) break;
     if (sent.has(w.id)) continue;
@@ -849,7 +860,7 @@ export function planUnload(atStage, rows, fighters, s, { max = 6, refused = new 
   const delivered = plan.filter(p => p.from === courier.agent).length;
   const taken = plan.length - delivered;
   return { plan, summary: plan.length ? [taken ? `${taken} hand-over(s) to the courier` : null,
-      delivered ? `${delivered} bought weapon(s) to the depot` : null].filter(Boolean).join(', ') : null,
+      delivered ? `${delivered} delivery(ies) to the depot` : null].filter(Boolean).join(', ') : null,
     why: plan.length ? null : 'nothing for the courier' };
 }
 

@@ -211,6 +211,18 @@ export const STRATEGY_CATALOG = Object.freeze([
         description: 'Real weapons the courier carries (bought to its loadout floor) and hands to the ' +
           'depot while the depot holds fewer than depot_keep of that name. Handing them over leaves ' +
           'the courier under its floor, so it buys again on its next trip; nothing stockpiles.' }),
+      // THE DEPOT'S ELDERBERRIES (operator, 2026-09-27: the stage caster holds a standing 100+). The
+      // only other restock sent a HUNTER across the troll room to the Barloque hall, and it was
+      // failing: re-walked for over an hour, home empty, the depot down to 16. The courier buys them
+      // on its own supply trip (an elderberry floor on its loadout DOES open one) and this hands them
+      // over.
+      Object.freeze({ id: 'depot_elderberry', title: 'Depot elderberry floor', type: 'integer',
+        min: 0, max: 1000, default: 100,
+        description: 'While the stage-room depot holds fewer elderberries than this, the courier hands ' +
+          'it its own, up to depot_elderberry_target. 0 switches the delivery off. A dedication costs 3.' }),
+      Object.freeze({ id: 'depot_elderberry_target', title: 'Depot elderberry top-up', type: 'integer',
+        min: 0, max: 1000, default: 160,
+        description: 'What a delivery tops the depot up to. Above the floor, so one delivery lasts.' }),
       Object.freeze({ id: 'sell_at_load', title: 'Crew sell-run trigger', type: 'number',
         min: 0.5, max: 1, default: 0.97,
         description: 'Carried on every deploy and stand-down. High, so the keeper\'s own sell run is ' +

@@ -638,7 +638,12 @@ export const trollFleetRules = [{
     // and the dedications — ran on perhaps one pass in five (2026-09-27: 10:22, 10:34 and 10:45 were
     // each "1 deploy(s)" and nothing else, with Raphael at full mana). The units being placed are
     // left out of the stage room's work; everyone else standing there is served in the same pass.
-    const placing = new Set(place.map(p => p.agent));
+    // A STAND-DOWN FOR A UNIT ALREADY IN THE STAGE ROOM IS A POLICY REFRESH, NOT A PLACEMENT: it
+    // moves nobody, so it must not take that unit out of this pass's hand-downs and dedications.
+    // 2026-09-28, 05:15-06:15: an overfarm order the keeper never took made `staged` false on every
+    // pass, every waiting hunter was re-stood-down every pass, and enchant casts fell from 17 to 2.
+    const placing = new Set(place.filter(p => p.do === 'deploy' || (p.do === 'stand-down' && p.moved !== false))
+      .map(p => p.agent));
     const placeWhy = place.length
       ? `${place.filter(p => p.do === 'deploy').length} deploy(s), ` +
         `${place.filter(p => p.do === 'stand-down').length} to the stage room` : null;

@@ -279,6 +279,19 @@ test('trolls: a deploy and a dedication happen in the same pass', () => {
     'the unit being deployed is left out of the stage room work');
 });
 
+// 2026-09-28: a policy the keeper would not take (overfarm) made `staged` false on every pass, so
+// every waiting unit was re-stood-down every pass and never dedicated. A refresh moves nobody.
+test('trolls: a unit re-stood-down where it already stands is still dedicated', () => {
+  const stale = { assignedRoom: 2, roam: false, preferMagicWeapon: true, fightAboveVigor: 999 };
+  const owner = row('owner', { room: 2, weapon_magic: mundane(), policy: stale, mode: 'idle' });
+  const ded = row('ded', { room: 2, provides: ['enchant weapon'], mana: { value: 30, max: 40 },
+    pack_items: [{ name: 'elderberry', amount: 30 }, { name: 'orc tooth', amount: 5 }], weapon_magic: null });
+  const out = fire([owner, ded], { owner: [ID] });
+  const sd = out.plan.find(p => p.do === 'stand-down' && p.agent === 'owner');
+  assert.ok(sd && sd.moved === false, 'the refresh is still sent: ' + JSON.stringify(out.plan));
+  assert.ok(out.plan.some(p => p.do === 'cast-enchant-weapon'), 'and the dedication runs in the same pass');
+});
+
 test('trolls: a mundane unit is staged, not deployed, and gets the tie-break early', () => {
   const out = fire([row('a', { weapon_magic: mundane() })], { a: [ID] });
   assert.equal(out.plan.some(p => p.do === 'deploy'), false);

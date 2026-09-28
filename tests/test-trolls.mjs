@@ -362,6 +362,35 @@ test('trolls: two dedicators enchant two owners in one pass, and max caps it', (
   assert.deepEqual(casts(planDedication(needers, rows)), ['adept'], 'and the default');
 });
 
+// Self-dedication (2026-09-28): a hunter that knows enchant weapon enchants its own spare.
+test('trolls: a hunter who knows enchant weapon dedicates its own spare, no hand-over', () => {
+  const reag = [{ name: 'elderberry', amount: 10 }, { name: 'orc tooth', amount: 5 }];
+  const own = (a, over = {}) => row(a, { room: 2, weapon_magic: mundane(), mode: 'idle',
+    policy: { assignedRoom: 2, roam: false, preferMagicWeapon: true }, ...over });
+  const selfer = own('selfer', { provides: ['enchant weapon'], mana: { value: 20, max: 20 },
+    provides_ability: { 'enchant weapon': 3 }, pack_items: reag });
+  const s = settings(doctrine());
+  const alone = planDedication([{ row: selfer, s }], [selfer]);
+  assert.deepEqual(alone.plan.map(p => p.do), ['inert-keeper', 'cast-enchant-weapon', 'equip-best'], JSON.stringify(alone));
+  assert.equal(alone.plan[1].agent, 'selfer');
+  assert.equal(alone.plan[1].target, 22, 'the spare, not the wielded one');
+  // A better free caster in the room takes it instead, the old hand-over round.
+  const adept = row('adept', { room: 2, provides: ['enchant weapon'], mana: { value: 25, max: 25 },
+    provides_ability: { 'enchant weapon': 30 }, pack_items: reag });
+  const withAdept = planDedication([{ row: selfer, s }], [selfer, adept]);
+  assert.equal(withAdept.plan.find(p => p.do === 'cast-enchant-weapon').agent, 'adept');
+  // Two needers, one adept: the adept takes one, the self-caster does its own in the same pass.
+  const other = own('other');
+  const both = planDedication([{ row: other, s }, { row: selfer, s }], [other, selfer, adept], { max: 3 });
+  assert.deepEqual(both.plan.filter(p => p.do === 'cast-enchant-weapon').map(p => p.agent).sort(), ['adept', 'selfer']);
+  // No reagents on the self-caster: the depot hands them over while it stays held.
+  const bare = own('bare', { provides: ['enchant weapon'], mana: { value: 20, max: 20 }, provides_ability: { 'enchant weapon': 3 } });
+  const depot = row('depot', { room: 2, pack_items: reag });
+  const fed = planDedication([{ row: bare, s }], [bare, depot]);
+  assert.deepEqual(fed.plan.filter(p => p.do === 'give-reagent').map(p => [p.from, p.to, p.keep_held[0]]),
+    [['depot', 'bare', 'bare'], ['depot', 'bare', 'bare']]);
+});
+
 // Armour and a shield for every hunter, from spares already in the stage room (2026-09-27).
 test('trolls: a bare hunter is handed a spare armour and shield and puts them on', () => {
   const st = settings(doctrine());

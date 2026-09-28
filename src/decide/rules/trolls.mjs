@@ -1098,6 +1098,38 @@ export function planDedication(needers = [], rows = [], { refused = new Set(), m
         knows(r, DEDICATE.spell) && (r.mana?.value ?? 0) >= DEDICATE.mana)
       .sort((a, b) => skill(b) - skill(a) || Number(hasReagents(b)) - Number(hasReagents(a)) ||
         (b.mana?.value ?? 0) - (a.mana?.value ?? 0));
+    // A HUNTER THAT KNOWS THE SPELL ENCHANTS ITS OWN SPARE (operator, 2026-09-28: the low-int crew
+    // learn enchant weapon so the stage caster — 25 mana, one cast a regen, ~13 an hour — stops
+    // being the only source). No hand-over either way. It casts for itself when no better caster
+    // is free, or when it is at least as able, so a novice does not spend a round Raphael would land.
+    const selfOk = !usedCasters.has(row.agent) && !row.piloted && knows(row, DEDICATE.spell) &&
+      (row.mana?.value ?? 0) >= DEDICATE.mana;
+    if (selfOk && (!casters[0] || skill(row) >= skill(casters[0]))) {
+      const plan = [{ do: 'inert-keeper', agent: row.agent,
+        why: `${row.agent} dedicates its own ${w.name}: held still through the trance` }];
+      if (!hasReagents(row)) {
+        const depot = here.filter(r => hasReagents(r))
+          .sort((a, b) => carried(b, 'orc tooth') - carried(a, 'orc tooth'))[0];
+        if (!depot) {
+          reagentWhy = `${row.agent} could dedicate its own ${w.name} but nobody in ${s.stage_room} ` +
+            'holds 3 elderberry and 1 orc tooth to hand it';
+          continue;
+        }
+        for (const [item, n] of DEDICATE.reagents) {
+          const short = Math.max(0, n - carried(row, item));
+          if (short) plan.push({ do: 'give-reagent', from: depot.agent, to: row.agent, item, amount: short,
+            keep_held: [row.agent], why: `${row.agent} needs ${n} ${item} for one dedication` });
+        }
+      }
+      plan.push(
+        { do: 'cast-enchant-weapon', agent: row.agent, target: w.id,
+          why: `${row.agent} enchants its own ${w.name}: trolls resist NONMAGIC 80` },
+        { do: 'equip-best', agent: row.agent, why: 'wield the dedicated weapon (prefer_magic_weapon breaks the tie)' });
+      usedCasters.add(row.agent);
+      rounds.push(...plan);
+      summaries.push(`${row.agent}'s ${w.name} by itself`);
+      continue;
+    }
     const d = casters[0];
     if (!d) continue;
     // THE DEDICATOR IS HELD FOR THE WHOLE ROUND and woken only by the hand-back. Awake between

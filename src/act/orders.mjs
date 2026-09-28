@@ -63,6 +63,7 @@ export const ORDER_FIELDS = {
   bank_above:        { policy: 'bankAbove' },
   walking_money:     { policy: 'walkingMoney' },
   sell_at_load:      { policy: 'sellAtLoad' },
+  hold_for_courier:  { policy: 'holdForCourier' },
   sell_when_broke:   { policy: 'sellWhenBroke' },
   sell_when_broke_under: { policy: 'sellWhenBrokeUnder' },
   sell_when_broke_stacks: { policy: 'sellWhenBrokeStacks' },

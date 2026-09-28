@@ -439,6 +439,15 @@ test('trolls: with the courier away, a full hunter stashes loot with the named s
     'wait_for_courier: with neither courier nor stash, the full hunter stands down and waits');
 });
 
+test('trolls: hold_for_courier reaches the keeper — the act layer is a whitelist', () => {
+  const plan = [{ do: 'stand-down', agent: 'g0', assigned_room: 2, roam: false, sell_at_load: 0.97, hold_for_courier: true },
+                { do: 'deploy', agent: 'g1', to: 599, hunt: ['troll'], hold_for_courier: true }];
+  const calls = callsForFleetPlan(plan, 'test');
+  const ap = calls.filter(c => c.tool === 'autopilot');
+  assert.equal(ap.length, 2);
+  assert.equal(ap.every(c => c.args.hold_for_courier === true), true, JSON.stringify(ap.map(c => c.args)));
+});
+
 test('trolls: food has a band — above food_keep_max it goes to the courier, below food_keep_min it is never given', async () => {
   const { unloadable } = await import('../src/decide/rules/trolls.mjs');
   const st = { ...settings(doctrine()), unload_food: ['meat pie'], food_keep_min: 4, food_keep_max: 10 };

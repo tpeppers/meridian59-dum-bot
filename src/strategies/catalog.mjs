@@ -225,6 +225,26 @@ export const STRATEGY_CATALOG = Object.freeze([
         description: 'A full hunter with neither courier nor stash available stands down at the stage room ' +
           'and waits (overeating meanwhile) rather than walking its own load to town: the keeper\'s load ' +
           'and stack sell triggers are held (hold_for_courier). Operator, 2026-09-28.' }),
+      // KEEP HUNTING WHILE THE COURIER IS AWAY (operator, 2026-09-28: "an 'on the floor' kind of
+      // overfarm: just drop the worst loot and save the best loot to pass to the courier when they're
+      // back"). A full hunter stays on station with the keeper's overfarm on: it trades the worst thing
+      // it carries for a better one on the floor, and unloads to the courier when it is back.
+      Object.freeze({ id: 'overfarm_while_waiting', title: 'Overfarm while the courier is away', type: 'boolean',
+        default: false, description: 'A full hunter keeps hunting (overfarm: trade worst carried for better on ' +
+          'the floor) instead of standing down to wait; it unloads when the courier is back.' }),
+      Object.freeze({ id: 'overfarm_percent', title: 'Crew overfarm sift', type: 'integer', min: 100, max: 5000,
+        default: 1000, description: 'How much of its pack capacity a full hunter sifts before its keeper would ' +
+          'deliver — high, so it keeps trading up until the courier is back.' }),
+      // THE RELIEF COURIER (operator, 2026-09-28: "If Marco gets stuck (takes >p50?), a second hunter can
+      // ride the chalice out to drop a load of loot themselves as a secondary courier"). One full hunter at
+      // a time has its town-trip hold lifted, and its keeper's own chalice trip carries the load.
+      Object.freeze({ id: 'relief_courier', title: 'Relief courier', type: 'boolean', default: false,
+        description: 'When the courier has been away longer than its median lap, one full hunter is released ' +
+          'to take its own load to town (its hold_for_courier is lifted until it is back and unloaded).' }),
+      Object.freeze({ id: 'relief_minutes', title: 'Relief after (until laps are known)', type: 'integer', min: 5,
+        max: 180, default: 25, description: 'Used until three courier laps have been timed; then the median lap.' }),
+      Object.freeze({ id: 'relief_max_minutes', title: 'Relief lasts at most', type: 'integer', min: 10, max: 240,
+        default: 45, description: 'A relief hunter goes back under the hold after this long, whatever happened.' }),
       Object.freeze({ id: 'stash_agent', title: 'Stash holder', type: 'item-list', default: [],
         description: 'The stage-room character who holds the stash — named, like the courier, because a hunter ' +
           'standing down in the stage room is assigned there too and must never be mistaken for it.' }),

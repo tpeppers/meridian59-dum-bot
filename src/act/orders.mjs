@@ -64,6 +64,8 @@ export const ORDER_FIELDS = {
   walking_money:     { policy: 'walkingMoney' },
   sell_at_load:      { policy: 'sellAtLoad' },
   hold_for_courier:  { policy: 'holdForCourier' },
+  // The keeper normalises overfarm into its own shape, so only whether it is on is compared.
+  overfarm:          { policy: 'overfarm', compare: (a, b) => (a?.enabled === true) === (b?.enabled === true) },
   sell_when_broke:   { policy: 'sellWhenBroke' },
   sell_when_broke_under: { policy: 'sellWhenBrokeUnder' },
   sell_when_broke_stacks: { policy: 'sellWhenBrokeStacks' },

@@ -173,10 +173,17 @@ const deployOrders = (settings, guardian = false) => ({
 // at sell_at_load of its pack or max_carry stacks; with a courier the unload is the normal path and
 // the run is the fallback, so both are raised. Without one nothing is sent and nothing is compared:
 // a crew with no courier keeps selling the way it always has.
-const packOrders = settings => (settings.courier_agent?.length
-  ? { sell_at_load: settings.sell_at_load, max_carry: settings.max_carry } : {});
+const packOrders = settings => ({
+  ...(settings.courier_agent?.length
+    ? { sell_at_load: settings.sell_at_load, max_carry: settings.max_carry } : {}),
+  // NO BANK WALKS (operator, 2026-09-28: "Send excess shillings back to the guild hall ... drop
+  // excess $$ to whoever is on the desk"). The desk collects and a rider deposits, so a hunter no
+  // longer walks off station to bank: its banking threshold is set out of reach.
+  ...(settings.crew_bank_above ? { bank_above: settings.crew_bank_above } : {}),
+});
 const samePack = (p, o) => (o.sell_at_load === undefined || (p.sellAtLoad ?? null) === o.sell_at_load) &&
-  (o.max_carry === undefined || (p.maxCarry ?? null) === o.max_carry);
+  (o.max_carry === undefined || (p.maxCarry ?? null) === o.max_carry) &&
+  (o.bank_above === undefined || (p.bankAbove ?? null) === o.bank_above);
 
 // THE VIGOR BAND, on deploy AND stand-down: a unit waiting at the stage room is the one about to
 // set out, so it eats up there rather than on the road.

@@ -257,6 +257,11 @@ export const STRATEGY_CATALOG = Object.freeze([
       Object.freeze({ id: 'depot_elderberry_target', title: 'Depot elderberry top-up', type: 'integer',
         min: 0, max: 1000, default: 160,
         description: 'What a delivery tops the depot up to. Above the floor, so one delivery lasts.' }),
+      Object.freeze({ id: 'crew_bank_above', title: 'Crew banking threshold', type: 'integer',
+        min: 0, default: 0,
+        description: 'Carried on every deploy and recall. The crew hands excess shillings to the chalice ' +
+          'desk, which passes them to the next rider for the guild hall, so a hunter should never walk ' +
+          'off station to bank. 0 leaves each keeper\'s own threshold alone.' }),
       Object.freeze({ id: 'sell_at_load', title: 'Crew sell-run trigger', type: 'number',
         min: 0.5, max: 1, default: 0.97,
         description: 'Carried on every deploy and stand-down. High, so the keeper\'s own sell run is ' +

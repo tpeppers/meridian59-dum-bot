@@ -978,3 +978,17 @@ test('trolls: a hungry unit with nothing to eat farms inky caps, and comes back 
   assert.equal(inkyDue(hungry, { ...s, inky_room: 0 }, 0), false, '0 turns it off');
   assert.ok(inkyOrders(s).hunt.length > 0);
 });
+
+// 2026-09-28: the crew hands excess shillings to the chalice desk, so no hunter walks off to bank.
+test('trolls: crew_bank_above rides on every deploy and recall, and is compared', () => {
+  const d = doctrine();
+  d.strategies.settings = { ...(d.strategies.settings ?? {}),
+    [ID]: { ...(d.strategies.settings?.[ID] ?? {}), crew_bank_above: 1000000 } };
+  const dep = fire([row('a')], { a: [ID] }, d).plan.find(p => p.do === 'deploy');
+  assert.equal(dep?.bank_above, 1000000, JSON.stringify(dep));
+  assert.equal(callsForFleetPlan([dep])[0].args.bank_above, 1000000, 'the deploy call carries it');
+  const down = fire([row('b', { weapon_magic: mundane() })], { b: [ID] }, d).plan.find(p => p.do === 'stand-down');
+  assert.equal(callsForFleetPlan([down])[0].args.bank_above, 1000000, 'and so does a recall');
+  const off = fire([row('c')], { c: [ID] }).plan.find(p => p.do === 'deploy');
+  assert.equal(off?.bank_above, undefined, 'unset: each keeper keeps its own threshold');
+});

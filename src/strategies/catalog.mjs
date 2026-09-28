@@ -238,6 +238,11 @@ export const STRATEGY_CATALOG = Object.freeze([
       // THE RELIEF COURIER (operator, 2026-09-28: "If Marco gets stuck (takes >p50?), a second hunter can
       // ride the chalice out to drop a load of loot themselves as a secondary courier"). One full hunter at
       // a time has its town-trip hold lifted, and its keeper's own chalice trip carries the load.
+      // THE DETOUR (operator, 2026-09-28: "Marco can also detour around the flatlands if it's blocked by
+      // ants/spiders"). A courier re-sent after a stall on the road plans around these rooms.
+      Object.freeze({ id: 'courier_detour_rooms', title: 'Courier detours around', type: 'number-list', default: [],
+        description: 'When a stalled courier is walked back to its post, the walk plans around these rooms ' +
+          '(e.g. 584 The Flatlands, 585 the Badlands border — the East Merchant Way is the long road round).' }),
       Object.freeze({ id: 'relief_courier', title: 'Relief courier', type: 'boolean', default: false,
         description: 'When the courier has been away longer than its median lap, one full hunter is released ' +
           'to take its own load to town (its hold_for_courier is lifted until it is back and unloaded).' }),

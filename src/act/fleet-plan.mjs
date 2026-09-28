@@ -268,7 +268,8 @@ export function callsForFleetPlan(plan = [], why = null, { yieldTo = [] } = {}) 
         hold_for_courier: step.hold_for_courier, overfarm: step.overfarm },
         yieldSet, yieldedFields), why: step.why ?? why });
       if (step.moved) calls.push({ tool: 'travel', args: { agent, to: assigned_room, background: true,
-        ...(Number.isFinite(step.health_floor) ? { health_floor: step.health_floor } : {}) },
+        ...(Number.isFinite(step.health_floor) ? { health_floor: step.health_floor } : {}),
+        ...(Array.isArray(step.avoid) && step.avoid.length ? { avoid: step.avoid } : {}) },
         timeoutMs: 300_000, why: step.why ?? why });
       continue;
     }

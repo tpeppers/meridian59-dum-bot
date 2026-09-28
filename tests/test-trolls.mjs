@@ -480,6 +480,13 @@ test('trolls: overfarm while waiting — a full hunter keeps hunting, and its or
   assert.equal(calls[0].args.overfarm?.enabled, true, 'the act layer carries overfarm');
 });
 
+test('trolls: a stand-down travel carries avoid (the courier detour)', () => {
+  const calls = callsForFleetPlan([{ do: 'stand-down', agent: 'c1', assigned_room: 2, roam: false, moved: true,
+    health_floor: 0.3, avoid: [584, 585] }], 'test');
+  const t = calls.find(c => c.tool === 'travel');
+  assert.deepEqual(t?.args?.avoid, [584, 585], JSON.stringify(t?.args));
+});
+
 test('trolls: food has a band — above food_keep_max it goes to the courier, below food_keep_min it is never given', async () => {
   const { unloadable } = await import('../src/decide/rules/trolls.mjs');
   const st = { ...settings(doctrine()), unload_food: ['meat pie'], food_keep_min: 4, food_keep_max: 10 };

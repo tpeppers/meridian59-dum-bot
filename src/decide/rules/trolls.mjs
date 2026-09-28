@@ -621,6 +621,10 @@ export const trollFleetRules = [{
           // A courier whose death costs nothing walks hurt too. Its own start floor is 90%, and at 18/21
           // it was refused "too_hurt" — while never healing on the road.
           ...(s0.courier_road_gate === false ? { health_floor: 0.3 } : {}),
+          // A STALLED COURIER GOES ROUND: re-sent from the road (away, not travelling), its walk plans
+          // around courier_detour_rooms — never the room it is standing in or its post.
+          ...(away && s0.courier_detour_rooms?.length
+            ? { avoid: s0.courier_detour_rooms.map(Number).filter(r => r !== cr.room && r !== post) } : {}),
           why: roadOpen
             ? `the crew's courier waits at stage room ${s0.stage_room} for their loot`
             : `the courier holds in ${cr.room}: the road to the stage room crosses ${s0.room}, and ` +

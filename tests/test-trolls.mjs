@@ -448,6 +448,38 @@ test('trolls: hold_for_courier reaches the keeper — the act layer is a whiteli
   assert.equal(ap.every(c => c.args.hold_for_courier === true), true, JSON.stringify(ap.map(c => c.args)));
 });
 
+test('trolls: the relief courier — after the median lap, the fullest hunter takes its own load', async () => {
+  const { reliefCourier, COURIER_CLOCK } = await import('../src/decide/rules/trolls.mjs');
+  const clock = { awaySince: null, laps: [], relief: null };
+  const st = { ...settings(doctrine()), courier_agent: ['Courier'], relief_courier: true, relief_minutes: 25,
+               relief_max_minutes: 45, unload_at: 0.8 };
+  const courierAt = room => row('c1', { character: 'Courier', room });
+  const full = row('f', { room: 599, pack: { percent: 95 } }), half = row('h', { room: 599, pack: { percent: 50 } });
+  const crew = new Set(['f', 'h']);
+  const T = 1_000_000_000;
+  assert.equal(reliefCourier([courierAt(2), full, half], st, crew, T, clock), null, 'courier home: no relief');
+  assert.equal(reliefCourier([courierAt(557), full, half], st, crew, T + 60_000, clock), null, 'just left: no relief yet');
+  assert.equal(reliefCourier([courierAt(557), full, half], st, crew, T + 27 * 60_000, clock), 'f',
+    'past relief_minutes with no laps timed: the FULLEST hunter goes');
+  assert.equal(reliefCourier([courierAt(557), full, half], st, crew, T + 28 * 60_000, clock), 'f', 'one at a time, kept');
+  assert.equal(reliefCourier([courierAt(2), full, half], st, crew, T + 40 * 60_000, clock), null, 'courier back: relief ends');
+  assert.equal(clock.laps.length, 1, 'and the lap is timed');
+  assert.equal(reliefCourier([courierAt(557), full], { ...st, relief_courier: false }, crew, T + 90 * 60_000, clock), null, 'off by default');
+  assert.equal(COURIER_CLOCK && typeof COURIER_CLOCK, 'object');
+});
+
+test('trolls: overfarm while waiting — a full hunter keeps hunting, and its orders carry overfarm', async () => {
+  const { unloadDue } = await import('../src/decide/rules/trolls.mjs');
+  const st = { ...settings(doctrine()), courier_agent: ['Courier'], wait_for_courier: true, overfarm_while_waiting: true,
+               overfarm_percent: 1000, unload_items: ['sapphire'], unload_at: 0.8 };
+  const hunter = row('h', { room: 599, pack: { percent: 95 }, pack_items: [{ name: 'sapphire', amount: 9 }] });
+  assert.equal(unloadDue(hunter, st, [hunter, row('c1', { character: 'Courier', room: 557 })]), false,
+    'courier away: it does not stand down to wait — it keeps hunting');
+  const calls = callsForFleetPlan([{ do: 'deploy', agent: 'h', to: 599, hunt: ['troll'],
+    overfarm: { enabled: true, overfarm_percent: 1000 }, hold_for_courier: true }], 'test');
+  assert.equal(calls[0].args.overfarm?.enabled, true, 'the act layer carries overfarm');
+});
+
 test('trolls: food has a band — above food_keep_max it goes to the courier, below food_keep_min it is never given', async () => {
   const { unloadable } = await import('../src/decide/rules/trolls.mjs');
   const st = { ...settings(doctrine()), unload_food: ['meat pie'], food_keep_min: 4, food_keep_max: 10 };
@@ -1027,4 +1059,22 @@ test('trolls: crew_bank_above rides on every deploy and recall, and is compared'
   assert.equal(callsForFleetPlan([down])[0].args.bank_above, 1000000, 'and so does a recall');
   const off = fire([row('c')], { c: [ID] }).plan.find(p => p.do === 'deploy');
   assert.equal(off?.bank_above, undefined, 'unset: each keeper keeps its own threshold');
+});
+
+// 2026-09-28: the courier's orders read "posted to 2" while it stood in 584 for 90 minutes; the crew,
+// told to wait for it, waited in the stage room. Posted is a place, and a courier whose death costs
+// nothing is sent hurt.
+test('courier: posted orders but away from the post, not walking: the walk is sent again', () => {
+  const d = courierDoctrine({ courier_road_gate: false });
+  const away = courierAt(584, { health: { value: 18, max: 21, pct: 0.86 } });
+  const sd = standDownOf(fire([inRoom('g0'), away], all(1), d), 'courier');
+  assert.equal(sd?.assigned_room, 2, JSON.stringify(sd));
+  const travel = callsForFleetPlan([sd]).find(c => c.tool === 'travel');
+  assert.equal(travel?.args?.to, 2, 'it is walked home');
+  assert.equal(travel?.args?.health_floor, 0.3, 'hurt or not: its death costs nothing');
+  const walking = courierAt(584, { doing: 'travelling to 2' });
+  assert.equal(standDownOf(fire([inRoom('g0'), walking], all(1), d), 'courier'), undefined,
+    'already on its way: left alone');
+  assert.equal(standDownOf(fire([inRoom('g0'), courierAt(2)], all(1), d), 'courier'), undefined,
+    'at its post: nothing to send');
 });

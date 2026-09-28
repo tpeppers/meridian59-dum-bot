@@ -173,7 +173,7 @@ const deployOrders = (settings, guardian = false) => ({
 // at sell_at_load of its pack or max_carry stacks; with a courier the unload is the normal path and
 // the run is the fallback, so both are raised. Without one nothing is sent and nothing is compared:
 // a crew with no courier keeps selling the way it always has.
-const packOrders = settings => ({
+const packOrders = (settings, { relief = settings?.__relief === true } = {}) => ({
   ...(settings.courier_agent?.length
     ? { sell_at_load: settings.sell_at_load, max_carry: settings.max_carry } : {}),
   // NO BANK WALKS (operator, 2026-09-28: "Send excess shillings back to the guild hall ... drop
@@ -181,12 +181,18 @@ const packOrders = settings => ({
   // longer walks off station to bank: its banking threshold is set out of reach.
   ...(settings.crew_bank_above ? { bank_above: settings.crew_bank_above } : {}),
   // WAIT FOR THE COURIER: the keeper's own full-pack town trip is held (hold_for_courier).
-  ...(settings.courier_agent?.length && settings.wait_for_courier ? { hold_for_courier: true } : {}),
+  // A RELIEF COURIER's hold is lifted: its own town trip is the point.
+  ...(settings.courier_agent?.length && settings.wait_for_courier ? { hold_for_courier: !relief } : {}),
+  // AND THE WAITING IS DONE HUNTING: overfarm keeps the best of what it kills.
+  ...(settings.courier_agent?.length && settings.overfarm_while_waiting
+    ? { overfarm: { enabled: true, overfarm_percent: Number(settings.overfarm_percent) || 1000 } } : {}),
 });
 const samePack = (p, o) => (o.sell_at_load === undefined || (p.sellAtLoad ?? null) === o.sell_at_load) &&
   (o.max_carry === undefined || (p.maxCarry ?? null) === o.max_carry) &&
   (o.bank_above === undefined || (p.bankAbove ?? null) === o.bank_above) &&
-  (o.hold_for_courier === undefined || (p.holdForCourier ?? false) === o.hold_for_courier);
+  (o.hold_for_courier === undefined || (p.holdForCourier ?? false) === o.hold_for_courier) &&
+  // The keeper normalises the overfarm object into its own shape; only whether it is on is compared.
+  (o.overfarm === undefined || (p.overfarm?.enabled === true) === (o.overfarm?.enabled === true));
 
 // THE VIGOR BAND, on deploy AND stand-down: a unit waiting at the stage room is the one about to
 // set out, so it eats up there rather than on the road.
@@ -355,6 +361,9 @@ export function unloadDue(row, s, rows, refused = new Set()) {
   // NEITHER: WAIT FOR IT (operator, 2026-09-28: "Hunters in room 2 should strive to overeat and wait
   // for the courier to return"). Stood down at the stage room the hunter eats to 200 (overdrive) and
   // unloads the moment the courier walks in; its own town trip is held (hold_for_courier).
+  // UNLESS it is the relief courier (it is taking its own load), or the crew overfarms while waiting
+  // (it keeps hunting, trading up, and unloads when the courier is back).
+  if (row.agent === COURIER_CLOCK.relief?.agent || s.overfarm_while_waiting) return false;
   return !!s.wait_for_courier && unloadable(row, s, stageLacks(rows, s)).any;
 }
 
@@ -435,6 +444,42 @@ export function stashDepot(rows, s, { exclude = null } = {}) {
     .sort((a, b) => packFraction(a) - packFraction(b))[0] ?? null;
 }
 
+// THE COURIER'S CLOCK: how long it has been away from the stage room, the laps it has completed, and
+// the one relief hunter (if any). Module state, because a lap spans many passes; a DUM restart starts
+// the clock again, which only delays the first relief.
+export const COURIER_CLOCK = { awaySince: null, laps: [], relief: null };
+const median = xs => { const a = [...xs].sort((x, y) => x - y); return a.length ? a[Math.floor(a.length / 2)] : null; };
+
+/** Update the clock and choose (or keep, or retire) the relief hunter. Returns its agent id or null. */
+export function reliefCourier(rows, s, fighters, now = Date.now(), clock = COURIER_CLOCK) {
+  const c = courierRow(rows, s);
+  if (!c) return null;
+  if (c.in_game && c.room === s.stage_room) {
+    if (clock.awaySince != null) { clock.laps.push(now - clock.awaySince); clock.laps = clock.laps.slice(-20); }
+    clock.awaySince = null; clock.relief = null;
+    return null;
+  }
+  if (clock.awaySince == null) clock.awaySince = now;
+  if (!s.relief_courier) return null;
+  const r = clock.relief;
+  if (r) {
+    const row = rows.find(x => x.agent === r.agent);
+    const done = !row || now - r.since > (Number(s.relief_max_minutes) || 45) * 60_000 ||
+      (r.left && row.room === s.stage_room && (packFraction(row) ?? 1) < 0.5);
+    if (done) { clock.relief = null; return null; }
+    if (row.room !== s.stage_room && row.room !== s.room) r.left = true;
+    return r.agent;
+  }
+  const threshold = clock.laps.length >= 3 ? median(clock.laps) : (Number(s.relief_minutes) || 25) * 60_000;
+  if (now - clock.awaySince <= threshold) return null;
+  const pick = rows.filter(x => fighters.has(x.agent) && x.in_game && takeable(x) && !x.piloted &&
+      (packFraction(x) ?? 0) >= (Number(s.unload_at) || 0.8))
+    .sort((a, b) => (packFraction(b) ?? 0) - (packFraction(a) ?? 0))[0];
+  if (!pick) return null;
+  clock.relief = { agent: pick.agent, since: now, left: false };
+  return pick.agent;
+}
+
 export const trollFleetRules = [{
   id: 'ukgoth-trolls',
   faculty: 'movement',
@@ -470,8 +515,14 @@ export const trollFleetRules = [{
       .reduce((n, r) => n + Math.max(0, crewLarder(r) - 300), 0);
     const atStage = [], fighters = new Set();
     let s0 = null;
+    // THE RELIEF COURIER, decided once a pass before anyone is placed; its settings carry the mark so
+    // every order built for it — and every comparison against them — lifts its town-trip hold.
+    const firstS = selected.length ? settingsOf.get(selected[0].agent) : null;
+    const reliefAgent = firstS ? reliefCourier(rows, firstS, new Set(selected.map(r => r.agent))) : null;
+    if (reliefAgent) notes.push({ agent: reliefAgent, why: `relief courier: the courier has been away ` +
+      `${Math.round((Date.now() - (COURIER_CLOCK.awaySince ?? Date.now())) / 60000)} min; this hunter takes its own load to town` });
     for (const row of selected) {
-      const s = settingsOf.get(row.agent);
+      const s = row.agent === reliefAgent ? { ...settingsOf.get(row.agent), __relief: true } : settingsOf.get(row.agent);
       s0 ??= s;
       const r = trollReadiness(row, s);
       if (r.size !== false) fighters.add(row.agent);
@@ -559,9 +610,17 @@ export const trollFleetRules = [{
       const roadOpen = cr.room === s0.stage_room || s0.courier_road_gate === false ||
         (crewIn > 0 && hp != null && hp >= s0.courier_health);
       const post = roadOpen ? s0.stage_room : cr.room;
-      if (post != null && !courierStaged(cr, post, s0))
+      // POSTED IS A PLACE, NOT A POLICY. courierStaged reads the orders only, so a courier whose
+      // walk home was cancelled stood on the road "posted to 2" with nothing sending it there: 2026-09-28
+      // it sat in 584 from 02:47 to 04:16 while the crew, told to wait for it, waited in the stage
+      // room. Away from its post and not already walking: send the walk again.
+      const away = post != null && cr.room !== post && !/travel/i.test(String(cr.doing ?? ''));
+      if (post != null && (!courierStaged(cr, post, s0) || away))
         place.push({ do: 'stand-down', agent: cr.agent, assigned_room: post, roam: false,
           ...courierOrders(s0), moved: post !== cr.room,
+          // A courier whose death costs nothing walks hurt too. Its own start floor is 90%, and at 18/21
+          // it was refused "too_hurt" — while never healing on the road.
+          ...(s0.courier_road_gate === false ? { health_floor: 0.3 } : {}),
           why: roadOpen
             ? `the crew's courier waits at stage room ${s0.stage_room} for their loot`
             : `the courier holds in ${cr.room}: the road to the stage room crosses ${s0.room}, and ` +

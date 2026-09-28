@@ -412,6 +412,33 @@ test('trolls: a hungry hunter under its floor is fed from a well-stocked neighbo
   assert.equal(planFood([{ row: hungry, s: st }], [hungry, poorDonor]).plan.length, 0, 'a donor keeps its own 300');
 });
 
+test('trolls: with the courier away, a full hunter stashes loot with the named stage-room holder', async () => {
+  const { unloadDue, stashDepot } = await import('../src/decide/rules/trolls.mjs');
+  const base = settings(doctrine());
+  const st = { ...base, courier_agent: ['Courier'], stash_at_stage: true, stash_agent: ['Holder'],
+               stash_ceiling: 0.6, unload_items: ['sapphire', 'relic of Qor'], unload_at: 0.8 };
+  const hunter = row('h', { character: 'Hunter', room: 2, pack: { percent: 90 },
+    pack_items: [{ name: 'sapphire', amount: 12 }, { name: 'relic of Qor', amount: 1 }] });
+  const raph = row('d1', { character: 'Holder', room: 2, mode: 'survive', policy: { assignedRoom: 2 }, pack: { percent: 30 } });
+  const marcoAway = row('c1', { character: 'Courier', room: 578, pack: { percent: 10 } });
+  const staged = row('s', { character: 'Staged', room: 2, mode: 'idle', policy: { assignedRoom: 2 }, pack: { percent: 5 } });
+  const rows = [hunter, raph, marcoAway, staged];
+  assert.equal(stashDepot(rows, st)?.agent, 'd1', 'the NAMED holder first, while it has room');
+  const fullRaph = { ...raph, pack: { percent: 70 } };
+  assert.equal(stashDepot([hunter, fullRaph, marcoAway, staged], st)?.agent, 's',
+    'holder full: a hunter standing down with ample room takes it (operator, 2026-09-28)');
+  assert.equal(stashDepot([hunter, fullRaph, marcoAway, { ...staged, pack: { percent: 55 } }], st), null,
+    'but not one without ample room');
+  assert.equal(stashDepot([hunter, fullRaph, marcoAway, staged], st, { exclude: 's' }), null, 'and never the unloading hunter itself');
+  assert.equal(stashDepot([hunter, fullRaph, marcoAway, staged], { ...st, stash_on_staged: false }), null, 'stash_on_staged:false keeps it to the named holder');
+  assert.equal(unloadDue(hunter, st, rows), true, 'a full hunter is due to unload with the courier away');
+  assert.equal(stashDepot(rows, { ...st, stash_at_stage: false }), null, 'off by default');
+  assert.equal(stashDepot([hunter, { ...raph, pack: { percent: 70 } }, marcoAway], st), null, 'a holder over the stash ceiling takes nothing');
+  assert.equal(unloadDue(hunter, { ...st, stash_at_stage: false }, rows), false, 'without the stash and without a courier: no unload (the old behaviour)');
+  assert.equal(unloadDue(hunter, { ...st, stash_at_stage: false, wait_for_courier: true }, rows), true,
+    'wait_for_courier: with neither courier nor stash, the full hunter stands down and waits');
+});
+
 test('trolls: food has a band — above food_keep_max it goes to the courier, below food_keep_min it is never given', async () => {
   const { unloadable } = await import('../src/decide/rules/trolls.mjs');
   const st = { ...settings(doctrine()), unload_food: ['meat pie'], food_keep_min: 4, food_keep_max: 10 };

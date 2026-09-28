@@ -214,6 +214,29 @@ export const STRATEGY_CATALOG = Object.freeze([
       // is right for loot and wrong for food a hunter also eats. So a food named here is kept between
       // food_keep_min and food_keep_max: above the max, the surplus goes to the courier with the loot;
       // below the min, planFood never takes it away to feed a crew mate.
+      // THE STAGE-ROOM STASH (operator, 2026-09-28, choosing "stash at the stage room" over a second
+      // courier): with the courier away selling, a full hunter hands its loot to the stage-room depot
+      // instead of walking it to town — measured that evening, 31% of the crew's time went on those
+      // walks and the hall. The courier empties the depot of it when it is back.
+      Object.freeze({ id: 'stash_at_stage', title: 'Stash loot at the stage room', type: 'boolean', default: false,
+        description: 'With the courier away, a full hunter unloads to the stage-room depot (the stationed ' +
+          'non-fighter) rather than walking to town; the depot hands the stash to the courier when it returns.' }),
+      Object.freeze({ id: 'wait_for_courier', title: 'Wait for the courier', type: 'boolean', default: false,
+        description: 'A full hunter with neither courier nor stash available stands down at the stage room ' +
+          'and waits (overeating meanwhile) rather than walking its own load to town: the keeper\'s load ' +
+          'and stack sell triggers are held (hold_for_courier). Operator, 2026-09-28.' }),
+      Object.freeze({ id: 'stash_agent', title: 'Stash holder', type: 'item-list', default: [],
+        description: 'The stage-room character who holds the stash — named, like the courier, because a hunter ' +
+          'standing down in the stage room is assigned there too and must never be mistaken for it.' }),
+      Object.freeze({ id: 'stash_on_staged', title: 'Stash with hunters standing down', type: 'boolean', default: true,
+        description: 'With the named holder full or absent, a hunter standing down in the stage room with ample ' +
+          'room (it has unloaded and is eating to 200) takes the stash for now, and hands it on with its own ' +
+          'next unload. Operator, 2026-09-28.' }),
+      Object.freeze({ id: 'stash_staged_ceiling', title: 'Standing-down stash ceiling', type: 'number', min: 0.1, max: 0.8,
+        default: 0.4, description: 'A hunter standing down takes stashed loot only below this fraction of its pack.' }),
+      Object.freeze({ id: 'stash_ceiling', title: 'Depot stash ceiling', type: 'number', min: 0.2, max: 0.95, default: 0.6,
+        description: 'The depot takes stashed loot only below this fraction of its pack, keeping room for the ' +
+          'elderberry, orc teeth and spare weapons its dedications need.' }),
       Object.freeze({ id: 'unload_food', title: 'Food sent back above its band', type: 'item-list',
         default: [],
         description: 'Foods the crew keeps between food_keep_min and food_keep_max per hunter. Above the ' +

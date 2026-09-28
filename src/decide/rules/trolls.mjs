@@ -180,10 +180,13 @@ const packOrders = settings => ({
   // excess $$ to whoever is on the desk"). The desk collects and a rider deposits, so a hunter no
   // longer walks off station to bank: its banking threshold is set out of reach.
   ...(settings.crew_bank_above ? { bank_above: settings.crew_bank_above } : {}),
+  // WAIT FOR THE COURIER: the keeper's own full-pack town trip is held (hold_for_courier).
+  ...(settings.courier_agent?.length && settings.wait_for_courier ? { hold_for_courier: true } : {}),
 });
 const samePack = (p, o) => (o.sell_at_load === undefined || (p.sellAtLoad ?? null) === o.sell_at_load) &&
   (o.max_carry === undefined || (p.maxCarry ?? null) === o.max_carry) &&
-  (o.bank_above === undefined || (p.bankAbove ?? null) === o.bank_above);
+  (o.bank_above === undefined || (p.bankAbove ?? null) === o.bank_above) &&
+  (o.hold_for_courier === undefined || (p.holdForCourier ?? false) === o.hold_for_courier);
 
 // THE VIGOR BAND, on deploy AND stand-down: a unit waiting at the stage room is the one about to
 // set out, so it eats up there rather than on the road.
@@ -342,8 +345,17 @@ export function unloadDue(row, s, rows, refused = new Set()) {
   const courier = courierIn(rows, s);
   // A REFUSED HAND-OVER IS NOT A REASON TO WAIT. Held at the stage room for a courier the server
   // will not trade with for a quarter hour, a hunter would sit there full the whole time.
-  if (!courier || refused.has(pairKey(row.agent, courier.agent))) return false;
-  return unloadable(row, s, stageLacks(rows, s)).any;
+  if (courier && !refused.has(pairKey(row.agent, courier.agent))) return unloadable(row, s, stageLacks(rows, s)).any;
+  // NO COURIER: THE STASH, when it is on and the depot has room below its stash ceiling.
+  const stash = stashDepot(rows, s, { exclude: row.agent });
+  if (stash && !refused.has(pairKey(row.agent, stash.agent))) {
+    const u = unloadable(row, s, stageLacks(rows, s));
+    return u.loot.length + u.gear.length > 0;
+  }
+  // NEITHER: WAIT FOR IT (operator, 2026-09-28: "Hunters in room 2 should strive to overeat and wait
+  // for the courier to return"). Stood down at the stage room the hunter eats to 200 (overdrive) and
+  // unloads the moment the courier walks in; its own town trip is held (hold_for_courier).
+  return !!s.wait_for_courier && unloadable(row, s, stageLacks(rows, s)).any;
 }
 
 // Does anyone in the stage room lack a worn piece matching `re`? (Unknown gear counts as not lacking.)
@@ -396,6 +408,31 @@ export function depotIn(rows, room, fighters = new Set(), courier = null, { givi
       !r.piloted && r.policy?.assignedRoom === room && (giving || hasPackRoom(r)))
     .sort((a, b) => carried(b, 'elderberry') - carried(a, 'elderberry') ||
       carried(b, 'orc tooth') - carried(a, 'orc tooth'))[0] ?? null;
+}
+
+/**
+ * THE STASH DEPOT: with `stash_at_stage` on, the stage-room depot while its pack is under
+ * `stash_ceiling`. The stash is a lower ceiling than the depot's own, so loot never crowds out
+ * what the dedications and re-arming need. Pure.
+ */
+export function stashDepot(rows, s, { exclude = null } = {}) {
+  if (!s?.stash_at_stage) return null;
+  const here = d => d && d.in_game && d.room === s.stage_room && takeable(d) && !d.piloted && d.agent !== exclude;
+  const under = (d, ceiling) => { const p = packFraction(d); return p == null || p < ceiling; };
+  // THE NAMED HOLDER FIRST.
+  const holder = s.stash_agent?.length ? rows.find(r => named(r, s.stash_agent)) ?? null : null;
+  if (here(holder) && under(holder, Number(s.stash_ceiling) || 0.6)) return holder;
+  // THEN A HUNTER STANDING DOWN WITH AMPLE ROOM (operator, 2026-09-28: "A hunter standing down in the
+  // stage room is (kind of?) a fine temporary loot dropoff point provided they have ample room"). Never
+  // the one unloading, never the courier, and only a KNOWN pack under the lower ceiling — a hunter
+  // carries the stash back out, so it must have room to keep hunting with it.
+  if (s.stash_on_staged === false) return null;
+  const courier = courierRow(rows, s);
+  const ceil = Number(s.stash_staged_ceiling) || 0.4;
+  return rows.filter(r => here(r) && r.agent !== courier?.agent && r.agent !== holder?.agent &&
+      r.policy?.assignedRoom === s.stage_room && r.mode !== 'farm' &&
+      packFraction(r) != null && packFraction(r) < ceil)
+    .sort((a, b) => packFraction(a) - packFraction(b))[0] ?? null;
 }
 
 export const trollFleetRules = [{
@@ -858,6 +895,30 @@ export function planUnload(atStage, rows, fighters, s, { max = 6, refused = new 
                                                         given = new Set() } = {}) {
   if (!s?.courier_agent?.length) return { plan: [], summary: null, why: null };
   const courier = courierIn(rows, s);
+  // NO COURIER, AND THE STASH IS ON: the loot goes to the stage-room depot to wait for it.
+  const anyStash = !courier ? stashDepot(rows, s) : null;
+  if (anyStash) {
+    const plan = [];
+    const lacksS = stageLacks(rows, s);
+    for (const { row } of atStage) {
+      if (plan.length >= max) break;
+      // PER GIVER: the stash is never the hunter itself.
+      const stash = stashDepot(rows, s, { exclude: row.agent });
+      if (!stash || !fighters.has(row.agent) || refused.has(pairKey(row.agent, stash.agent))) continue;
+      const u = unloadable(row, s, lacksS);
+      for (const { name, n } of u.loot) {
+        if (plan.length >= max) break;
+        plan.push({ do: 'give-reagent', from: row.agent, to: stash.agent, item: name, amount: n,
+          why: `the courier is away: ${row.agent} stashes ${n} ${name} with ${stash.agent} in the stage room` });
+      }
+      for (const { name, n } of u.gear)
+        for (let i = 0; i < n && plan.length < max; i++)
+          plan.push({ do: 'give-gear', from: row.agent, to: stash.agent, item: name,
+            why: `the courier is away: ${row.agent}'s spare ${name} waits with ${stash.agent}` });
+    }
+    return { plan, summary: plan.length ? `${plan.length} stashed at the stage room` : null,
+             why: plan.length ? null : 'nothing to stash' };
+  }
   if (!courier) {
     const c = courierRow(rows, s);
     return { plan: [], summary: null, why: !c || !c.in_game ? 'the courier is not in game'
@@ -894,6 +955,17 @@ export function planUnload(atStage, rows, fighters, s, { max = 6, refused = new 
         weapon: w.name, why: `no depot has room; ${row.agent}'s surplus ${w.name} goes to be sold` });
     }
   }
+  // THE STASH GOES OUT WITH THE COURIER: whatever loot the depot is holding by name (never its
+  // elderberry, orc teeth or weapons — none of those is on unload_items).
+  const holder = s.stash_at_stage && s.stash_agent?.length ? rows.find(r => named(r, s.stash_agent)) : null;
+  if (holder && holder.in_game && holder.room === s.stage_room && holder.agent !== courier.agent &&
+      !refused.has(pairKey(holder.agent, courier.agent)))
+    for (const name of s.unload_items ?? []) {
+      if (plan.length >= max) break;
+      const n = carried(holder, name);
+      if (n > 0) plan.push({ do: 'give-reagent', from: holder.agent, to: courier.agent, item: name, amount: n,
+        why: `the courier is back: ${holder.agent} hands over the stashed ${n} ${name}` });
+    }
   // THE COURIER'S PURCHASES, DOWN TO A SHORT DEPOT. Real weapons it bought at the smith, by name,
   // while the depot holds fewer than depot_keep of that name — the same number the depot sells
   // down to below, so stock settles at depot_keep and never ping-pongs.

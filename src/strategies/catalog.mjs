@@ -243,6 +243,16 @@ export const STRATEGY_CATALOG = Object.freeze([
       Object.freeze({ id: 'courier_detour_rooms', title: 'Courier detours around', type: 'number-list', default: [],
         description: 'When a stalled courier is walked back to its post, the walk plans around these rooms ' +
           '(e.g. 584 The Flatlands, 585 the Badlands border — the East Merchant Way is the long road round).' }),
+      // THE COURIER CARRIES SUPPLIES OUT, not only loot back (operator, 2026-09-28: troll hunters train
+      // relay — 5 mana and one edible mushroom — on the low-vigor characters in the stage room, toward
+      // enchant weapon; none of them carried a single mushroom, and no merchant sells one).
+      Object.freeze({ id: 'courier_supply', title: 'Courier hands down', type: 'item-list', default: [],
+        description: 'Items the courier hands to each crew hunter in the stage room holding fewer than ' +
+          'courier_supply_low, up to courier_supply_to (e.g. edible mushroom for relay practice, bread).' }),
+      Object.freeze({ id: 'courier_supply_low', title: 'Hand down below', type: 'integer', min: 0, max: 200, default: 5,
+        description: 'A hunter holding fewer than this of a courier_supply item is topped up.' }),
+      Object.freeze({ id: 'courier_supply_to', title: 'Hand down to', type: 'integer', min: 1, max: 200, default: 20,
+        description: 'The top-up target per hunter, per courier_supply item.' }),
       Object.freeze({ id: 'relief_courier', title: 'Relief courier', type: 'boolean', default: false,
         description: 'When the courier has been away longer than its median lap, one full hunter is released ' +
           'to take its own load to town (its hold_for_courier is lifted until it is back and unloaded).' }),

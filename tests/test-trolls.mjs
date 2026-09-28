@@ -516,6 +516,20 @@ test('trolls: a stand-down travel carries avoid (the courier detour)', () => {
   assert.deepEqual(t?.args?.avoid, [584, 585], JSON.stringify(t?.args));
 });
 
+test('trolls: the courier hands supplies down to the crew in the stage room', async () => {
+  const { planUnload } = await import('../src/decide/rules/trolls.mjs');
+  const st = { ...settings(doctrine()), courier_agent: ['Courier'], courier_supply: ['edible mushroom'],
+               courier_supply_low: 5, courier_supply_to: 20, courier_pack_ceiling: 0.9, unload_items: [] };
+  const courier = row('c1', { character: 'Courier', room: 2, pack: { percent: 30 },
+    pack_items: [{ name: 'edible mushroom', amount: 30 }] });
+  const a = row('a', { room: 2, pack: { percent: 40 }, pack_items: [] });
+  const b = row('b', { room: 2, pack: { percent: 40 }, pack_items: [{ name: 'edible mushroom', amount: 12 }] });
+  const res = planUnload([{ row: a, s: st }, { row: b, s: st }], [courier, a, b], new Set(['a', 'b']), st);
+  const g = res.plan.filter(p => p.item === 'edible mushroom');
+  assert.equal(g.length, 1, JSON.stringify(res.plan));
+  assert.equal(g[0].to, 'a'); assert.equal(g[0].amount, 20, 'topped to courier_supply_to');
+});
+
 test('trolls: food has a band — above food_keep_max it goes to the courier, below food_keep_min it is never given', async () => {
   const { unloadable } = await import('../src/decide/rules/trolls.mjs');
   const st = { ...settings(doctrine()), unload_food: ['meat pie'], food_keep_min: 4, food_keep_max: 10 };

@@ -1054,6 +1054,22 @@ export function planUnload(atStage, rows, fighters, s, { max = 6, refused = new 
         why: `the depot holds ${have} elderberry, under ${s.depot_elderberry}; the courier tops it to ` +
           `${have + n} (3 a dedication)` });
   }
+  // SUPPLIES DOWN TO THE CREW: each hunter in the stage room under courier_supply_low of an item is
+  // topped up to courier_supply_to from the courier's own stock — never below the courier's last one.
+  for (const item of s.courier_supply ?? []) {
+    let left = carried(courier, item);
+    for (const { row } of atStage) {
+      if (plan.length >= max || left <= 0) break;
+      if (row.agent === courier.agent || !fighters.has(row.agent) || refused.has(pairKey(courier.agent, row.agent))) continue;
+      const have = carried(row, item);
+      if (have >= (Number(s.courier_supply_low) || 5)) continue;
+      const n = Math.min(left, Math.max(0, (Number(s.courier_supply_to) || 20) - have));
+      if (n <= 0) continue;
+      left -= n;
+      plan.push({ do: 'give-reagent', from: courier.agent, to: row.agent, item, amount: n,
+        why: `${row.agent} holds ${have} ${item}; the courier hands down ${n} (courier_supply)` });
+    }
+  }
   if (giver && ok(giver.agent)) for (const w of depotSurplus(giver, s)) {
     if (plan.length >= max) break;
     if (sent.has(w.id)) continue;

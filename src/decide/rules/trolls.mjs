@@ -312,6 +312,12 @@ const GAUNTLETS = /\bgauntlets?\b/i;
  */
 export function unloadable(row, s, lacks = () => false) {
   const loot = (s.unload_items ?? []).map(name => ({ name, n: carried(row, name) })).filter(x => x.n > 0);
+  // FOOD ABOVE ITS BAND goes with the loot; the band itself stays in the hunter's pack.
+  const cap = Number.isFinite(s.food_keep_max) ? s.food_keep_max : 10;
+  for (const name of s.unload_food ?? []) {
+    const n = carried(row, name) - cap;
+    if (n > 0 && !loot.some(x => x.name === name)) loot.push({ name, n });
+  }
   // A spare the stage room still lacks is not unloadable yet: planGear hands it to the one without.
   const gear = [ARMOUR, SHIELD, GAUNTLETS].filter(re => !lacks(re)).flatMap(re => gearSpares(row, re));
   const weapons = surplusWeapons(row, (Number(s.magic_spares) || 0) + 1);
@@ -739,7 +745,9 @@ export function planFood(atStage, rows, { low = 200, target = 300, keep = 300, m
       for (const [name, v] of CREW_FOODS) {
         if (need <= 0 || plan.length >= max) break;
         const key = `${d.agent}>${name}`;
-        const have = carried(d, name) - (itemsGiven.get(key) ?? 0);
+        // A FOOD WITH A BAND is never given below its min: that is the donor's own meals.
+        const floor = (s.unload_food ?? []).includes(name) ? (Number(s.food_keep_min) || 0) : 0;
+        const have = carried(d, name) - (itemsGiven.get(key) ?? 0) - floor;
         const n = Math.min(have, Math.ceil(need / v), Math.floor(left(d) / v));
         if (n <= 0) continue;
         plan.push({ do: 'give-reagent', from: d.agent, to: row.agent, item: name, amount: n,

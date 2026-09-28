@@ -412,6 +412,23 @@ test('trolls: a hungry hunter under its floor is fed from a well-stocked neighbo
   assert.equal(planFood([{ row: hungry, s: st }], [hungry, poorDonor]).plan.length, 0, 'a donor keeps its own 300');
 });
 
+test('trolls: food has a band — above food_keep_max it goes to the courier, below food_keep_min it is never given', async () => {
+  const { unloadable } = await import('../src/decide/rules/trolls.mjs');
+  const st = { ...settings(doctrine()), unload_food: ['meat pie'], food_keep_min: 4, food_keep_max: 10 };
+  const pies = n => [{ name: 'meat pie', amount: n }];
+  const u = unloadable(row('h', { room: 2, pack_items: pies(16) }), st);
+  assert.deepEqual(u.loot.find(x => x.name === 'meat pie'), { name: 'meat pie', n: 6 }, 'sixteen held, ten kept, six unloaded');
+  assert.equal(unloadable(row('h', { room: 2, pack_items: pies(10) }), st).loot.some(x => x.name === 'meat pie'), false,
+    'at the max: nothing to unload');
+  assert.equal(unloadable(row('h', { room: 2, pack_items: pies(16) }), settings(doctrine())).loot.some(x => x.name === 'meat pie'),
+    false, 'with no unload_food, food is never unloaded (the old behaviour)');
+  const hungry = row('hungry', { room: 2, vigor: { value: 80, max: 200 }, pack_items: [] });
+  const donor = row('donor', { room: 2, vigor: { value: 200, max: 200 }, pack_items: pies(14) });
+  const given = planFood([{ row: hungry, s: { ...st } }], [hungry, donor], { keep: 0 }).plan
+    .filter(p => p.item === 'meat pie').reduce((n, p) => n + p.amount, 0);
+  assert.equal(given <= 10, true, `a donor keeps its min of 4 pies (gave ${given} of 14)`);
+});
+
 test('trolls: the only armour a donor has is the one it wears, so nothing is handed', () => {
   const st = settings(doctrine());
   const bare = row('bare', { room: 2, worn: [] });

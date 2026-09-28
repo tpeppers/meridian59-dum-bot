@@ -209,6 +209,23 @@ export const STRATEGY_CATALOG = Object.freeze([
           'the hunter\'s pack, so food, orc teeth, elderberry and magic loot are never swept up. ' +
           'Spare armour and shields go too, once nobody in the stage room lacks one, and surplus ' +
           'real weapons when there is no depot with room.' }),
+      // FOOD HAS A BAND, NOT AN ALLOW-LIST ENTRY (operator, 2026-09-28: "have the troll farmers send
+      // back extra meat pies, give them a min/max"). unload_items hands over EVERY unit of a name, which
+      // is right for loot and wrong for food a hunter also eats. So a food named here is kept between
+      // food_keep_min and food_keep_max: above the max, the surplus goes to the courier with the loot;
+      // below the min, planFood never takes it away to feed a crew mate.
+      Object.freeze({ id: 'unload_food', title: 'Food sent back above its band', type: 'item-list',
+        default: [],
+        description: 'Foods the crew keeps between food_keep_min and food_keep_max per hunter. Above the ' +
+          'max the surplus is unloaded to the courier with the loot; a donor feeding a hungry crew mate ' +
+          'never goes below the min. Empty: no food is ever unloaded (the old behaviour).' }),
+      Object.freeze({ id: 'food_keep_min', title: 'Food each hunter keeps (min)', type: 'integer',
+        min: 0, max: 100, default: 4,
+        description: 'Per food named in unload_food: the units a hunter never gives away to a crew mate.' }),
+      Object.freeze({ id: 'food_keep_max', title: 'Food each hunter holds (max)', type: 'integer',
+        min: 0, max: 200, default: 10,
+        description: 'Per food named in unload_food: the units a hunter holds before the surplus is ' +
+          'unloaded to the courier.' }),
       Object.freeze({ id: 'courier_sell_at', title: 'Courier sets out to sell at', type: 'number',
         min: 0.3, max: 0.95, default: 0.7,
         description: 'The own sell trigger of the courier keeper. BELOW the loot ceiling on purpose: equal, the ' +

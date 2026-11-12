@@ -182,6 +182,16 @@ journalled, so "DUM is not setting `max_carry`" is visible rather than mysteriou
 Names are checked at load, because a typo fails in the dangerous direction — the
 field would not be yielded and DUM would write it anyway.
 
+## Supervisors a doctrine depends on
+
+Some plans are collective — a singer posted while others farm, a courier lap, a desk —
+and run as separate processes. A doctrine declares them under `supervisors` (`must` or
+`optional`, pinned to a commit exactly or "this commit or newer"), and a station or ladder
+rung that only makes sense with one running names it in `requires_supervisors`. A `must`
+supervisor that is down is started by a committed run, and the stations that need it are
+withheld until it is up. `node bin/dum.mjs supervisors` shows them. Concrete supervisors
+derive from `src/supervise/base.mjs`. See [`docs/supervisors.md`](docs/supervisors.md).
+
 ## Nothing here identifies a fleet
 
 This repository is public and the fleet it drives is on a shared server, so no
@@ -225,6 +235,7 @@ git config core.hooksPath .githooks
 - [Architecture](docs/architecture.md)
 - [Doctrine format](docs/doctrine-format.md)
 - [What DUM needs from the harness](docs/harness-contract.md)
+- [Supervisors](docs/supervisors.md)
 
 ## License
 

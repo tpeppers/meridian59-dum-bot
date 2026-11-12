@@ -24,6 +24,7 @@ import { orderDiffers } from '../../act/orders.mjs';
 import { spellTrainingPlan, isTrainingStation } from '../plans/spell-training.mjs';
 import { activeFactionWork } from './factions.mjs';
 import { takeable } from '../engine.mjs';
+import { supervisorGate } from '../supervisors.mjs';
 
 const sameList = (a, b) => Array.isArray(a) && Array.isArray(b) &&
   a.length === b.length && a.every((x, i) => x === b[i]);
@@ -675,7 +676,12 @@ export const shiftFleetRules = [{
     // the retarget landed when it has not started.
     let busy = 0;
     const skipped = [];
+    // A STATION WHOSE `must` SUPERVISOR IS DOWN IS WITHHELD: its units keep the orders they
+    // already have, rather than being sent to a post whose collective half nobody is running.
+    const withheld = [];
     const plan = placeable.flatMap(a => {
+      const gate = supervisorGate(a.station?.requires_supervisors, observation.supervisors, doctrine);
+      if (!gate.ok) { withheld.push(`${a.row.agent}: ${gate.why}`); return []; }
       // A unit mid-errand is stepped over rather than re-deployed. Both of these walk a
       // character across the world, and the loser is whichever one is interrupted.
       if (!takeable(a.row) || a.row.parked || a.row.piloted ||
@@ -869,7 +875,8 @@ export const shiftFleetRules = [{
         ? `${busy} of ${placeable.length} unit(s) are mid-errand; the rest hold their station orders`
         : `${placeable.length} unit(s) already hold their station orders`) +
         (skipped.length ? `; ${skipped.length} not decided this pass (` +
-          `${skipped.map(x => `${x.agent}: ${x.why}`).join('; ')})` : ''),
+          `${skipped.map(x => `${x.agent}: ${x.why}`).join('; ')})` : '') +
+        (withheld.length ? `; ${withheld.length} withheld — ${withheld[0]}` : ''),
         ...(skipped.length ? { evidence: { skipped } } : {}) };
     return { kind: 'act', plan,
       // WHAT THE FLEET RE-SORTED ITSELF INTO, WRITTEN DOWN BEFORE ANYTHING WALKS.
@@ -885,7 +892,8 @@ export const shiftFleetRules = [{
         ...(skipped.length ? { skipped } : {}),
         bands: placeable.filter(a => stationBand(a.station))
           .map(a => `${a.row.agent} ${a.row.level} -> ${a.to}`),
-        unplaceable: assignments.filter(a => a.to == null).length } };
+        unplaceable: assignments.filter(a => a.to == null).length,
+        ...(withheld.length ? { supervisor_withheld: withheld } : {}) } };
   },
 }];
 

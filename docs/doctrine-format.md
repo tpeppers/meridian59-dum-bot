@@ -34,6 +34,8 @@ once and nobody being able to say later whether the number was chosen or inherit
 | `name` | string | shown in the journal and in `plan` output |
 | `why` | string | what this doctrine is trying to prove |
 | `characters` | object | per-agent patches, applied only with `--agent` |
+| `supervisors` | object | processes this doctrine's orders depend on; see [supervisors.md](supervisors.md). Stations and ladder rungs take `requires_supervisors: [ids]` |
+| `supervisor_state_dir`, `supervisor_roots`, `supervisor_check_ms` | machine facts | set in `dum.local.json` or on the command line, not in a tracked doctrine |
 
 ### `fleet` has no default and never will
 

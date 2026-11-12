@@ -37,6 +37,16 @@ something new. A dependency nobody wrote down is how two repositories drift.
 | `autopilot` `farm_strategy`, `practice_spells`, `buff_allies`, `confine_rooms`, `town_trips`, `mollusk_cover_recovery`, `mode: survive` | stations that carry their own orders (doctrine-format.md). Diffed against `policy.farmStrategy`, `practiceSpells` (stored as sent), `buffAllies` (stored normalised: enabled, spells, clamped gap_ms), `confineRooms`, `townTrips`, `molluskCoverRecovery` |
 | the courier request file and `m59-spells.json` (files, not RPC) | the plan writes its trainers' reagent lines into the request file under never-lower / remove-own-only rules, and costs drills from the kod catalogue. Both paths are machine facts in `dum.local.json` |
 
+### Supervisors (src/supervise/base.mjs)
+
+A supervisor built on the base class is a separate process with its own broker link, not
+part of DUM's tick. It depends on `GET /health` (it refuses a broker holding another
+fleet), `POST /mcp` JSON-RPC `tools/call` with `accept: application/json,
+text/event-stream` (the broker answers JSON-RPC on any POST path), and the `fleet` and
+`autopilot` (`start`, `status`) tools; a concrete supervisor may call whatever else it
+needs. DUM's own registry talks to no broker — it reads heartbeat files and git.
+See [supervisors.md](supervisors.md).
+
 DUM never calls `leave`, `join`, `reroll`, `godmode`, or `autopilot hard:true`, and
 `src/link/surface.mjs` refuses them rather than trusting itself.
 

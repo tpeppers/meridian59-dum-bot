@@ -252,6 +252,13 @@ const RULES = [
   { kind: 'fleet', re: bounded(found.fleet), everywhere: false },
 ];
 
+// A MACHINE PATH IN A TRACKED DOCTRINE. A supervisor `entry`, `cwd` or `state_dir` written as
+// `C:\...` or `/home/...` names one machine's disk — and usually the private checkout and the
+// user beside it. Tracked doctrines say `private:supervisors/x.mjs` and the root lives in
+// dum.local.json. Only checked in doctrine data, where such a path has no other business.
+RULES.push({ kind: 'machine path', everywhere: false, only: f => /^doctrines\/.*\.jsonc?$/.test(f),
+  re: /"((?:[A-Za-z]:[\\/]|\\\\\\\\|\/(?:Users|home|mnt|c)\/)[^"]*)"/g });
+
 const isCode = f => /\.(mjs|js|ts)$/.test(f);
 const hits = [];
 for (const f of tracked) {
@@ -262,6 +269,7 @@ for (const f of tracked) {
     for (const r of RULES) {
       if (!r.re) continue;
       if (!r.everywhere && isCode(f)) continue;
+      if (r.only && !r.only(f)) continue;
       for (const m of line.matchAll(r.re))
         hits.push({ f, line: i + 1, kind: r.kind,
                     what: r.redact ? '<redacted>' : m[1] });

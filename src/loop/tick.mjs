@@ -23,6 +23,7 @@ import { verify } from '../act/verify.mjs';
 import { readErrand } from '../act/errands.mjs';
 import { FEAST_HALL } from '../decide/feast-hall.mjs';
 import { STRATEGY_IDS } from '../strategies/catalog.mjs';
+import { withheldTargets } from '../decide/supervisors.mjs';
 
 /**
  * One character.
@@ -149,7 +150,26 @@ export async function tickFleet(ctx, { decide: runRules = true, only = null } = 
     if (commit && ctx.circuits)
       await ctx.ensureClaim?.(agents.filter(agent => !only || only.has(agent)));
     const factions = ctx.factions?.snapshot(agents) ?? null;
-    const obs = { ...observed, memory, strategies, factions };
+    // WHICH SUPERVISORS ARE UP, as data, like the memory: a station or rung naming a `must`
+    // supervisor that is down is withheld by the rule that would have sent it (see
+    // src/decide/supervisors.mjs). Starting a missing one happens here, never in a rule.
+    const supervisors = ctx.supervisors?.check(now) ?? null;
+    const obs = { ...observed, memory, strategies, factions, supervisors };
+    if (supervisors) {
+      line.supervisors = Object.fromEntries(Object.entries(supervisors)
+        .map(([id, s]) => [id, { need: s.need, state: s.state, why: s.why }]));
+      const withheld = withheldTargets(config, supervisors);
+      const sig = JSON.stringify(withheld.map(w => [w.where, w.down]));
+      if (withheld.length) line.supervisor_withheld = withheld;
+      // Journalled as its own line when the SET changes, so a withheld station is one
+      // finding and not one per pass.
+      if (sig !== (ctx.lastWithheldSig ?? '[]')) {
+        journal.write({ kind: 'supervisor_withheld', at: now, withheld,
+          why: withheld.length ? withheld.map(w => `${w.where}: ${w.why}`).join('; ')
+                               : 'every supervisor-gated station and rung is released' });
+        ctx.lastWithheldSig = sig;
+      }
+    }
     if (factions) {
       // Scoped like the maintenance enrichment below: a run that manages a handful of
       // characters must not pay a per-character inventory read for every OTHER character that
@@ -538,6 +558,7 @@ export async function pass(ctx, { only = null, decideFleet = true } = {}) {
   for (const r of rows.filter(r => !ctx.circuits?.has(r.agent))) characters.push(await tickCharacter(ctx, {
     ...r, strategies: fleetLine.observation?.strategies ?? null,
     factions: fleetLine.observation?.factions ?? null,
+    supervisors: fleetLine.observation?.supervisors ?? null,
   }));
   // THE RUNNING TOTALS, READ AFTER THE PASS RATHER THAN ACCUMULATED IN IT. A pass may
   // have written to them (an errand recorded itself), so this is deliberately the read

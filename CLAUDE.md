@@ -113,6 +113,8 @@ src/act/             Intent -> harness orders, diffed, then verified
 src/loop/            cadence and the per-character / per-fleet ticks
 src/record/          append-only journal, the keyed memory, and the trace exporter
 src/config/          layered doctrine loading
+src/supervise/       supervisor registry, heartbeat contract, base class. Starts SUPERVISORS, never a broker
+supervisors/         example supervisors built on the base class, no names
 doctrines/           worked examples, no character names
 tests/               offline. No broker, no server, no network
 ```

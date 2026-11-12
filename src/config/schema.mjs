@@ -49,6 +49,8 @@ import { floorForThrottle } from '../decide/rules/throttle.mjs';
 import { stationBand, huntList, ownsOrders } from '../decide/rules/shift.mjs';
 import { PLANS, PLAN_SPELL_TRAINING } from '../decide/plans/spell-training.mjs';
 import { ORDERS_ONLY_FACULTIES } from '../decide/engine.mjs';
+// Supervisor declarations and every `requires_supervisors` that names one.
+import { validateSupervisors } from '../supervise/schema.mjs';
 
 export function validate(c) {
   const bad = [];
@@ -589,6 +591,8 @@ export function validate(c) {
           say(`${at}.buff`, `"${b}" is not a buff the keeper casts (super strength, bless, magic shield)`);
     }
   }
+
+  validateSupervisors(c, say);
 
   return bad;
 }

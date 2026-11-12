@@ -24,6 +24,8 @@
 // grinding worthless creatures kills something every pass, so the stall detector never
 // trips and the board reads healthy for as long as you leave it.
 
+import { supervisorGate } from '../supervisors.mjs';
+
 /**
  * Is a rung's completion test met by this observation?
  * Returns null when the observation cannot answer, which is NOT the same as false —
@@ -125,6 +127,16 @@ export const ladderRules = [
           evidence: { unanswerable: unanswerable.map(r => r.id) },
         };
       }
+
+      // A RUNG WHOSE `must` SUPERVISOR IS DOWN IS WITHHELD. `none` takes the turn and sends
+      // nothing, so the character keeps whatever orders it already has — a lower rule must
+      // not re-place a character whose rung is merely waiting for its supervisor.
+      const gate = supervisorGate(active.requires_supervisors, obs.supervisors, doctrine);
+      if (!gate.ok) return {
+        kind: 'none',
+        why: `rung "${active.id}" is withheld — ${gate.why}`,
+        evidence: { rung: active.id, supervisor_withheld: gate.down },
+      };
 
       // WHAT MAKES THIS A NO-OP MOST OF THE TIME. The rung's orders are the DESIRED
       // state; act/orders.mjs diffs them against what the keeper already has and sends

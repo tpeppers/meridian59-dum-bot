@@ -29,6 +29,8 @@ import { existsSync, readFileSync, mkdirSync, createWriteStream } from 'node:fs'
 import { resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { pass } from '../src/loop/tick.mjs';
+import { SupervisorWatch } from '../src/supervise/watch.mjs';
+import { supervisorsCommand } from '../src/supervise/cli.mjs';
 import { run } from '../src/loop/run.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -154,6 +156,19 @@ function doctrine() {
   // against ORDER_FIELDS, because a typo would silently NOT yield the field.
   if (flag('yield-to'))
     overrides['yield_to'] = String(flag('yield-to')).split(',').map(s => s.trim()).filter(Boolean);
+  // WHERE SUPERVISOR HEARTBEATS LIVE AND WHERE THEIR ENTRIES RESOLVE — machine facts, so
+  // they come from dum.local.json, the environment or the command line, never a tracked
+  // doctrine. Roots are merged one by one so a doctrine's own (relative) roots survive.
+  const stateDir = flag('supervisor-state-dir', process.env.M59_SUPERVISOR_STATE_DIR ?? null);
+  if (stateDir && stateDir !== true) overrides['supervisor_state_dir'] = String(stateDir);
+  if (local.supervisor_roots && typeof local.supervisor_roots === 'object')
+    for (const [k, v] of Object.entries(local.supervisor_roots)) overrides[`supervisor_roots.${k}`] = String(v);
+  for (let i = 0; i < argv.length; i++) {
+    if (argv[i] !== '--supervisor-root') continue;
+    const [k, ...rest] = String(argv[i + 1] ?? '').split('=');
+    if (!k || !rest.length) throw new Error('--supervisor-root wants name=dir');
+    overrides[`supervisor_roots.${k}`] = rest.join('=');
+  }
   // Per-agent overrides (doctrine.agents.<name>) only make sense for a single named character;
   // a two-character scope carries no one set of overrides, so pass none in that case.
   const scope = agentScope();
@@ -212,8 +227,11 @@ function context({ config, commit }) {
   // character busy or free it again, so a second spelling of this would be a second
   // process as far as the broker is concerned — able to claim, unable to release.
   const holder = `dum/${config.name}@pid-${process.pid}`;
+  // Checked every pass (cached for supervisor_check_ms). Only a committed run may START a
+  // missing `must` supervisor; a plan reports what it would have found.
+  const supervisors = new SupervisorWatch({ config, commit, journal, holder });
   return { broker, config, journal, memory, strategies, factions, detailStats, strategyServer,
-           commit, holder, only: agentScope() };
+           commit, holder, supervisors, only: agentScope() };
 }
 
 // ---------------------------------------------------------------- doctor
@@ -373,6 +391,9 @@ DUM — a Deterministic Unattended Mover for Meridian 59.
   explain   every effective configuration value and which layer set it
   plan      one pass against the live fleet, sending nothing
   run       the loop. Needs --commit, and --commit needs a matching fleet
+  supervisors [--json]      the doctrine's declared supervisors: running? pid, age, commit, pin
+  supervisors start <id>    start one now (pin checked first)
+  supervisors stop <id>     write its stop file
 
   --fleet <name>            attach to the fleet the broker is holding, and REFUSE if it is
                             holding a different one. Not a filter: with no --agent scope DUM
@@ -384,6 +405,8 @@ DUM — a Deterministic Unattended Mover for Meridian 59.
   --control <url>           broker control URL (default http://127.0.0.1:8901)
   --log <path>              where a committed run writes. Default <log_dir>/dum-<fleet>-<stamp>.log
   --no-log                  print only
+  --supervisor-state-dir <dir>   where supervisor heartbeats live (default var/supervisors)
+  --supervisor-root name=dir     resolves a supervisor entry "name:path"; repeatable
   --commit                  actually send. Without it nothing is written, anywhere
 
 NONE OF THESE ARE REQUIRED. dum.local.json at the repository root supplies this machine's
@@ -404,6 +427,15 @@ try {
     case 'rules': showRules(); break;
     case 'explain': explain(); break;
     case 'plan': await plan(); break;
+    case 'supervisors': {
+      // Positional words after the command: `supervisors`, `supervisors start <id>`, `stop <id>`.
+      const words = argv.filter((a, i) => !a.startsWith('-') && !(i > 0 && argv[i - 1].startsWith('--') &&
+        !['--json', '--commit', '--no-log', '--dry-run'].includes(argv[i - 1])));
+      const { config } = doctrine();
+      process.exitCode = await supervisorsCommand(config, { action: words[1] ?? 'list', id: words[2] ?? null,
+        json: has('json'), holder: `dum/${config.name}@pid-${process.pid}`, c });
+      break;
+    }
     case 'run':
       if (!has('commit')) {
         console.log(c.warn('`run` without --commit is `plan` in a loop, which is rarely what anyone wants.'));

@@ -570,6 +570,23 @@ export const DEFAULTS = {
     // without re-running anything.
     full_observations: true,
   },
+
+  // ---------------------------------------------------------------- supervisors
+  // PROCESSES THIS DOCTRINE'S ORDERS DEPEND ON. A collective plan — a singer posted while
+  // others farm, a courier lap, a desk — runs in its own process; a station or ladder rung
+  // that only makes sense while one is running names it in `requires_supervisors`, and a
+  // `must` supervisor that is down WITHHOLDS those orders. See docs/supervisors.md.
+  //   { "<id>": { need: 'must'|'optional', entry, pin, pin_mode, pin_paths, repo, cwd,
+  //               env, args, start, restart_on_mismatch, state_dir, enabled } }
+  supervisors: {},
+  // MACHINE FACTS, like `fleet` and `control`: they belong in dum.local.json or on the
+  // command line, not in a tracked doctrine. Where heartbeats live (null means
+  // <dum>/var/supervisors), and the named roots an `entry` like "private:x.mjs" resolves
+  // against. `dum:` is always this repository.
+  supervisor_state_dir: null,
+  supervisor_roots: {},
+  // How often the registry is actually consulted; passes in between reuse the answer.
+  supervisor_check_ms: 30_000,
 };
 
 /** A structuredClone that also works as documentation of intent: layers never alias. */

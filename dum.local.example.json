@@ -35,5 +35,18 @@
     "whose output was going to a temp directory that gets cleaned up.",
     "Use --log <path> for a one-off, or --no-log to print only."
   ],
-  "log_dir": "var"
+  "log_dir": "var",
+
+  "//supervisor_state_dir": [
+    "Where supervisor heartbeats, stop files and logs live. Default var/supervisors. Every",
+    "supervisor a doctrine declares writes <dir>/<id>.supervisor.json; see docs/supervisors.md."
+  ],
+  "supervisor_state_dir": "var/supervisors",
+
+  "//supervisor_roots": [
+    "Named roots a supervisor `entry` like \"private:supervisors/x.mjs\" resolves against. A",
+    "machine path, which is why it lives here and never in a tracked doctrine. `dum:` is",
+    "always this repository."
+  ],
+  "supervisor_roots": { "private": "../private-checkout" }
 }

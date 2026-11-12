@@ -34,6 +34,16 @@ something new. A dependency nobody wrote down is how two repositories drift.
 | `faction_join` | the source-audited faction quest primitive: request sends only the fixed join phrase to the exact liege; offer permits only an assigned item and recipient from the server's join templates. DUM still cannot call general `say` or `trade` |
 | `fleet[].town_service_at` | session evidence that the keeper finished its sell/bank/restock cycle; a queued faction goal waits for this natural break before taking over, unless the unit is already free or the bounded fallback wait expires |
 
+### Supervisors (src/supervise/base.mjs)
+
+A supervisor built on the base class is a separate process with its own broker link, not
+part of DUM's tick. It depends on `GET /health` (it refuses a broker holding another
+fleet), `POST /mcp` JSON-RPC `tools/call` with `accept: application/json,
+text/event-stream` (the broker answers JSON-RPC on any POST path), and the `fleet` and
+`autopilot` (`start`, `status`) tools; a concrete supervisor may call whatever else it
+needs. DUM's own registry talks to no broker — it reads heartbeat files and git.
+See [supervisors.md](supervisors.md).
+
 DUM never calls `leave`, `join`, `reroll`, `godmode`, or `autopilot hard:true`, and
 `src/link/surface.mjs` refuses them rather than trusting itself.
 

@@ -47,6 +47,8 @@ import { floorForThrottle } from '../decide/rules/throttle.mjs';
 // runs — and this is exactly the field where that would be silent, because a band the
 // schema read one way and the shift read another still produces a fleet standing somewhere.
 import { stationBand, huntList } from '../decide/rules/shift.mjs';
+// Supervisor declarations and every `requires_supervisors` that names one.
+import { validateSupervisors } from '../supervise/schema.mjs';
 
 export function validate(c) {
   const bad = [];
@@ -544,6 +546,8 @@ export function validate(c) {
           'willing to leave people in: give it `at_least` and no `below`');
     }
   }
+
+  validateSupervisors(c, say);
 
   return bad;
 }

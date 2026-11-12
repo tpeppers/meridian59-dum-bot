@@ -150,6 +150,14 @@ function doctrine() {
   // refuses when the broker is holding a different roster, which is the one mistake that
   // operates on twenty-one characters nobody meant to touch and reports success doing it.
   if (flag('fleet')) overrides['fleet'] = String(flag('fleet'));
+  // MACHINE FACTS FOR THE SPELL-TRAINING PLAN: where the harness keeps its courier request
+  // file and its kod spell catalogue. Paths on THIS machine, so they come from here or
+  // dum.local.json (`courier_requests`, `spell_catalogue`) and never from a doctrine.
+  // Relative paths are read from the repository root, like `log_dir`.
+  for (const [name, key] of [['courier-requests', 'requests_file'], ['spell-catalogue', 'catalogue_file']]) {
+    const v = flag(name);
+    if (v && v !== true) overrides[`spell_training.${key}`] = resolve(HERE, '..', String(v));
+  }
   // --yield-to rest_below,max_carry,roam — fields something else owns. Validated
   // against ORDER_FIELDS, because a typo would silently NOT yield the field.
   if (flag('yield-to'))
@@ -382,6 +390,8 @@ DUM — a Deterministic Unattended Mover for Meridian 59.
   --set key.path=value      override one leaf, recorded as "command line"
   --yield-to a,b,c          order fields something else owns — DUM will not write them
   --control <url>           broker control URL (default http://127.0.0.1:8901)
+  --courier-requests <path> the harness's courier request file (spell-training writes its lines)
+  --spell-catalogue <path>  the harness's kod spell catalogue, m59-spells.json (spell-training costs)
   --log <path>              where a committed run writes. Default <log_dir>/dum-<fleet>-<stamp>.log
   --no-log                  print only
   --commit                  actually send. Without it nothing is written, anywhere

@@ -325,6 +325,80 @@ moved.
 recorded thrash failures behind them. They are opted into deliberately, in their own
 run, so the result is measurable.
 
+## Stations that carry their own orders — `farm_strategy` and `plan`
+
+A `shift.stations` entry normally names a room in `HUNT_ROOMS` and a `hunt` that room
+generates. Two kinds of station do neither, because they do not choose quarry:
+
+```jsonc
+"shift": { "on": true, "stations": [
+  // A harness farm-strategy FILE (substrate/farm-strategies/<name>.mjs) owns the hunt, the
+  // loot, the confinement. No `hunt`. `room` is optional and only names the post.
+  { "only": ["role-new"], "max_health": { "below": 50 }, "farm_strategy": "newbie-fungus" },
+  // Explicitly NO strategy, standing down.
+  { "only": ["role-new"], "max_health": { "at_least": 50 }, "farm_strategy": null, "mode": "survive" },
+  // A plan: DUM computes the orders itself (src/decide/plans/).
+  { "room": 552, "plan": "spell-training", "max_health": { "at_least": 150 }, "except": ["role-medic"] },
+  { "room": 552, "farm_strategy": "ocean-file", "max_health": { "below": 150 }, "except": ["role-medic"] }
+] }
+```
+
+Membership is exactly the hunting shift's: bands, `only` / `except`, `requires`, first match
+wins. What differs is what a placed character is sent:
+
+* **`farm_strategy` station** — `mode` (`farm` unless the station says `survive`), the
+  `farm_strategy` name (or `null`), the station's `room` as `assigned_room` if it has one, and
+  ONLY the posture fields written on the station itself. The shift-wide `flee_below` /
+  `rest_below` defaults are hunting postures and are not sent under a strategy file. A room
+  outside `HUNT_ROOMS` (552) is allowed, because nothing here hunts by DUM's say-so.
+* **`plan: "spell-training"`** — `mode: survive`, `assigned_room` and `confine_rooms: [room]`,
+  `roam: false`, `farm_strategy: null`, `mollusk_cover_recovery: false`, `town_trips: false`,
+  and two computed objects:
+  * `practice_spells` — every KNOWN spell under 99 that is a personal/resistance enchantment
+    or a touch spell, has mana and reagent data in the kod catalogue, is not harmful and not
+    on the never list (blink, rescue, feign death, invisibility, … plus
+    `spell_training.never`). Ordered by `spell_training.priority`, then lowest ability first.
+    Ally buffs (`fleetmate_spells`) are drilled on a fleet-mate, the rest on self. The mana
+    floor defaults to the costliest buff + 4, so a drill never spends a buff's mana.
+  * `buff_allies` — the buffs the keeper can cast (super strength, bless, magic shield) that
+    the character knows; `null` when it knows none (an empty list would mean "all of them").
+  * `spell_training.characters["<name>"]: { buff: [...], practice: [...], request_cap }` —
+    exact lists that replace the computed ones.
+
+  When every drill is at 99, the character is handed to the planned-learning errand
+  (`auto-level-next-planned-school`) whether or not that strategy is selected for it; the
+  harness walks it back to `policy.assignedRoom` afterwards, which the station keeps set. If
+  nothing is buyable it is journalled once and the character keeps buffing.
+
+**Clearing a strategy from a hunting station.** A hunting station sends `farm_strategy: null`
+only when the character's current file is one this doctrine's stations assign, or when the
+station or `shift` says `clear_farm_strategy: true`. A file somebody set by hand is theirs.
+
+**Courier requests.** The plan writes what each trainer's drills (and, unless
+`request_for_buffs: false`, its buffs) consume into the harness's courier request file, each
+item up to `request_cap` (default 100; a number or `{item: n, default: n}`). It never lowers a
+number somebody else wrote, raises a smaller one and puts it back when done, removes only the
+lines it wrote, and never touches a character it did not observe this pass. What it wrote is
+kept in `record.spell_training_dir`. The file's path and the spell catalogue's path are
+machine facts: `courier_requests` / `spell_catalogue` in `dum.local.json`, or
+`--courier-requests` / `--spell-catalogue`. Only a committed run writes.
+
+## `claim.orders_only` — writing orders without holding the faculties
+
+```jsonc
+"claim": { "work": "keeper", "movement": "keeper", "economy": "keeper", "orders_only": true }
+```
+
+A harness farm-strategy file lays its keys over the keeper's policy only while the KEEPER
+owns each key's faculty; a bot holding `work` is yielded to and the file stops applying. So a
+doctrine that assigns strategy files must not claim those faculties — and an ordinary DUM
+then decides nothing, because every rule is gated on its faculty being `bot`.
+
+`orders_only: true` lets the rules that declare `ordersOnly` (`hunt-shift`,
+`auto-level-next-planned-school`) decide on a `keeper`-owned work, movement or economy
+faculty. No claim is requested and no lease is held; every other rule stays `not-claimed`.
+Claiming one of those three as `bot` alongside it is refused by the schema.
+
 ## Per-character overrides
 
 ```jsonc

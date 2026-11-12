@@ -35,5 +35,15 @@
     "whose output was going to a temp directory that gets cleaned up.",
     "Use --log <path> for a one-off, or --no-log to print only."
   ],
-  "log_dir": "var"
+  "log_dir": "var",
+
+  "//courier_requests": [
+    "The spell-training plan (a shift station with plan: spell-training) asks the courier for",
+    "reagents by writing its trainers' lines into the harness's courier request file, and costs",
+    "each drill from the harness's kod spell catalogue. Both are paths on this machine, so they",
+    "live here and never in a doctrine. Relative paths are read from the repository root.",
+    "Leave them out and the plan still places and buffs, but writes no requests and drills nothing."
+  ],
+  "courier_requests": "../m59-harness/substrate/courier-requests.json",
+  "spell_catalogue": "../m59-harness/substrate/m59-spells.json"
 }

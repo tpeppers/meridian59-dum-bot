@@ -61,6 +61,9 @@ export class RuleSet {
   }
 }
 
+/** The faculties an orders-only doctrine may write orders for without claiming them. */
+export const ORDERS_ONLY_FACULTIES = Object.freeze(['work', 'movement', 'economy']);
+
 /**
  * Run an ordered rule set against one observation.
  *
@@ -113,7 +116,16 @@ export function decide(ruleSet, obs, doctrine, { max = 1, agentsOf = intentAgent
     // enforcement point for the whole split: a doctrine that leaves `survival` with
     // the keeper cannot have a survival rule fire by accident, however it was written.
     const owner = doctrine.claim?.[rule.faculty];
-    if (owner !== 'bot') {
+    // ORDERS-ONLY. A doctrine may leave work, movement and economy with the KEEPER and still
+    // write orders, because some orders only take effect while the keeper owns those
+    // faculties: a farm strategy file lays its keys over the policy "ONLY while it owns the
+    // faculty of each key", so a DUM holding `work` would be yielded to and the file would
+    // never apply. Only rules that declare `ordersOnly` -- they write keeper policy (or start a
+    // harness errand that takes its own lease) and never drive a body on DUM's own lease --
+    // may decide on a faculty the doctrine did not claim. Everything else stays `not-claimed`.
+    const ordersOnly = doctrine.claim?.orders_only === true && rule.ordersOnly === true &&
+      ORDERS_ONLY_FACULTIES.includes(rule.faculty) && owner === 'keeper';
+    if (owner !== 'bot' && !ordersOnly) {
       considered.push({ rule: rule.id, verdict: 'not-claimed',
                         why: `faculty "${rule.faculty}" is ${owner ?? 'unset'}, not bot` });
       continue;

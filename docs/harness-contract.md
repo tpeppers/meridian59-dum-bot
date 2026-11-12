@@ -33,6 +33,9 @@ something new. A dependency nobody wrote down is how two repositories drift.
 | `travel_estimate` (read) | how far every character is from the hall, once per distinct room; both feast doors turn on it. `cancel_movement` clears a journey that never arrived |
 | `faction_join` | the source-audited faction quest primitive: request sends only the fixed join phrase to the exact liege; offer permits only an assigned item and recipient from the server's join templates. DUM still cannot call general `say` or `trade` |
 | `fleet[].town_service_at` | session evidence that the keeper finished its sell/bank/restock cycle; a queued faction goal waits for this natural break before taking over, unless the unit is already free or the bounded fallback wait expires |
+| `abilities` (`kind: spells`, `known_only: false`) | the spell-training plan: each would-be trainer's known spells with ability and target count, from the harness's kept record (a cache read, not four server requests). An unreadable list (`spells: null`) is a question, never an empty book |
+| `autopilot` `farm_strategy`, `practice_spells`, `buff_allies`, `confine_rooms`, `town_trips`, `mollusk_cover_recovery`, `mode: survive` | stations that carry their own orders (doctrine-format.md). Diffed against `policy.farmStrategy`, `practiceSpells` (stored as sent), `buffAllies` (stored normalised: enabled, spells, clamped gap_ms), `confineRooms`, `townTrips`, `molluskCoverRecovery` |
+| the courier request file and `m59-spells.json` (files, not RPC) | the plan writes its trainers' reagent lines into the request file under never-lower / remove-own-only rules, and costs drills from the kod catalogue. Both paths are machine facts in `dum.local.json` |
 
 DUM never calls `leave`, `join`, `reroll`, `godmode`, or `autopilot hard:true`, and
 `src/link/surface.mjs` refuses them rather than trusting itself.

@@ -249,3 +249,42 @@ test('yielding a field the deploy never set reports nothing', () => {
                                   { yieldTo: ['flee_below'] });
   assert.deepEqual(calls.yielded, [], 'undefined was never going to be sent, so nothing was dropped');
 });
+
+// ---------------------------------------------------------------- station-owned order fields
+
+test('orders: farm_strategy and the training fields are order fields with their keeper keys', () => {
+  assert.equal(ORDER_FIELDS.farm_strategy.policy, 'farmStrategy');
+  assert.equal(ORDER_FIELDS.practice_spells.policy, 'practiceSpells');
+  assert.equal(ORDER_FIELDS.confine_rooms.policy, 'confineRooms');
+  assert.equal(ORDER_FIELDS.town_trips.policy, 'townTrips');
+  assert.equal(ORDER_FIELDS.mollusk_cover_recovery.policy, 'molluskCoverRecovery');
+});
+
+test('orders: a practice object in a different key order is not drift; null clears a strategy', () => {
+  const obs = { agent: 'a', keeper: { mode: 'survive', policy: {
+    practiceSpells: { spells: [{ target: 'self', name: 'bless' }], enabled: true },
+    farmStrategy: 'some-file', confineRooms: null } } };
+  const out = planOrders({ agent: 'a', rule: 'r', orders: {
+    practice_spells: { enabled: true, spells: [{ name: 'bless', target: 'self' }] },
+    farm_strategy: null, confine_rooms: [] } }, obs);
+  assert.deepEqual(Object.keys(out.send ?? {}).filter(k => !['agent', 'action'].includes(k)), ['farm_strategy']);
+  assert.equal(out.send.farm_strategy, null);
+});
+
+test('deploy: carries farm_strategy (null included) and the station mode; no room means no assignment', () => {
+  const [a] = callsForFleetPlan([{ do: 'deploy', agent: 'role-a', to: 552, mode: 'survive',
+    farm_strategy: null, confine_rooms: [552], town_trips: false, mollusk_cover_recovery: false,
+    practice_spells: { enabled: true, spells: ['bless'] } }]);
+  assert.equal(a.args.mode, 'survive');
+  assert.equal(a.args.farm_strategy, null);
+  assert.ok('farm_strategy' in a.args);
+  assert.deepEqual(a.args.confine_rooms, [552]);
+  assert.equal(a.args.town_trips, false);
+  assert.equal(a.args.mollusk_cover_recovery, false);
+  assert.equal(JSON.parse(JSON.stringify(a.args)).farm_strategy, null, 'null survives the wire');
+  const [b] = callsForFleetPlan([{ do: 'deploy', agent: 'role-a', farm_strategy: 'x-file' }]);
+  assert.equal(b.args.mode, 'farm');
+  assert.equal(JSON.parse(JSON.stringify(b.args)).assigned_room, undefined, 'roomless: not sent');
+  const [c] = callsForFleetPlan([{ do: 'deploy', agent: 'role-a', to: null }]);
+  assert.equal(c.args.assigned_room, null, 'an explicit null still clears, as before');
+});

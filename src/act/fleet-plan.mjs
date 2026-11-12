@@ -133,9 +133,14 @@ export function callsForFleetPlan(plan = [], why = null, { yieldTo = [] } = {}) 
     }
     if (step.do === 'deploy') {
       const agent = need(step, 'agent');
-      const assigned_room = step.to == null ? null : Number(step.to);
+      // `to: undefined` is a station with no room of its own — a farm-strategy station whose
+      // file owns the confinement — and must not CLEAR the assignment, which `null` would.
+      const assigned_room = step.to === undefined ? undefined
+        : (step.to == null ? null : Number(step.to));
       calls.push({ tool: 'autopilot', args: dropYielded({
-        agent, action: 'start', mode: 'farm', assigned_room,
+        // `farm` unless the station says otherwise: a spell-training post and a graduated
+        // newbie both stand in `survive`.
+        agent, action: 'start', mode: step.mode ?? 'farm', assigned_room,
         hunt: step.hunt,
         max_threat_over: step.max_threat_over,
         flee_below: step.flee_below,
@@ -161,6 +166,13 @@ export function callsForFleetPlan(plan = [], why = null, { yieldTo = [] } = {}) 
         purpose: step.purpose,
         goals: step.goals,
         max_bots_per_safe_spot: step.max_bots_per_safe_spot,
+        // The station-owned orders (rules/shift.mjs ownsOrders, decide/plans/). Every one is
+        // also an ORDER_FIELDS row, so the diff and this payload name the same fields.
+        farm_strategy: step.farm_strategy,
+        practice_spells: step.practice_spells,
+        confine_rooms: step.confine_rooms,
+        town_trips: step.town_trips,
+        mollusk_cover_recovery: step.mollusk_cover_recovery,
       }, yieldSet, yieldedFields), why: step.why ?? why });
       continue;
     }

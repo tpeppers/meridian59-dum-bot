@@ -135,7 +135,51 @@ export const ORDER_FIELDS = {
   farm_cleanup:       { policy: 'farmCleanup', compare: sameObject },
   farm_delivery:      { policy: 'farmDelivery', compare: sameObject },
   guild_tithe:        { policy: 'guildTithe', compare: sameObject },
+  // A FARMING STRATEGY FILE, BY NAME (substrate/farm-strategies/<name>.mjs on the harness).
+  // The keeper stores only the name, as `policy.farmStrategy`, and lays the file's keys over
+  // the policy on every pass while it owns each key's faculty — which is why a doctrine that
+  // assigns one runs ORDERS-ONLY (claim.orders_only): a bot holding `work` would be yielded
+  // to and the file would never apply. null unassigns it; the harness then gives each key
+  // back what the file was shadowing.
+  farm_strategy:      { policy: 'farmStrategy' },
+  // WHAT TO DRILL, stored by the harness exactly as sent (m59-broker.mjs: "STORED AS SENT,
+  // not as normalised"), so a canonical structural compare is exact and a key-order
+  // difference is not drift.
+  practice_spells:    { policy: 'practiceSpells', compare: sameJson },
+  // The keeper stores an empty list as null; sameList reads both as [].
+  confine_rooms:      { policy: 'confineRooms', compare: sameList },
+  town_trips:         { policy: 'townTrips' },
+  mollusk_cover_recovery: { policy: 'molluskCoverRecovery' },
 };
+
+// Key-order-blind structural equality, recursively. JSON.stringify alone reads {a,b} and
+// {b,a} as different, which on an object the harness rebuilds is a redeploy every pass.
+function canonical(v) {
+  if (Array.isArray(v)) return v.map(canonical);
+  if (v && typeof v === 'object')
+    return Object.fromEntries(Object.keys(v).sort().map(k => [k, canonical(v[k])]));
+  return v;
+}
+export function sameJson(a, b) {
+  return JSON.stringify(canonical(a ?? null)) === JSON.stringify(canonical(b ?? null));
+}
+
+/**
+ * Does the keeper's live state disagree with this one order field?
+ *
+ * The same comparison `planOrders` makes, exported so a fleet rule deciding whether a
+ * character needs redeploying asks the one table rather than a hand-written list — the
+ * hand-written list in shift.mjs `needsOrders` is the "fifth place" that has silently
+ * missed a field before. `undefined` means "nothing asked for" and is never drift.
+ */
+export function orderDiffers(field, value, { policy = {}, mode = null } = {}) {
+  if (value === undefined) return false;
+  if (field === 'mode') return !same(mode ?? null, value);
+  const spec = ORDER_FIELDS[field];
+  if (!spec) throw new Error(`${field} is not in ORDER_FIELDS`);
+  const current = (policy ?? {})[spec.policy];
+  return !(spec.compare ? spec.compare(current, value) : same(current, value));
+}
 
 function sameList(a, b) {
   const norm = v => Array.isArray(v) ? v.map(String) : (v == null ? [] : [String(v)]);

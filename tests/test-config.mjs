@@ -170,3 +170,46 @@ test('not_ours: a blank entry is refused rather than matching nothing', () => {
   assert.ok(validate({ ...freshDefaults(), not_ours: 'Ada' }).some(b => b.where === 'not_ours'),
             'a bare string is not a list');
 });
+
+// ---------------------------------------------------------------- stations that own their orders
+
+const shiftWith = (...stations) => {
+  const c = freshDefaults();
+  c.shift.on = true;
+  c.shift.stations = stations;
+  return validate(c);
+};
+
+test('schema: a farm-strategy station may omit hunt and name 552, which HUNT_ROOMS omits', () => {
+  assert.deepEqual(shiftWith({ room: 552, farm_strategy: 'great-ocean-marion' }), []);
+  assert.deepEqual(shiftWith({ farm_strategy: 'newbie-ileria-fungus' }), [], 'no room at all is fine');
+  assert.deepEqual(shiftWith({ farm_strategy: null, mode: 'survive' }), []);
+  // The guard rail is unchanged for a hunting station.
+  assert.ok(shiftWith({ room: 552, hunt: 'frogman' }).some(p => /HUNT_ROOMS/.test(p.why)));
+});
+
+test('schema: a farm-strategy station refuses a hunt, a survive mode, and a path for a name', () => {
+  assert.ok(shiftWith({ room: 552, farm_strategy: 'x', hunt: 'frogman' }).some(p => /owns the hunt/.test(p.why)));
+  assert.ok(shiftWith({ farm_strategy: 'x', mode: 'survive' }).some(p => p.where.endsWith('.mode')));
+  assert.ok(shiftWith({ farm_strategy: '../x.mjs' }).some(p => p.where.endsWith('.farm_strategy')));
+  assert.ok(shiftWith({ farm_strategy: null, mode: 'idle' }).some(p => p.where.endsWith('.mode')));
+});
+
+test('schema: a plan station needs a known plan and a room, and hunts nothing', () => {
+  assert.deepEqual(shiftWith({ room: 552, plan: 'spell-training' }), []);
+  assert.ok(shiftWith({ room: 552, plan: 'nap' }).some(p => /unknown plan/.test(p.why)));
+  assert.ok(shiftWith({ plan: 'spell-training' }).some(p => p.where.endsWith('.room')));
+  assert.ok(shiftWith({ room: 552, plan: 'spell-training', farm_strategy: 'x' })
+    .some(p => p.where.endsWith('.farm_strategy')));
+});
+
+test('schema: spell_training overrides are checked where they would be silently ignored', () => {
+  const c = freshDefaults();
+  c.spell_training.characters = { someone: { buff: ['free action'], practice: 'magic shield' } };
+  const bad = validate(c);
+  assert.ok(bad.some(p => /not a buff the keeper casts/.test(p.why)));
+  assert.ok(bad.some(p => p.where.endsWith('.practice')));
+  c.spell_training.characters = {};
+  c.spell_training.request_cap = 0;
+  assert.ok(validate(c).some(p => p.where === 'spell_training.request_cap'));
+});

@@ -429,6 +429,44 @@ export const DEFAULTS = {
     // character is reassigned and sells when it next would have anyway.
     handover: { on: true },
   },
+  // THE SPELL-TRAINING PLAN (a shift station with `plan: "spell-training"`). Everything here
+  // is optional; see src/decide/plans/spell-training.mjs for what each one changes.
+  spell_training: {
+    // MACHINE FACTS, never written in a committed doctrine: the harness's courier request
+    // file ({agent: {item: count}}) and its kod spell catalogue (m59-spells.json). Set them in
+    // dum.local.json (`courier_requests`, `spell_catalogue`) or with --courier-requests /
+    // --spell-catalogue. Null means: no reagent requests are written, and with no catalogue
+    // nothing is known to be practiceable, so the drill list is empty and only buffing runs.
+    requests_file: null,
+    catalogue_file: null,
+    // Each requested reagent is asked for up to this many. A number, or {item: n, default: n}.
+    request_cap: 100,
+    // Also request what the ally buffs consume, so a trainer that has maxed its drills keeps
+    // buffing farmers. false requests only for the drills.
+    request_for_buffs: true,
+    // Spell names never drilled, added to the built-in list (blink, rescue, ...).
+    never: [],
+    // Drilled first, in this order; everything else after, lowest ability first.
+    priority: [],
+    // Practice spells cast AT a fleet-mate rather than at self. null = the built-in list
+    // (magic shield, bless, super strength, free action, resist poison, night vision).
+    fleetmate_spells: null,
+    // The keeper gates a fleet-mate practice cast on the caster's own vigor (it was written
+    // for relay, which gives vigor away). A buff gives nothing away, so the floor is the
+    // lowest the harness accepts.
+    fleetmate_min_vigor: 16,
+    // Practice mana floor. null = the costliest ally buff this character casts, plus 4, so a
+    // drill never spends the mana a buff needs.
+    mana_floor: null,
+    gap_ms: null,
+    buff_gap_ms: 20000,
+    reserve_casts: null,
+    rest_seconds: null,
+    // Per-character overrides, keyed by agent or character name:
+    //   { buff: [...], practice: [...], request_cap: n | {...}, never: [...], priority: [...] }
+    // `buff` and `practice` are EXACT lists and replace the computed ones.
+    characters: {},
+  },
   crate: {
     // ON BY DEFAULT, WHICH IS THE ONE PLACE THIS BLOCK DIFFERS FROM EVERY OTHER OPT-IN
     // HERE, AND IT IS A DECISION RATHER THAN AN OVERSIGHT.
@@ -565,6 +603,9 @@ export const DEFAULTS = {
     // Small opt-in outcome records used by the DUM/Harness drill-ins. Each line carries
     // its selected retention; 24h is the catalogue default and dashboards open at 2h.
     strategy_stats_dir: 'var/strategy-stats',
+    // What the spell-training plan wrote into the courier request file, so it can take back
+    // exactly its own lines and never anybody else's. See src/act/reagent-requests.mjs.
+    spell_training_dir: 'var/spell-training',
     // Keep the full observation on every line, or only the fields a rule read. Full
     // is large and is what makes an after-the-fact "why did it decide that" possible
     // without re-running anything.

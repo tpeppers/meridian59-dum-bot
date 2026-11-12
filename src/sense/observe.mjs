@@ -32,6 +32,7 @@
 import { normalizeFleetRow, normalizeStatus } from './normalize.mjs';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { catalogueEntry } from './spell-catalogue.mjs';
 
 // Published by m59-proxy.mjs in the harness. Read rather than imported: the two live in
 // different repositories and on different clocks, and a file is the only interface where
@@ -224,6 +225,51 @@ export async function enrichMaintenance(broker, rows = []) {
       row.items = null;
       row.carry = null;
       row.maintenance_facts_error = e.message;
+    }
+  }
+  return rows;
+}
+
+/**
+ * What each would-be spell trainer knows and how well, joined with what each spell costs.
+ *
+ * `abilities` is the harness's KEPT record (pushed by the server on every change and held on
+ * disk per character), so this is a cache read on the broker and not four server requests --
+ * which is what makes one call per trainer per fleet pass affordable. `known_only: false`
+ * because a spell bought this minute reads 0 and is exactly the one most worth drilling.
+ *
+ * The result goes on the row as `spells_known`: [{name, ability, targets, mana, reagents,
+ * harmful, parent, school}]. A failed or unreadable list is `null` with `spells_error`, never
+ * `[]` -- the harness says it outright: "unreadable is not empty" -- because an empty book
+ * reads as "nothing left to practise" and would both switch a drill off and send the
+ * character to buy its next spell.
+ */
+export async function enrichSpellTraining(broker, rows = [], catalogue = null) {
+  for (const row of rows) {
+    try {
+      const r = await broker.call('abilities', { agent: row.agent, kind: 'spells', known_only: false });
+      if (!Array.isArray(r?.spells)) {
+        row.spells_known = null;
+        row.spells_error = r?.spells_unreadable ?? 'abilities returned no spell list';
+        continue;
+      }
+      row.spells_known = r.spells.map(s => {
+        const cost = catalogueEntry(catalogue, s.name);
+        return {
+          name: String(s.name ?? '').toLowerCase(),
+          ability: s.ability ?? null,
+          targets: s.targets ?? null,
+          mana: cost?.mana ?? null,
+          reagents: cost?.reagents ?? [],
+          harmful: cost?.harmful ?? null,
+          parent: cost?.parent ?? null,
+          school: cost?.school ?? s.school ?? null,
+        };
+      });
+      row.spells_error = catalogue ? null : 'no spell catalogue configured (spell_training.catalogue_file)';
+    } catch (e) {
+      row.spells_known = null;
+      row.spells_error = e.message;
     }
   }
   return rows;

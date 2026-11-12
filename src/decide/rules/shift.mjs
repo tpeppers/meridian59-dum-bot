@@ -18,8 +18,10 @@
 
 import { keeperWeaponPriority, presetForTraining } from '../weapons.mjs';
 import { trainingWeaponFor, stationTargetLevel } from '../training.mjs';
-import { STRATEGY_IDS, strategyEnabled, HUNT_ROOMS, admits, engagementCeiling, QUARRY_LEVEL }
-  from '../../strategies/catalog.mjs';
+import { STRATEGY_IDS, strategyEnabled, HUNT_ROOMS, admits, engagementCeiling, QUARRY_LEVEL,
+  roomName } from '../../strategies/catalog.mjs';
+import { orderDiffers } from '../../act/orders.mjs';
+import { spellTrainingPlan, isTrainingStation } from '../plans/spell-training.mjs';
 import { activeFactionWork } from './factions.mjs';
 import { takeable } from '../engine.mjs';
 
@@ -91,7 +93,23 @@ export const huntList = st => Array.isArray(st?.hunt) ? st.hunt.filter(Boolean)
 // creatures is telling the keeper it may take either, so a character admitted on the
 // strength of the softer one would stand in the room refusing the other half of what
 // appears — which is the "everything works and none of it is worth anything" shape.
+// A STATION THAT CARRIES ITS OWN ORDERS. Two kinds, and neither picks quarry:
+//
+//   "farm_strategy": "<file>"   the harness strategy file owns the hunt, the loot and the
+//                               confinement; `room` is optional and only names the post.
+//   "farm_strategy": null       explicitly NO strategy (a graduate standing down), usually
+//                               with "mode": "survive".
+//   "plan": "spell-training"    decide/plans/spell-training.mjs computes the orders.
+//
+// So such a station is admitted on its band, its `only`/`except` and its `requires` alone --
+// the engagement-ceiling test is a question about quarry, and it has none to ask about. It
+// may name a room outside HUNT_ROOMS (552) because it cannot send anybody to hunt there; the
+// strategy file, or the plan, is what decides what happens in the room.
+export const ownsOrders = st => st != null && typeof st === 'object' &&
+  (Object.hasOwn(st, 'farm_strategy') || st.plan != null);
+
 const admitsStation = (st, maxHealth) => {
+  if (ownsOrders(st)) return true;
   const hunts = huntList(st);
   return hunts.length > 0 && hunts.every(q => admits(maxHealth, Number(st.room), q));
 };
@@ -201,7 +219,24 @@ export function stationIndexFor(stations = [], maxHealth, row = null) {
 }
 
 /** A stable name for a station, for the memory and for the journal. */
-export const stationKey = st => `${st?.room}`;
+// Unchanged for a hunting station (its room). A station that owns its orders may share a room
+// with another (552 trains and farms) or have none, so it is told apart by what it runs.
+export const stationKey = st => st?.id != null ? String(st.id)
+  : [st?.room, st?.plan, st?.farm_strategy === undefined ? undefined : `fs:${st.farm_strategy}`]
+    .filter(v => v != null).join('/') || 'station';
+
+// Where an allocation puts a row. One builder for the share loop and the fallback, so the two
+// cannot disagree about a station with no hunting-room entry.
+const placement = (row, st) => {
+  const entry = HUNT_ROOMS[Number(st.room)];
+  const to = st.room == null ? null : Number(st.room);
+  return { row, to, placed: true, hunt: st.hunt,
+    room_name: roomName(to) ?? (to == null ? `farm strategy ${st.farm_strategy ?? 'none'}` : `room ${to}`),
+    station: st,
+    // Sized to the ROOM's strongest occupant, never to the quarry. A station that owns its
+    // orders has no rated room, so it sends no ceiling at all.
+    max_threat_over: entry ? Math.max(0, entry.threat - (row.level ?? entry.threat)) : undefined };
+};
 
 /**
  * Split the opted-in units across the doctrine's stations by share, and give each one the
@@ -317,7 +352,7 @@ export function shiftAssignments(rows = [], doctrine = {}, fleetObs = { characte
     return Number.isFinite(until) && until <= lead;
   };
   const stations = (doctrine.shift?.stations ?? [])
-    .filter(st => st && st.room != null).filter(open);
+    .filter(st => st && (st.room != null || ownsOrders(st))).filter(open);
   const ordered = [...rows].sort((a, b) => (a.level ?? 0) - (b.level ?? 0) ||
     String(a.agent).localeCompare(String(b.agent)));
 
@@ -401,11 +436,8 @@ export function shiftAssignments(rows = [], doctrine = {}, fleetObs = { characte
       : Math.round(opted.filter(row => eligible[i].has(row.agent)).length *
           (Number.isFinite(share) ? share : 0)));
     for (const row of pool.slice(0, Math.max(0, want))) {
-      const entry = HUNT_ROOMS[Number(st.room)];
       taken.add(row.agent);
-      out.set(row.agent, { row, to: entry.room, hunt: st.hunt, room_name: entry.name, station: st,
-        // Sized to the ROOM's strongest occupant, never to the quarry.
-        max_threat_over: Math.max(0, entry.threat - (row.level ?? entry.threat)) });
+      out.set(row.agent, placement(row, st));
     }
   });
 
@@ -425,9 +457,7 @@ export function shiftAssignments(rows = [], doctrine = {}, fleetObs = { characte
              `(ceiling ${engagementCeiling(row.level)})` });
       continue;
     }
-    const st = stations[i], entry = HUNT_ROOMS[Number(st.room)];
-    out.set(row.agent, { row, to: entry.room, hunt: st.hunt, room_name: entry.name, station: st,
-      max_threat_over: Math.max(0, entry.threat - (row.level ?? entry.threat)) });
+    out.set(row.agent, placement(row, stations[i]));
   }
 
   return ordered.map(row => out.get(row.agent));
@@ -541,8 +571,63 @@ const needsOrders = (row, orders) => {
     (orders.buff_allies !== undefined &&
       JSON.stringify(p.buffAllies ?? null) !== JSON.stringify(orders.buff_allies ?? null)) ||
     (orders.banned_weapons !== undefined &&
-      JSON.stringify(p.bannedWeapons ?? null) !== JSON.stringify(orders.banned_weapons ?? null));
+      JSON.stringify(p.bannedWeapons ?? null) !== JSON.stringify(orders.banned_weapons ?? null)) ||
+    // A STRATEGY FILE STILL ASSIGNED TO A HUNTING STATION'S CHARACTER overlays its own hunt and
+    // room on every pass, so the station's orders would never take. Only cleared when this
+    // doctrine is the one that assigned it, or says so -- see clearsFarmStrategy.
+    (orders.farm_strategy === null && (p.farmStrategy ?? null) !== null);
 };
+
+// WHOSE STRATEGY FILE IS IT. A hunting station clears a character's `farm_strategy` only when
+// one of THIS doctrine's stations names that file (so DUM assigned it, and is now moving the
+// character on), or when the doctrine says `clear_farm_strategy: true` on the station or the
+// shift. A file somebody else assigned by hand is theirs; overwriting it because a station
+// happens to admit the character is the "orders from somebody else's afternoon" failure.
+// Stateless on purpose: the doctrine is the record of what DUM assigns.
+export function clearsFarmStrategy(row, station, doctrine) {
+  const live = row?.policy?.farmStrategy ?? null;
+  if (live == null || String(live).trim() === '') return false;
+  if (station?.clear_farm_strategy === true || doctrine?.shift?.clear_farm_strategy === true) return true;
+  return (doctrine?.shift?.stations ?? []).some(st => typeof st?.farm_strategy === 'string' &&
+    st.farm_strategy.trim() === String(live).trim());
+}
+
+// The station-level posture a station that owns its orders may add. ONLY the station's own
+// value, never the shift-wide default: the shift's `flee_below: 0.35` is a hunting posture,
+// and sending it under a strategy file (or a training post) would quietly overwrite survival
+// settings nobody asked this station to touch.
+const OWNED_POSTURE = ['roam', 'flee_below', 'rest_below', 'fight_above_vigor', 'use_safe_spots',
+  'max_bots_per_safe_spot', 'hold_resume_above', 'town_trips', 'mollusk_cover_recovery',
+  'confine_rooms', 'buff_allies', 'banned_weapons'];
+
+/**
+ * The orders a station that owns them sends to one placed character, or `{skip}` when they
+ * cannot be computed this pass. Keys are deploy-step keys (`to` is the assigned room).
+ */
+export function ownedStationOrders(a, doctrine) {
+  const st = a.station;
+  if (isTrainingStation(st)) {
+    const plan = spellTrainingPlan(a.row, st, doctrine);
+    if (plan.unread) return { skip: `spell list unread: ${plan.unread}` };
+    return { orders: plan.orders, plan,
+      why: `spell training in ${a.room_name} (${plan.room}): drill ${plan.practice.join(', ') || 'nothing'}` +
+           `${plan.buffs.length ? `; buff ${plan.buffs.join(', ')}` : ''}${plan.maxed ? '; every drill at 99' : ''}` };
+  }
+  const orders = { mode: st.mode ?? 'farm', to: st.room == null ? undefined : Number(st.room),
+    farm_strategy: st.farm_strategy ?? null };
+  for (const k of OWNED_POSTURE) if (st[k] !== undefined) orders[k] = st[k];
+  return { orders,
+    why: orders.farm_strategy ? `farm strategy ${orders.farm_strategy}` +
+      `${orders.to != null ? ` in ${a.room_name} (${orders.to})` : ''}`
+      : `no farm strategy, mode ${orders.mode}` };
+}
+
+/** Which deploy-step fields disagree with the keeper. `to` is compared as assigned_room. */
+export function ownedDrift(row, orders) {
+  return Object.entries(orders).filter(([k, v]) =>
+    orderDiffers(k === 'to' ? 'assigned_room' : k, v, { policy: row.policy ?? {}, mode: row.mode ?? null }))
+    .map(([k]) => k === 'to' ? 'assigned_room' : k);
+}
 
 // A HUNT IS A SET, AND COMPARING IT WITH `!==` MEANT REDEPLOYING EVERY PASS.
 //
@@ -562,6 +647,9 @@ export const shiftFleetRules = [{
   id: 'hunt-shift',
   faculty: 'work',
   scope: 'fleet',
+  // Writes keeper policy only (deploy) or asks for a background walk (relocate), so it may
+  // run under claim.orders_only. See ORDERS_ONLY_FACULTIES in decide/engine.mjs.
+  ordersOnly: true,
   // NO `needs: ['progress']` HERE, AND THAT IS THE POINT.
   //
   // The first version declared it, because the selector wants per-skill abilities. But
@@ -577,7 +665,7 @@ export const shiftFleetRules = [{
     if (!live.length) return { kind: 'pass', why: 'nobody in game' };
 
     const assignments = shiftAssignments(live, doctrine, observation);
-    const placeable = assignments.filter(a => a.to != null);
+    const placeable = assignments.filter(a => a.placed);
     if (!placeable.length)
       return { kind: 'pass', why: assignments[0]?.why ?? 'no unit has Short swording selected' };
 
@@ -586,6 +674,7 @@ export const shiftFleetRules = [{
     // actually stepped over mid-errand is the kind of line that gets believed — it says
     // the retarget landed when it has not started.
     let busy = 0;
+    const skipped = [];
     const plan = placeable.flatMap(a => {
       // A unit mid-errand is stepped over rather than re-deployed. Both of these walk a
       // character across the world, and the loser is whichever one is interrupted.
@@ -599,7 +688,8 @@ export const shiftFleetRules = [{
         // compute every field the same way; the one time they did not, a character was
         // found to differ on every pass and redeployed for ever without changing.
         buff_allies: a.station?.buff_allies ?? undefined,
-        banned_weapons: posture(a.station, doctrine.shift, 'banned_weapons') };
+        banned_weapons: posture(a.station, doctrine.shift, 'banned_weapons'),
+        farm_strategy: clearsFarmStrategy(a.row, a.station, doctrine) ? null : undefined };
       // ORDERS MATCHING IS NOT THE SAME AS BEING THERE, and conflating the two is how a
       // shift quietly stops working. `deploy` sets the assignment and leaves the walk to
       // the keeper, which is correct — movement is a one-second decision and the keeper
@@ -630,6 +720,21 @@ export const shiftFleetRules = [{
       // it all at once.
       const busyDoing = /travel|fight|pull|rest|recover|park|eat/i.test(String(a.row.doing ?? a.row.activity ?? ''));
       if (busyDoing) return [];
+      if (ownsOrders(a.station)) {
+        const owned = ownedStationOrders(a, doctrine);
+        if (owned.skip) { skipped.push({ agent: a.row.agent, why: owned.skip }); return []; }
+        const drift = ownedDrift(a.row, owned.orders);
+        if (!drift.length) {
+          const to = owned.orders.to;
+          if (to != null && a.row.room != null && a.row.room !== to && doctrine.station?.recall !== true)
+            return [{ do: 'relocate', agent: a.row.agent, to,
+              why: `orders say ${to} and it is standing in ${a.row.room} -- walk it there` }];
+          return [];
+        }
+        return [{ do: 'deploy', agent: a.row.agent, ...owned.orders,
+          why: `${owned.why}${stationBand(a.station) ? ` -- ${bandWhy(a.station)} and this unit is ${a.row.level}` : ''}` +
+               ` (drift: ${drift.join(', ')})` }];
+      }
       if (!needsOrders(a.row, orders)) {
         const settled = a.row.room != null && a.row.room !== a.to;
         // Station recall has its own character turn. A single failed relocation
@@ -750,6 +855,9 @@ export const shiftFleetRules = [{
         // station and every board still reading healthy, which is exactly how a confinement
         // leaks. `fieldrest` is the one that never walks back to town.
         strategy: posture(a.station, doctrine.shift, 'strategy'),
+        // null only when this doctrine assigned the file the character still runs (or says
+        // clear it) -- see clearsFarmStrategy. Undefined otherwise, which the deploy drops.
+        farm_strategy: orders.farm_strategy,
         why: `${[].concat(a.hunt).join(' or ')} in ${a.room_name} (${a.to}), roaming ` +
              `${posture(a.station, doctrine.shift, 'roam') === true ? 'on' : 'off'}` +
              `${stationBand(a.station) ? ` — ${bandWhy(a.station)} and this unit is ${a.row.level}` : ''}`,
@@ -757,9 +865,12 @@ export const shiftFleetRules = [{
     });
 
     if (!plan.length)
-      return { kind: 'pass', why: busy
+      return { kind: 'pass', why: (busy
         ? `${busy} of ${placeable.length} unit(s) are mid-errand; the rest hold their station orders`
-        : `${placeable.length} unit(s) already hold their station orders` };
+        : `${placeable.length} unit(s) already hold their station orders`) +
+        (skipped.length ? `; ${skipped.length} not decided this pass (` +
+          `${skipped.map(x => `${x.agent}: ${x.why}`).join('; ')})` : ''),
+        ...(skipped.length ? { evidence: { skipped } } : {}) };
     return { kind: 'act', plan,
       // WHAT THE FLEET RE-SORTED ITSELF INTO, WRITTEN DOWN BEFORE ANYTHING WALKS.
       //
@@ -770,7 +881,8 @@ export const shiftFleetRules = [{
       remember: bandMemory(placeable, plan, observation, doctrine),
       why: `deploy ${plan.length} unit(s) into their assigned stations`,
       evidence: { rooms: [...new Set(placeable.map(a => a.to))],
-        quarry: [...new Set(placeable.flatMap(a => [].concat(a.hunt)))],
+        quarry: [...new Set(placeable.flatMap(a => [].concat(a.hunt)).filter(Boolean))],
+        ...(skipped.length ? { skipped } : {}),
         bands: placeable.filter(a => stationBand(a.station))
           .map(a => `${a.row.agent} ${a.row.level} -> ${a.to}`),
         unplaceable: assignments.filter(a => a.to == null).length } };

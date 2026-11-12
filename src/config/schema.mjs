@@ -46,7 +46,9 @@ import { floorForThrottle } from '../decide/rules/throttle.mjs';
 // parses a station differently from the rule that acts on it validates a doctrine nobody
 // runs — and this is exactly the field where that would be silent, because a band the
 // schema read one way and the shift read another still produces a fleet standing somewhere.
-import { stationBand, huntList } from '../decide/rules/shift.mjs';
+import { stationBand, huntList, ownsOrders } from '../decide/rules/shift.mjs';
+import { PLANS, PLAN_SPELL_TRAINING } from '../decide/plans/spell-training.mjs';
+import { ORDERS_ONLY_FACULTIES } from '../decide/engine.mjs';
 
 export function validate(c) {
   const bad = [];
@@ -90,6 +92,18 @@ export function validate(c) {
   if (off.includes('mortality'))
     say('claim.mortality', `'off' means nothing walks the character out of the Underworld, ` +
         `which has no graph exits — the character stays there for ever. Use 'keeper' or 'bot'`);
+  // ORDERS-ONLY MEANS THE KEEPER KEEPS THE FACULTIES. Claiming one of them as well is a
+  // contradiction that would silently undo the reason for the mode: a farm strategy yields to
+  // a bot holding `work`, so the file would stop applying while the doctrine reads correct.
+  if (c.claim?.orders_only !== undefined && typeof c.claim.orders_only !== 'boolean')
+    say('claim.orders_only', 'must be true or false');
+  if (c.claim?.orders_only === true) {
+    const held = ORDERS_ONLY_FACULTIES.filter(f => c.claim?.[f] === 'bot');
+    if (held.length)
+      say('claim.orders_only', `is on, and ${held.join(', ')} ${held.length === 1 ? 'is' : 'are'} ` +
+        `claimed as bot. Orders-only leaves those with the keeper (so a farm strategy file keeps ` +
+        `applying); set them to "keeper", or turn orders_only off`);
+  }
   if (!num(c.claim?.lease_ms) || c.claim.lease_ms < 10_000)
     say('claim.lease_ms', 'must be at least 10000. A lease shorter than a few ticks means ' +
         'the keeper takes its faculties back between DUM\'s own decisions');
@@ -374,7 +388,9 @@ export function validate(c) {
     stations.forEach((st, i) => {
       const where = `shift.stations[${i}]`;
       const room = HUNT_ROOMS[Number(st?.room)];
-      if (!room) {
+      const owning = ownsOrders(st);
+      if (owning) validateOwningStation(st, where, say);
+      else if (!room) {
         say(where, `room ${st?.room} is not in HUNT_ROOMS. That table is the guard rail that ` +
           'keeps the fleet out of the level-150 rooms next to its hunting grounds, so a room ' +
           'is added there — with its threat and what it generates — rather than here');
@@ -387,10 +403,10 @@ export function validate(c) {
       // `generates.includes([...])` is false for every array. So the pair was unsayable here
       // and had to live in the castle block instead.
       const hunts = huntList(st);
-      if (!hunts.length)
+      if (!hunts.length && !owning)
         say(where, 'a station with no `hunt` puts a character in a room and tells it to kill ' +
           'nothing, which reads as a working assignment on every board');
-      const cannot = hunts.filter(q => !room.generates.includes(q));
+      const cannot = owning ? [] : hunts.filter(q => !room.generates.includes(q));
       if (cannot.length)
         say(where, `${room.name} does not generate ${cannot.map(q => `"${q}"`).join(', ')} — it makes ` +
           `${room.generates.join(' or ')}. A quarry a room cannot produce is a character ` +
@@ -483,7 +499,7 @@ export function validate(c) {
       // A NIGHT ROOM WITHOUT `when` IS THE EXPENSIVE MISTAKE. The undead generators make
       // nothing for 85 minutes in every 120, so a station on one without a gate parks a
       // shift in an empty field for most of the day and looks fine doing it.
-      if (room.night_only && String(st?.when ?? '').toLowerCase() !== 'night')
+      if (room?.night_only && !owning && String(st?.when ?? '').toLowerCase() !== 'night')
         say(where, `${room.name} generates nothing outside its 35-minute window, so this ` +
           'station needs `"when": "night"` or it will stand in an empty field for most of ' +
           'every cycle');
@@ -545,7 +561,70 @@ export function validate(c) {
     }
   }
 
+  // ---- the spell-training plan's settings: only the ways it would be silently wrong
+  const stt = c.spell_training;
+  if (stt != null) {
+    const okCap = v => (num(v) && v > 0) || (v && typeof v === 'object' && !Array.isArray(v) &&
+      Object.values(v).every(n => num(n) && n >= 0));
+    const okList = v => v == null || (Array.isArray(v) && v.every(x => typeof x === 'string' && x.trim()));
+    if (!okCap(stt.request_cap))
+      say('spell_training.request_cap', 'must be a positive number, or {item: n, default: n}');
+    for (const k of ['never', 'priority', 'fleetmate_spells'])
+      if (!okList(stt[k])) say(`spell_training.${k}`, 'must be a list of spell names');
+    for (const k of ['requests_file', 'catalogue_file'])
+      if (stt[k] != null && (typeof stt[k] !== 'string' || !stt[k].trim()))
+        say(`spell_training.${k}`, 'must be a path, or null');
+    if (stt.characters != null && (typeof stt.characters !== 'object' || Array.isArray(stt.characters)))
+      say('spell_training.characters', 'must be a map of character name to override');
+    else for (const [who, o] of Object.entries(stt.characters ?? {})) {
+      const at = `spell_training.characters.${who}`;
+      if (!o || typeof o !== 'object' || Array.isArray(o)) { say(at, 'must be an object'); continue; }
+      for (const k of ['buff', 'practice', 'never', 'priority', 'fleetmate_spells'])
+        if (!okList(o[k])) say(`${at}.${k}`, 'must be a list of spell names');
+      if (o.request_cap !== undefined && !okCap(o.request_cap))
+        say(`${at}.request_cap`, 'must be a positive number, or {item: n, default: n}');
+      // A BUFF THE KEEPER CANNOT CAST IS DROPPED BY IT IN SILENCE (autopilot/social.mjs BUFFS).
+      for (const b of [].concat(o.buff ?? []))
+        if (!['super strength', 'bless', 'magic shield'].includes(String(b).trim().toLowerCase()))
+          say(`${at}.buff`, `"${b}" is not a buff the keeper casts (super strength, bless, magic shield)`);
+    }
+  }
+
   return bad;
+}
+
+// A STATION THAT CARRIES ITS OWN ORDERS (rules/shift.mjs ownsOrders). It is excused the
+// HUNT_ROOMS and quarry checks because it hunts nothing itself; what it must get right instead
+// is the shape of what it sends, because a refused farm_strategy or practice object is reported
+// by the harness and NOT applied -- and the rest of the deploy goes with it.
+function validateOwningStation(st, where, say) {
+  const fs = st.farm_strategy;
+  if (fs !== undefined && fs !== null &&
+      (typeof fs !== 'string' || !/^[A-Za-z0-9._-]+$/.test(fs.trim())))
+    say(`${where}.farm_strategy`, 'must be a strategy file NAME (substrate/farm-strategies/<name>.mjs ' +
+      'on the harness, without .mjs), or null to clear one');
+  if (st.mode !== undefined && !['farm', 'survive'].includes(st.mode))
+    say(`${where}.mode`, 'must be "farm" or "survive"');
+  if (typeof fs === 'string' && st.mode === 'survive')
+    say(`${where}.mode`, 'a farm strategy runs in mode "farm" -- the harness says so: "Pass mode:farm with it"');
+  if (typeof fs === 'string' && st.hunt !== undefined)
+    say(`${where}.hunt`, 'the strategy file owns the hunt. A station `hunt` here would be sent and ' +
+      'then overlaid by the file on every pass, which reads as an order and does nothing');
+  if (st.room != null && !Number.isInteger(Number(st.room)))
+    say(`${where}.room`, 'must be a room number');
+  if (st.plan != null) {
+    if (!PLANS.includes(st.plan))
+      say(`${where}.plan`, `unknown plan "${st.plan}" -- known: ${PLANS.join(', ')}`);
+    if (st.plan === PLAN_SPELL_TRAINING) {
+      if (!Number.isInteger(Number(st.room)) || st.room == null)
+        say(`${where}.room`, 'a spell-training station needs a room: it is where the trainers stand, ' +
+          'are confined, and practise');
+      if (typeof fs === 'string')
+        say(`${where}.farm_strategy`, 'a spell-training station clears farm_strategy itself; a ' +
+          'strategy file would walk the trainer off to hunt');
+      if (st.hunt !== undefined) say(`${where}.hunt`, 'a spell-training station hunts nothing');
+    }
+  }
 }
 
 export { FACULTIES, OWNERS, CRITERION_KINDS, ORDER_FIELD_NAMES };

@@ -701,3 +701,40 @@ test('a station saying nothing about buffs never redeploys for it', () => {
               roam: false, trainingStyle: 'short_sword', buffAllies: null } };
   assert.ok(!JSON.stringify(fire([row], d)).includes('buff_allies'));
 });
+
+// ---------------------------------------------------------------- farm strategies on a hunting station
+
+test('shift: a hunting station clears a farm strategy only when this doctrine assigned it', () => {
+  const d = allDownstairs();
+  const r = over => rows(1, { level: 70, room: 38, ...over });
+  const strategies = out => out.kind === 'act'
+    ? out.plan.filter(s => s.do === 'deploy').map(s => s.farm_strategy) : [];
+  // A file set by hand elsewhere: left alone.
+  const foreign = fire(r({ policy: { farmStrategy: 'hand-set' } }), d);
+  assert.ok(strategies(foreign).length > 0);
+  assert.ok(strategies(foreign).every(v => v === undefined));
+  // A file one of this doctrine's stations names: DUM put it there, so it is cleared.
+  d.shift.stations.push({ room: 552, farm_strategy: 'hand-set', max_health: { at_least: 9999 } });
+  assert.deepEqual(strategies(fire(r({ policy: { farmStrategy: 'hand-set' } }), d)), [null]);
+  // Or the doctrine says so outright.
+  const e = allDownstairs();
+  e.shift.clear_farm_strategy = true;
+  assert.deepEqual(strategies(fire(r({ policy: { farmStrategy: 'anything' } }), e)), [null]);
+});
+
+test('shift: stations that own their orders are banded and gated like any other, first match wins', () => {
+  const d = doctrine();
+  d.shift.stations = [
+    { only: ['role-a'], max_health: { below: 50 }, farm_strategy: 'newbie-a' },
+    { room: 552, plan: 'spell-training', max_health: { at_least: 150 }, except: ['role-c'] },
+    { room: 552, farm_strategy: 'ocean', max_health: { below: 150 }, except: ['role-c'] },
+  ];
+  const all = [{ agent: 'role-a', level: 30 }, { agent: 'role-b', level: 160 }, { agent: 'role-c', level: 160 },
+    { agent: 'role-d', level: 100 }].map(x => ({ in_game: true, mode: 'farm', policy: {}, ...x }));
+  const a = Object.fromEntries(shiftAssignments(all, d).map(x => [x.row.agent, x]));
+  assert.equal(a['role-a'].station.farm_strategy, 'newbie-a');
+  assert.equal(a['role-b'].station.plan, 'spell-training');
+  assert.equal(a['role-c'].placed, undefined, 'an excluded collective-role character is not placed anywhere');
+  assert.equal(a['role-d'].station.farm_strategy, 'ocean');
+  assert.equal(a['role-d'].room_name, 'The Great Ocean');
+});

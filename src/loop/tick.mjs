@@ -12,7 +12,11 @@
 // through twenty-one.
 
 import { observeFleet, observeFromBoard, deepen, enrichForMoot, enrichEquipment,
-         enrichMaintenance, enrichFactionInventory, enrichFactionGames, enrichFactionLoyalty, enrichTravelEstimates } from '../sense/observe.mjs';
+         enrichMaintenance, enrichFactionInventory, enrichFactionGames, enrichFactionLoyalty, enrichTravelEstimates,
+         enrichSpellTraining } from '../sense/observe.mjs';
+import { loadSpellCatalogue } from '../sense/spell-catalogue.mjs';
+import { trainingCandidates, trainingAssignments, spellTrainingRequests } from '../decide/plans/spell-training.mjs';
+import { syncReagentRequests, statePath } from '../act/reagent-requests.mjs';
 import { characterRules, fleetRules, decide } from '../decide/index.mjs';
 import { apply } from '../act/orders.mjs';
 import { verify } from '../act/verify.mjs';
@@ -232,6 +236,15 @@ export async function tickFleet(ctx, { decide: runRules = true, only = null } = 
     // On its own field so it cannot collide with the graveyard's `travel_to_station`.
     if (config.feast?.on === true)
       await enrichTravelEstimates(broker, live(), FEAST_HALL.room, { field: 'travel_to_feast' });
+    // WHAT EACH WOULD-BE SPELL TRAINER KNOWS, AND WHAT IT COSTS. Only for characters a
+    // spell-training station could admit, and only on a pass that decides -- one cached
+    // `abilities` read each. See decide/plans/spell-training.mjs.
+    if (runRules) {
+      const trainees = trainingCandidates(live(), config);
+      if (trainees.length)
+        await enrichSpellTraining(broker, trainees,
+          loadSpellCatalogue(config.spell_training?.catalogue_file ?? null));
+    }
     line.observation = obs;
 
     // STAND DOWN WHILE THE FLEET IS PARKING. A parked keeper is running and
@@ -269,6 +282,30 @@ export async function tickFleet(ctx, { decide: runRules = true, only = null } = 
     if (ctx.circuits) decideObs.characters = decideObs.characters.filter(r => !ctx.circuits.has(r.agent));
     // Jobs can finish during enrichment; use their completed cooldowns now.
     decideObs.memory = ctx.memory?.read() ?? memory;
+    // THE COURIER REQUESTS THE TRAINING PLAN WANTS. A file write, not an order, so it is made
+    // here beside the rules rather than by one: what to ask for is decided purely
+    // (spellTrainingRequests), and act/reagent-requests.mjs owns whose lines are whose.
+    // Written only on a committed run; a plan reports what it WOULD change.
+    if (trainingCandidates(decideObs.characters ?? [], config).length) {
+      try {
+        const { desired, scope, unread } = spellTrainingRequests(decideObs, config);
+        const notes = {};
+        for (const a of trainingAssignments(decideObs, config)) {
+          if (a.plan.unread || !a.plan.maxed) continue;
+          if (a.row.learning?.planned?.next?.expected_buyable !== true)
+            notes[a.row.agent] = 'every drill is at 99 and no next planned ability is buyable; buffing only';
+        }
+        const synced = syncReagentRequests({
+          file: config.spell_training?.requests_file ?? null,
+          stateFile: statePath(config.record?.spell_training_dir ?? 'var/spell-training', config.fleet),
+          desired, scope, commit, notes });
+        line.reagent_requests = { ...synced, ...(unread.length ? { unread } : {}) };
+        for (const n of synced.fresh_notes ?? []) if (commit) journal.finding(n.agent, n.why, { plan: 'spell-training' });
+      } catch (e) {
+        line.reagent_requests = { error: e.message };
+      }
+    }
+
     // SEVERAL DECISIONS PER FLEET PASS, ON DISJOINT CHARACTERS.
     //
     // The engine's invariant is one directional decision per CHARACTER; stopping the whole

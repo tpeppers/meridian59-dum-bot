@@ -517,6 +517,23 @@ export const HUNT_ROOMS = Object.freeze({
     generates: Object.freeze(['fungus beast', 'groundworm larva']) }),
 });
 
+// ROOMS A STATION MAY NAME WITHOUT HUNTING IN THEM — names only, never a guard rail.
+//
+// HUNT_ROOMS above is what lets a STATION pick quarry, and it deliberately has no 552. A
+// station that carries its own orders (a `farm_strategy` file, or a `plan` such as
+// spell-training) is not choosing quarry: the strategy file owns the hunt, or the plan does
+// not hunt at all. Such a station still has to be able to SAY where it is, in the journal
+// and in `plan`, so the names live here, apart from the table that admits quarry. Adding a
+// room here admits nothing to a hunting station.
+export const ROOM_NAMES = Object.freeze({
+  552: 'The Great Ocean',
+  544: 'Valley of Ileria',
+  535: 'West Merchant Way',
+});
+
+/** A room's name from either table, or null. */
+export const roomName = room => HUNT_ROOMS[Number(room)]?.name ?? ROOM_NAMES[Number(room)] ?? null;
+
 // Kept for the crypt-only callers and tests that name it.
 export const CRYPT_ROOMS = HUNT_ROOMS;
 

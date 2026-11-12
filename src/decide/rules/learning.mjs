@@ -1,4 +1,23 @@
 import { STRATEGY_IDS, strategyRows, strategySettings } from '../../strategies/catalog.mjs';
+import { trainingWantsLearning, isTrainingStation } from '../plans/spell-training.mjs';
+
+const hasTrainingStation = doctrine => doctrine.shift?.on === true &&
+  (doctrine.shift.stations ?? []).some(isTrainingStation);
+
+// WHO MAY LEARN: everybody the strategy is selected for, AND every spell trainer whose drills
+// have all reached 99 (decide/plans/spell-training.mjs). A maxed trainer has nothing left to
+// practise, so the next planned ability is the only thing that can still advance it. Its
+// assigned room is untouched by the errand -- the harness walks it home to
+// `policy.assignedRoom`, which the training station keeps set -- so it comes back to its post.
+function learningRows(observation, doctrine) {
+  const rows = doctrine.strategies?.enabled === true
+    ? strategyRows(observation, doctrine, STRATEGY_IDS.AUTO_LEVEL_PLANNED) : [];
+  const seen = new Set(rows.map(r => r.agent));
+  const maxed = new Set(trainingWantsLearning(observation, doctrine));
+  for (const r of observation.characters ?? [])
+    if (r.in_game && maxed.has(r.agent) && !seen.has(r.agent)) rows.push(r);
+  return rows;
+}
 
 // Learning is a fleet errand, not a keeper policy. The harness owns the expensive part:
 // it refreshes PlayerCanLearn, funds the exact fixed price, routes to a catalogued teacher,
@@ -8,15 +27,22 @@ export const learningFleetRules = [{
   id: 'auto-level-next-planned-school',
   scope: 'fleet',
   faculty: 'economy',
+  // The harness errand takes its own lease and restores the keeper; DUM only starts it. Safe
+  // under claim.orders_only.
+  ordersOnly: true,
   why: 'the first unfinished compendium learning-queue level has an ability available now',
-  enabled: doctrine => doctrine.strategies?.enabled === true,
-  offWhy: 'DUM strategies are disabled',
+  // ON FOR EITHER REASON. A doctrine with a spell-training station gets the maxed-trainer
+  // hand-off even with the strategy catalogue off -- and with it off, ONLY that hand-off: an
+  // orders-only doctrine must not inherit whatever the per-unit strategy store selected for
+  // characters it was never written for.
+  enabled: doctrine => doctrine.strategies?.enabled === true || hasTrainingStation(doctrine),
+  offWhy: 'DUM strategies are disabled and no shift station runs the spell-training plan',
   decide(observation, doctrine) {
     const candidates = [];
     // Named rather than silently skipped: "ready to learn and cannot pay" is a fleet fact
     // an operator can act on, and it is invisible everywhere else on the board.
     const unfunded = [];
-    for (const row of strategyRows(observation, doctrine, STRATEGY_IDS.AUTO_LEVEL_PLANNED)) {
+    for (const row of learningRows(observation, doctrine)) {
       // A bot claim is takeable ownership and a partner is a standing arrangement; an
       // active drive/errand, a parked update, or a human pilot is not "convenient".
       const commitment = row.commitment;

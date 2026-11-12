@@ -732,7 +732,12 @@ export const shiftFleetRules = [{
         const drift = ownedDrift(a.row, owned.orders);
         if (!drift.length) {
           const to = owned.orders.to;
-          if (to != null && a.row.room != null && a.row.room !== to && doctrine.station?.recall !== true)
+          // A FARM STRATEGY OWNS ITS OWN ROAD. great-ocean-marion walks its farmers to Marion's
+          // counters, fights on the road and sends them back to 552 itself; a relocate here would
+          // cancel exactly those walks every pass (2026-11-12 dry run: two farmers on the road
+          // were about to be ordered back to the farm room). `relocate: false` asks for the same.
+          const strategyWalks = a.station?.farm_strategy != null || a.station?.relocate === false;
+          if (!strategyWalks && to != null && a.row.room != null && a.row.room !== to && doctrine.station?.recall !== true)
             return [{ do: 'relocate', agent: a.row.agent, to,
               why: `orders say ${to} and it is standing in ${a.row.room} -- walk it there` }];
           return [];

@@ -722,6 +722,22 @@ test('shift: a hunting station clears a farm strategy only when this doctrine as
   assert.deepEqual(strategies(fire(r({ policy: { farmStrategy: 'anything' } }), e)), [null]);
 });
 
+test('shift: a farm-strategy station never relocates a farmer — the strategy walks its own road', () => {
+  const d = doctrine();
+  d.shift.stations = [{ room: 552, farm_strategy: 'ocean', max_health: { below: 150 } }];
+  const base = { agent: 'role-f', level: 100, in_game: true, mode: 'farm', activity: 'hunting' };
+  // First pass, standing in the farm room: whatever it deploys becomes the character's policy.
+  const first = fire([{ ...base, room: 552, policy: {} }], d);
+  const deploy = first.kind === 'act' ? first.plan.find(s => s.do === 'deploy') : null;
+  assert.ok(deploy, 'a fresh farmer is deployed onto the strategy');
+  const policy = { farmStrategy: 'ocean', assignedRoom: 552, mode: deploy.mode ?? 'farm',
+    confineRooms: deploy.confine_rooms ?? null, townTrips: deploy.town_trips ?? null };
+  // On the road to town, orders unchanged: no relocate back to 552.
+  const road = fire([{ ...base, room: 544, policy }], d);
+  const steps = road.kind === 'act' ? road.plan : [];
+  assert.ok(!steps.some(s => s.do === 'relocate'), `no relocate for a strategy farmer: ${JSON.stringify(steps)}`);
+});
+
 test('shift: stations that own their orders are banded and gated like any other, first match wins', () => {
   const d = doctrine();
   d.shift.stations = [

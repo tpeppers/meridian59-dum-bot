@@ -3,6 +3,7 @@ import { planOrders, apply, ORDER_FIELDS } from '../src/act/orders.mjs';
 import { verify } from '../src/act/verify.mjs';
 import { deny, ALLOWED, NOT_YET } from '../src/link/surface.mjs';
 import { checkFleet, FleetMismatch } from '../src/link/guard.mjs';
+import { callsForFleetPlan } from '../src/act/fleet-plan.mjs';
 import * as fx from './fixtures.mjs';
 
 const test = globalThis.__dumTest;
@@ -217,4 +218,34 @@ test('guard: no broker at all is an ordinary answer with a remedy, not a stack t
   const g = await checkFleet(dead, fx.doctrine(), { commit: false });
   assert.equal(g.ok, false);
   assert.match(g.notes[0], /never starts one/);
+});
+
+// ---------------------------------------------------------------- yield_to reaches a DEPLOY
+
+test('yield_to is honoured by a fleet deploy, not just by the policy diff', () => {
+  const plan = [{ do: 'deploy', agent: 'role-a', to: 38, hunt: ['skeleton'],
+                  flee_below: 0.35, rest_below: 0.7, fight_above_vigor: 180,
+                  roam: false, purpose: 'advance' }];
+  // Nothing yielded: the posture goes out in full, exactly as before.
+  const plain = callsForFleetPlan(plan, 'why')[0].args;
+  assert.equal(plain.flee_below, 0.35);
+  assert.equal(plain.rest_below, 0.7);
+
+  // Yielded: the named fields are withheld and everything else still goes.
+  const calls = callsForFleetPlan(plan, 'why', { yieldTo: ['flee_below', 'rest_below'] });
+  const args = calls[0].args;
+  assert.ok(!('flee_below' in args), 'a yielded field must not be written by a deploy');
+  assert.ok(!('rest_below' in args), 'nor this one');
+  assert.equal(args.fight_above_vigor, 180, 'an unyielded field is untouched');
+  assert.equal(args.assigned_room, 38, 'and the station itself still goes');
+  assert.equal(args.hunt.length, 1);
+  // AND IT SAYS SO. A withheld field that nothing reports is indistinguishable from one
+  // the rule never set, which is the silent-drop failure this file exists to prevent.
+  assert.deepEqual([...calls.yielded].sort(), ['flee_below', 'rest_below']);
+});
+
+test('yielding a field the deploy never set reports nothing', () => {
+  const calls = callsForFleetPlan([{ do: 'deploy', agent: 'role-a', to: 38 }], 'why',
+                                  { yieldTo: ['flee_below'] });
+  assert.deepEqual(calls.yielded, [], 'undefined was never going to be sent, so nothing was dropped');
 });

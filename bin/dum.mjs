@@ -205,7 +205,8 @@ function context({ config, commit }) {
         resolveItems: items => broker.call('resolve_item_names', { items }),
         resolveFactionStatuses: async agents => Object.fromEntries(await Promise.all(
           agents.map(async agent => [agent, await broker.call('faction_status', { agent })]))),
-        url: config.link.strategy_control_url }) : null;
+        url: config.link.strategy_control_url,
+        tacticalTokenFile: flag('tactical-token-file', process.env.M59_DUM_TACTICAL_TOKEN_FILE) }) : null;
   // WHO DUM IS, ON THE WIRE. One string, computed once, because it is an identity the
   // harness checks rather than a label: only the holder of a claim may declare that
   // character busy or free it again, so a second spelling of this would be a second

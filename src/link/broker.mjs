@@ -69,6 +69,7 @@ export class Broker {
    * so a plan can still describe exactly what it would have sent.
    */
   call(tool, args = {}, { timeoutMs = null } = {}) {
+    const ticket = this.tacticalHandoff?.ticket(tool, args);
     const refusal = deny(tool, args);
     if (refusal) {
       this.stats.refused++;
@@ -82,7 +83,8 @@ export class Broker {
       this.lastAt = Date.now();
       // Pace request STARTS, not completion of a cross-world walk. Each job
       // awaits its own actions; unrelated characters and lease heartbeats can proceed.
-      const response = this.#send(tool, args, timeoutMs);
+      const finish = this.tacticalHandoff?.enter(ticket) ?? (() => {});
+      const response = this.#send(tool, args, timeoutMs).finally(finish);
       if (!this.concurrent) return response;
       response.catch(() => {}); // consumed below; avoid an early unhandled rejection
       return { response };

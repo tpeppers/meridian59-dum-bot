@@ -167,7 +167,7 @@ export function spellTrainingPlan(row = {}, station = {}, doctrine = {}) {
     gap_ms: Math.max(2000, Math.min(600_000, Math.floor(Number(settings.buffGapMs) || 20_000))),
   } : null;
 
-  // A TRAINER MAY ALSO FARM (operator 2026-11-13: "have Zoot help out fighting creatures while waiting between
+  // A TRAINER MAY ALSO FARM (operator 2026-11-13: "have the trainer help out fighting creatures while waiting between
   // casts"). A station that names `farm_strategy` keeps the drill and the buffs but hunts under that strategy file
   // between casts, which then owns the confinement and the hunt; without it the trainer stands still as before.
   const farm = typeof station?.farm_strategy === 'string' && station.farm_strategy.trim() ? station.farm_strategy.trim() : null;

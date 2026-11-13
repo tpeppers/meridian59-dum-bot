@@ -404,7 +404,7 @@ test('learning under orders-only: the strategy store is not inherited, only the 
   assert.equal(learningFleetRules[0].enabled(none), false);
 });
 
-// 2026-11-13: a trainer station that names a farm strategy farms between casts (Zoot at the Ocean).
+// 2026-11-13: a trainer station that names a farm strategy farms between casts (a trainer at the Ocean).
 test('spell training: a station with farm_strategy hunts under it between casts, drill unchanged', () => {
   const still = spellTrainingPlan(trainer(), STATION, {});
   const farming = spellTrainingPlan(trainer(), { ...STATION, farm_strategy: 'great-ocean-marion' }, {});

@@ -31,8 +31,10 @@ export function describeSupervisors(config, { now = Date.now(), git, pidAlive, r
       row.heartbeat_age_ms = Number.isFinite(at) ? now - at : null;
     }
     if (def.pin) {
-      const repo = hb?.repo ?? (def.repo ?? repoOf(entry, git));
-      const ps = pinSatisfied({ repo, entry: hb?.entry ?? entry, pin: def.pin, pinMode: def.pin_mode ?? 'at_least',
+      // Only a RUNNING heartbeat may name the repo and entry (see ensureSupervisors).
+      const live = row.running && hb;
+      const repo = (live && hb.repo) || (def.repo ?? repoOf(entry, git));
+      const ps = pinSatisfied({ repo, entry: (live && hb.entry) || entry, pin: def.pin, pinMode: def.pin_mode ?? 'at_least',
         pinPaths: def.pin_paths ?? [], head: row.running ? hb.commit : null }, git);
       row.pin_ok = ps.ok; row.why = ps.why;
     } else row.why = 'no pin';

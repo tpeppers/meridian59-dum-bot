@@ -238,7 +238,11 @@ export function ensureSupervisors(spec = {}, deps = {}) {
       row.heartbeat_age_ms = Number.isFinite(at) ? now - at : null;
     }
     const running = isRunning(hb, { now, pidAlive });
-    const pinArgs = { repo: hb?.repo ? resolve(hb.repo) : repo, entry: hb?.entry ?? entry,
+    // THE HEARTBEAT NAMES WHAT IS RUNNING, SO ONLY A RUNNING ONE MAY SAY WHERE THE CODE IS. A stale card's repo and
+    // entry describe the process that EXITED; checking a start against them pinned the new launch to the old checkout
+    // (2026-11-13: a supervisor moved to a clean worktree was refused because the OLD checkout was not at the pin).
+    const live = running && hb;
+    const pinArgs = { repo: live && hb.repo ? resolve(hb.repo) : repo, entry: (live && hb.entry) || entry,
       pin: def.pin, pinMode: def.pin_mode ?? 'at_least', pinPaths: def.pin_paths ?? [] };
 
     if (running) {

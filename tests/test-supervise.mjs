@@ -165,6 +165,19 @@ test('supervise: a down `must` is pin-checked, started, and not started twice in
   assert.deepEqual(h.started, ['s', 's']);
 });
 
+test('supervise: a stale heartbeat from another checkout does not decide where the next start is pinned', () => {
+  // 2026-11-13: the supervisor moved to a clean worktree. The OLD process's card still named the old checkout (at A,
+  // below the pin); the new entry's repo is at C. The start must be judged by the entry it will launch.
+  const OLD = resolve('/old/checkout');
+  const atOld = gitAt('A'), atNew = gitAt('C');
+  const git = (args, cwd) => (resolve(cwd ?? '') === OLD ? atOld : atNew)(args, cwd);
+  const h = harness({ hb: { s: { schema: 1, id: 's', pid: 7, status: 'stopped', heartbeat_at: iso(T0 - 600_000),
+    repo: OLD, entry: join(OLD, 'sup.mjs'), commit: 'A' } } });
+  const [r] = ensureSupervisors(specOf({ s: MUST }), h.deps(T0, { git }));
+  assert.equal(r.state, 'started', r.why);
+  assert.deepEqual(h.started, ['s']);
+});
+
 test('supervise: a `must` whose tree fails the pin is not started', () => {
   const h = harness({ head: 'A' });
   const [r] = ensureSupervisors(specOf({ s: MUST }), h.deps(T0));

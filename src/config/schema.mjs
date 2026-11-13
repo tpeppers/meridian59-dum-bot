@@ -623,9 +623,10 @@ function validateOwningStation(st, where, say) {
       if (!Number.isInteger(Number(st.room)) || st.room == null)
         say(`${where}.room`, 'a spell-training station needs a room: it is where the trainers stand, ' +
           'are confined, and practise');
-      if (typeof fs === 'string')
-        say(`${where}.farm_strategy`, 'a spell-training station clears farm_strategy itself; a ' +
-          'strategy file would walk the trainer off to hunt');
+      // A named farm_strategy is allowed since 2026-11-13: the trainer then hunts under that file between casts
+      // (spell-training.mjs). Only an empty string is a mistake.
+      if (typeof fs === 'string' && !fs.trim())
+        say(`${where}.farm_strategy`, 'an empty farm_strategy names no file; omit it to stand the trainer still');
       if (st.hunt !== undefined) say(`${where}.hunt`, 'a spell-training station hunts nothing');
     }
   }

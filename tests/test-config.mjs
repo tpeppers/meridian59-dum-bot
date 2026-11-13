@@ -199,7 +199,10 @@ test('schema: a plan station needs a known plan and a room, and hunts nothing', 
   assert.deepEqual(shiftWith({ room: 552, plan: 'spell-training' }), []);
   assert.ok(shiftWith({ room: 552, plan: 'nap' }).some(p => /unknown plan/.test(p.why)));
   assert.ok(shiftWith({ plan: 'spell-training' }).some(p => p.where.endsWith('.room')));
-  assert.ok(shiftWith({ room: 552, plan: 'spell-training', farm_strategy: 'x' })
+  // A named strategy is allowed (the trainer hunts under it between casts); an empty one is refused.
+  assert.ok(!shiftWith({ room: 552, plan: 'spell-training', farm_strategy: 'x' })
+    .some(p => p.where.endsWith('.farm_strategy')));
+  assert.ok(shiftWith({ room: 552, plan: 'spell-training', farm_strategy: ' ' })
     .some(p => p.where.endsWith('.farm_strategy')));
 });
 

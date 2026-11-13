@@ -167,9 +167,15 @@ export function spellTrainingPlan(row = {}, station = {}, doctrine = {}) {
     gap_ms: Math.max(2000, Math.min(600_000, Math.floor(Number(settings.buffGapMs) || 20_000))),
   } : null;
 
+  // A TRAINER MAY ALSO FARM (operator 2026-11-13: "have Zoot help out fighting creatures while waiting between
+  // casts"). A station that names `farm_strategy` keeps the drill and the buffs but hunts under that strategy file
+  // between casts, which then owns the confinement and the hunt; without it the trainer stands still as before.
+  const farm = typeof station?.farm_strategy === 'string' && station.farm_strategy.trim() ? station.farm_strategy.trim() : null;
   return {
-    room, maxed, excluded, practice: practiceNames, buffs: buffNames, mana_floor: manaFloor,
-    orders: {
+    room, maxed, excluded, practice: practiceNames, buffs: buffNames, mana_floor: manaFloor, farm,
+    orders: farm ? {
+      mode: 'farm', to: room, farm_strategy: farm, town_trips: false, practice_spells, buff_allies,
+    } : {
       mode: 'survive', to: room, confine_rooms: [room], roam: false, farm_strategy: null,
       mollusk_cover_recovery: false, town_trips: false, practice_spells, buff_allies,
     },

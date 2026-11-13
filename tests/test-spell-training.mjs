@@ -403,3 +403,16 @@ test('learning under orders-only: the strategy store is not inherited, only the 
   none.shift.stations = none.shift.stations.filter(st => st.plan == null);
   assert.equal(learningFleetRules[0].enabled(none), false);
 });
+
+// 2026-11-13: a trainer station that names a farm strategy farms between casts (Zoot at the Ocean).
+test('spell training: a station with farm_strategy hunts under it between casts, drill unchanged', () => {
+  const still = spellTrainingPlan(trainer(), STATION, {});
+  const farming = spellTrainingPlan(trainer(), { ...STATION, farm_strategy: 'great-ocean-marion' }, {});
+  assert.equal(still.orders.mode, 'survive', 'no farm_strategy: the trainer stands still as before');
+  assert.equal(still.orders.farm_strategy, null);
+  assert.equal(farming.orders.mode, 'farm', 'farm_strategy: the trainer hunts between casts');
+  assert.equal(farming.orders.farm_strategy, 'great-ocean-marion');
+  assert.equal(farming.orders.confine_rooms, undefined, 'the strategy file owns the confinement');
+  assert.deepEqual(farming.orders.practice_spells, still.orders.practice_spells, 'the drill is unchanged');
+  assert.deepEqual(farming.orders.buff_allies, still.orders.buff_allies, 'the buffs are unchanged');
+});
